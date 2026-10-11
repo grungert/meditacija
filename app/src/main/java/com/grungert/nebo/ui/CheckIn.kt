@@ -261,6 +261,9 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
     var showComment by remember { mutableStateOf(false) }
     var round by remember { mutableStateOf(0) }
     val seen = remember { mutableSetOf<String>() }
+    // a koan carried through the week comes back after each session instead of a new one
+    val weekKoan = remember { app.library.byId(app.settings.activeWeekKoan()) }
+    var carrying by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false; host.engine.walkOn = false }
 
@@ -279,13 +282,15 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
             entry = withContext(Dispatchers.IO) { app.db.entry(entry.id) }
         }
         waiting = false
-        val p = app.recommender.pick(entry?.words ?: "", entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
+        val p = if (weekKoan != null && round == 0 && !com.grungert.nebo.koan.Lexicon.soundsLikeDistress(entry?.words ?: ""))
+            Pick(weekKoan, "Koan ove sedmice, ${app.settings.weekKoanDay()}. dan. Šta ti danas pokazuje?")
+        else app.recommender.pick(entry?.words ?: "", entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
         p.item?.let { seen += it.id }
         pick = p
         if (entry != null) withContext(Dispatchers.IO) { app.db.updateEntry(entry.copy(themes = p.themes)) }
     }
 
-    fun keep() {
+    fun keep(next: Screen = Screen.Home) {
         val p = pick
         scope.launch {
             withContext(Dispatchers.IO) {
@@ -295,7 +300,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                     sc.entryId?.let { e -> app.db.entry(e)?.let { app.db.updateEntry(it.copy(koanId = id)) } }
                 }
             }
-            go(Screen.Home)
+            go(next)
         }
     }
 
@@ -330,7 +335,11 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                     val item = p.item
                     Spacer(Modifier.height(24.dp))
                     if (item == null) Text(p.reason, style = BodyStyle) else {
-                        Text(if (item.isKoan) "KOAN ZA TEBE" else "PORUKA ZA TEBE", style = LabelStyle)
+                        Text(when {
+                            item.id == weekKoan?.id && round == 0 -> "KOAN OVE SEDMICE"
+                            item.isKoan -> "KOAN ZA TEBE"
+                            else -> "PORUKA ZA TEBE"
+                        }, style = LabelStyle)
                         PaperCard {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(item.title ?: "", style = PaperText.copy(fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
@@ -354,8 +363,16 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                         }
                         Text(p.reason, style = SmallStyle)
                     }
+                    val isWeek = item != null && item.id == weekKoan?.id && round == 0
+                    if (item != null && item.isKoan && !isWeek) GlassButton(
+                        if (carrying) "Nosiš ga ove sedmice" else "Nosi ga ove sedmice",
+                        { carrying = true; app.settings.carryKoan(item.id) },
+                        Modifier.fillMaxWidth(), icon = NeboIcon.Week, enabled = !carrying,
+                        sub = if (carrying) null else "Vraćaće se poslije svake sesije, sedam dana",
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        GlassButton("Drugi", { pick = null; round++ })
+                        if (isWeek) GlassButton("Bilješke uz koan", { keep(Screen.KoanNotes(item!!.id)) })
+                        else GlassButton("Drugi", { pick = null; round++ })
                         GlassButton("Sačuvaj i završi", { keep() }, strong = true)
                     }
                 }

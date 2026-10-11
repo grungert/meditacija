@@ -56,6 +56,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     var haptics by remember { mutableStateOf(s.haptics) }
     var ambient by remember { mutableStateOf(s.ambient) }
     var weekReminder by remember { mutableStateOf(s.weekReminder) }
+    var daily by remember { mutableStateOf(s.dailyQuestion) }
+    var dailyHour by remember { mutableIntStateOf(s.dailyHour) }
     var refresh by remember { mutableIntStateOf(0) }
 
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -134,6 +136,16 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                     weekReminder = it; s.weekReminder = it
                     app.scope.launch { Esm.refresh(context) }
                 }, sub = "Nedjeljom u 19 h, ako pregled već nije urađen.")
+                SwitchRow("Pitanje dana ujutro", daily, {
+                    daily = it; s.dailyQuestion = it
+                    if (it && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    app.scope.launch { Esm.refresh(context) }
+                }, sub = "Pitanje iz koana koji nosiš ove sedmice, ili iz biblioteke.")
+                if (daily) ChipRow {
+                    for (h in listOf(6, 7, 8, 9, 10)) Chip("$h h", dailyHour == h, { dailyHour = h; s.dailyHour = h; app.scope.launch { Esm.refresh(context) } })
+                }
             }
 
             Panel {

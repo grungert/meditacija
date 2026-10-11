@@ -67,6 +67,26 @@ class Settings(context: Context) {
         get() = p.getInt("esmSilenced", 0)
         set(v) = p.edit { putInt("esmSilenced", v) }
 
+    // the koan carried through a week
+    var weekKoanId: String?
+        get() = p.getString("weekKoanId", null)
+        set(v) = p.edit { putString("weekKoanId", v) }
+    var weekKoanSince: Long
+        get() = p.getLong("weekKoanSince", 0)
+        set(v) = p.edit { putLong("weekKoanSince", v) }
+    /** The koan being carried this week, or null once seven days have passed. */
+    fun activeWeekKoan(now: Long = System.currentTimeMillis()): String? =
+        weekKoanId?.takeIf { now - weekKoanSince in 0 until 7 * 86_400_000L }
+    fun carryKoan(id: String?) { weekKoanId = id; weekKoanSince = System.currentTimeMillis() }
+    /** Which day (1..7) of carrying the koan this is. */
+    fun weekKoanDay(now: Long = System.currentTimeMillis()) = ((now - weekKoanSince) / 86_400_000L + 1).toInt()
+    var dailyQuestion: Boolean
+        get() = p.getBoolean("dailyQuestion", false)
+        set(v) = p.edit { putBoolean("dailyQuestion", v) }
+    var dailyHour: Int
+        get() = p.getInt("dailyHour", 8)
+        set(v) = p.edit { putInt("dailyHour", v) }
+
     // backups
     /** A folder (document tree) chosen for the weekly automatic copy, or null. */
     var backupTree: String?

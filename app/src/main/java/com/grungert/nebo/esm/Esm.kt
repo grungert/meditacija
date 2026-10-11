@@ -27,6 +27,7 @@ object Esm {
     private const val KEY_TEXT = "text"
     private const val ACTION_REPLY = "com.grungert.nebo.ESM_REPLY"
     private const val ACTION_WEEK = "com.grungert.nebo.WEEK"
+    private const val ACTION_DAILY = "com.grungert.nebo.DAILY"
     private const val ACTION_FIRE = "com.grungert.nebo.ESM_FIRE"
     private const val ACTION_PLAN = "com.grungert.nebo.ESM_PLAN"
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
@@ -46,6 +47,7 @@ object Esm {
         val db = ctx.app.db
         val am = ctx.getSystemService(AlarmManager::class.java)
         scheduleWeek(ctx, am)
+        scheduleDaily(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
         val now = System.currentTimeMillis()
         val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
@@ -72,6 +74,16 @@ object Esm {
             set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY); set(Calendar.HOUR_OF_DAY, 19); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
         }
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.WEEK_OF_YEAR, 1)
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, c.timeInMillis, pi)
+    }
+
+    /** Each morning at the chosen hour: one question to carry into the day. */
+    private fun scheduleDaily(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_DAILY, 0)
+        val s = ctx.app.settings
+        if (!s.dailyQuestion) { am.cancel(pi); return }
+        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.dailyHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
+        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, c.timeInMillis, pi)
     }
 
@@ -119,6 +131,20 @@ object Esm {
                     .setContentTitle("Zapisano").setContentText("Hvala. Vrati se onome što si radio.").setTimeoutAfter(2500).build())
                 return
             }
+            ACTION_DAILY -> {
+                val lib = ctx.app.library
+                // the week's koan question when one is being carried, otherwise a question from the library
+                val item = lib.byId(s.activeWeekKoan()) ?: lib.items.filter { it.isKoan && it.question != null }.randomOrNull()
+                val q = item?.question
+                if (s.dailyQuestion && q != null) {
+                    val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
+                        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Pitanje za danas").setContentText(q)
+                        .setStyle(Notification.BigTextStyle().bigText(q + (item.title?.let { "\n— $it" } ?: "")))
+                        .setContentIntent(open).setAutoCancel(true).build())
+                }
+            }
             ACTION_WEEK -> {
                 val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_WEEK, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -138,6 +164,7 @@ object Esm {
 
     private const val NOTIFICATION_ID = 7
     private const val WEEK_NOTIFICATION_ID = 8
+    private const val DAILY_NOTIFICATION_ID = 9
 
     private fun notify(ctx: Context, promptId: Long) {
         val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)

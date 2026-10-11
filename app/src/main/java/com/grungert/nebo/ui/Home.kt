@@ -147,7 +147,21 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             ).joinToString(" · "), style = SmallStyle.copy(fontSize = 15.sp))
         }
 
-        Spacer(Modifier.height(260.dp))
+        val weekKoan = remember { context.app.library.byId(s.activeWeekKoan()) }
+        if (weekKoan != null) {
+            Spacer(Modifier.height(18.dp))
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp, 22.dp, 6.dp, 22.dp))
+                    .background(Brush.verticalGradient(listOf(Ink.paper.copy(alpha = 0.92f), Ink.paperDeep.copy(alpha = 0.92f))))
+                    .clickable(role = Role.Button) { go(Screen.KoanNotes(weekKoan.id)) }.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text("KOAN SEDMICE · ${s.weekKoanDay()}. DAN", style = LabelStyle.copy(color = Ink.seal, shadow = null))
+                Text(weekKoan.title ?: "", style = PaperText.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold))
+                weekKoan.question?.let { Text(it, style = PaperText.copy(fontSize = 18.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)) }
+            }
+        }
+        Spacer(Modifier.height(if (weekKoan != null) 120.dp else 260.dp))
         AnimatedVisibility(shown, enter = fadeIn() + slideInVertically { it / 6 }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (reviewDue) Row(

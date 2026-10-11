@@ -56,6 +56,7 @@ private class WeekData(
     val sessions: Int,
     val types: List<Pair<String, Int>>,
     val earlier: List<Pair<Entry, Float>>,
+    val nextKoan: com.grungert.nebo.koan.KoanItem?,
 )
 
 private fun themesOf(e: Entry) = (e.themes + Lexicon.themes(e.words) + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
@@ -101,10 +102,13 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
         val parts = IntArray(4).also { a -> thisWeek.forEach { a[partOf(it.createdAt)]++ } }.toList()
         val moods = thisWeek.flatMap { it.moods }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second }
         val earlier = if (reflection != null && reflection.words.isNotBlank()) app.recommender.similar(reflection, all.filter { it.createdAt < start }, 3) else emptyList()
+        // a koan for the coming week, chosen by what the week held
+        val query = listOfNotNull(reflection?.words, themes.take(3).joinToString(", ") { THEME_NAMES[it.first] ?: it.first }).joinToString(". ")
+        val nextKoan = app.recommender.pick(query, emptyList(), afterSession = true, koansOnly = true).item
         val fmt = SimpleDateFormat("d. MMMM", Locale.forLanguageTag("sr-Latn-ME"))
         data = WeekData(
             reflection, fmt.format(Date(start)) + " – " + fmt.format(Date(start + week - 1)), themes, quotes, parts, moods,
-            sessions.sumOf { it.actualSec } / 60, sessions.size, sessions.groupingBy { it.type }.eachCount().toList(), earlier,
+            sessions.sumOf { it.actualSec } / 60, sessions.size, sessions.groupingBy { it.type }.eachCount().toList(), earlier, nextKoan,
         )
         app.settings.weekReviewed = Esm.weekKey()
     }
@@ -180,8 +184,61 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
                 }
             }
 
+            d.nextKoan?.let { k ->
+                Text("KOAN ZA SLJEDEĆU SEDMICU", style = LabelStyle, modifier = Modifier.padding(top = 8.dp))
+                PaperCard {
+                    Text(k.title ?: "", style = PaperText.copy(fontSize = 26.sp, fontWeight = FontWeight.SemiBold))
+                    Text(k.text, style = PaperText.copy(fontSize = 20.sp, lineHeight = 28.sp))
+                    k.question?.let { Text(it, style = PaperText.copy(fontStyle = FontStyle.Italic, color = Ink.seal, fontSize = 20.sp)) }
+                }
+                var taken by remember { mutableStateOf(app.settings.activeWeekKoan() == k.id) }
+                GlassButton(if (taken) "Nosiš ga ove sedmice" else "Nosi ga sedam dana", {
+                    app.settings.carryKoan(k.id); taken = true
+                }, Modifier.fillMaxWidth(), icon = NeboIcon.Week, enabled = !taken)
+            }
+
             Text("Šta od ovoga želiš ponijeti u sljedeću sedmicu?", style = HeadStyle.copy(fontSize = 22.sp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             GlassButton("Nazad na nebo", { go(Screen.Home) }, Modifier.fillMaxWidth(), strong = true)
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** The koan being carried, and every note written alongside it, newest first. */
+@Composable
+fun KoanNotesScreen(sc: Screen.KoanNotes, go: (Screen) -> Unit) {
+    val app = LocalContext.current.app
+    val item = remember { app.library.byId(sc.koanId) }
+    val player = remember { com.grungert.nebo.audio.NotePlayer() }
+    var notes by remember { mutableStateOf<List<Entry>?>(null) }
+    var active by remember { mutableStateOf(app.settings.activeWeekKoan() == sc.koanId) }
+    LaunchedEffect(sc.koanId) { notes = withContext(Dispatchers.IO) { app.db.entriesForKoan(sc.koanId) } }
+
+    Box(Modifier.fillMaxSize()) {
+        Scrim(Modifier.fillMaxSize())
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
+                .screenPadding().padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ScreenHeader("Koan sedmice", { player.stop(); go(Screen.Home) })
+            if (item == null) { Text("Ovaj koan više nije u biblioteci.", style = BodyStyle); return@Column }
+            PaperCard {
+                Text(item.title ?: "", style = PaperText.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold))
+                Text(item.text, style = PaperText)
+                item.question?.let { Text(it, style = PaperText.copy(fontStyle = FontStyle.Italic, color = Ink.seal, fontSize = 21.sp)) }
+            }
+            if (active) {
+                Text("Nosiš ga ${app.settings.weekKoanDay()}. dan od sedam.", style = SmallStyle.copy(color = Ink.accent))
+                GlassButton("Pusti ga", { app.settings.carryKoan(null); active = false }, icon = NeboIcon.Cloud)
+            }
+            Text("BILJEŠKE UZ OVAJ KOAN", style = LabelStyle, modifier = Modifier.padding(top = 8.dp))
+            val n = notes
+            when {
+                n == null -> Text("…", style = BodyStyle)
+                n.isEmpty() -> Text("Još nema bilješki. Poslije sesije zapiši šta ti koan danas pokazuje; ovdje će se skupljati.", style = BodyStyle.copy(color = Ink.soft))
+                else -> n.forEach { EntryCard(it, player, onStar = {}, onSimilar = null) }
+            }
             Spacer(Modifier.height(24.dp))
         }
     }

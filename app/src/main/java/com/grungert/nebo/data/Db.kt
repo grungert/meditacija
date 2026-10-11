@@ -106,6 +106,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 2) {
             generateSequence { if (c.moveToNext()) c.toEntry() else null }.toList()
         }
 
+    fun entriesForKoan(koanId: String): List<Entry> =
+        readableDatabase.rawQuery("SELECT * FROM entries WHERE koan_id=? ORDER BY created_at DESC", arrayOf(koanId)).use { c ->
+            generateSequence { if (c.moveToNext()) c.toEntry() else null }.toList()
+        }
+
     fun pendingTranscriptions(): List<Entry> =
         readableDatabase.rawQuery("SELECT * FROM entries WHERE audio_path IS NOT NULL AND transcript IS NULL ORDER BY created_at", null).use { c ->
             generateSequence { if (c.moveToNext()) c.toEntry() else null }.toList()

@@ -47,6 +47,7 @@ sealed class Screen {
     data object Settings : Screen()
     data class Week(val entryId: Long?) : Screen()
     data class Similar(val entryId: Long) : Screen()
+    data class KoanNotes(val koanId: String) : Screen()
 }
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
@@ -108,6 +109,7 @@ class MainActivity : ComponentActivity() {
             screen = when (val sc = screen) {
                 is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup, is Screen.Week -> Screen.Home
                 is Screen.Similar -> Screen.Journal
+                is Screen.KoanNotes -> Screen.Home
                 is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
                 else -> Screen.Home
             }
@@ -134,6 +136,7 @@ class MainActivity : ComponentActivity() {
                     Screen.Settings -> SettingsScreen(go)
                     is Screen.Week -> com.grungert.nebo.ui.WeekScreen(sc, go)
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
+                    is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
                 }
             }
         }

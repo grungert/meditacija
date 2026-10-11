@@ -126,7 +126,7 @@ fun JournalScreen(go: (Screen) -> Unit) {
 }
 
 @Composable
-private fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null) {
+internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null) {
     Panel(padding = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             row.moods.forEach { m -> Box(Modifier.size(9.dp).clip(CircleShape).background(MOOD_COLORS[m] ?: Ink.soft)) }
@@ -218,6 +218,15 @@ fun StatsScreen(go: (Screen) -> Unit) {
                 SectionLabel("U koje doba dana")
                 Bars(d.dayParts.map { it.toFloat() }, listOf("jutro", "dan", "veče", "noć"))
             }
+            if (d.moodWeeks.any { it.isNotEmpty() }) Panel {
+                SectionLabel("Raspoloženja kroz sedmice")
+                MoodTrend(d.moodWeeks, d.weekLabels)
+                val seen = d.moodWeeks.flatMap { it.keys }.distinct()
+                ChipRow { for (m in seen) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(MOOD_COLORS[m] ?: Ink.soft))
+                    Text(" $m", style = SmallStyle)
+                } }
+            }
             if (d.types.isNotEmpty()) Panel {
                 SectionLabel("Vrste sesija")
                 for ((t, n) in d.types) Text("${TYPE_LABEL[t] ?: t}: $n", style = BodyStyle)
@@ -246,6 +255,7 @@ class StatsData(
     val weekMinutes: Int, val weekSessions: Int, val weeks: List<Int>, val weekLabels: List<String>, val dayParts: List<Int>,
     val types: List<Pair<String, Int>>, val themes: List<Pair<String, Int>>, val shifts: List<Pair<String, Int>>,
     val promptsFired: Int, val promptsAnswered: Int, val esmByPart: List<Int>,
+    val moodWeeks: List<Map<String, Int>>,
 )
 
 private fun dayPart(t: Long): Int {
@@ -283,6 +293,9 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         shifts = shifts.toList().sortedByDescending { it.second }.take(6),
         promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null },
         esmByPart = IntArray(4).also { a -> esm.forEach { a[dayPart(it.createdAt)]++ } }.toList(),
+        moodWeeks = (7 downTo 0).map { k ->
+            entries.filter { it.createdAt in (thisWeek - k * week) until (thisWeek - (k - 1) * week) }.flatMap { it.moods }.groupingBy { it }.eachCount()
+        },
     )
 }
 
@@ -298,6 +311,28 @@ fun Bars(values: List<Float>, labels: List<String>) {
                     val h = size.height * (v / max)
                     drawRoundRect(Color.White.copy(alpha = 0.14f), size = size, cornerRadius = CornerRadius(6f))
                     if (h > 0) drawRoundRect(Color(0xFFFFE7B8), topLeft = Offset(0f, size.height - h), size = Size(size.width, h), cornerRadius = CornerRadius(6f))
+                }
+                Text(labels.getOrElse(i) { "" }, style = SmallStyle.copy(fontSize = 10.sp))
+            }
+        }
+    }
+}
+
+/** One column per week: the moods noted that week, stacked in their colours. No scores, just the mix. */
+@Composable
+fun MoodTrend(weeks: List<Map<String, Int>>, labels: List<String>) {
+    val max = weeks.maxOf { it.values.sum() }.coerceAtLeast(1)
+    Row(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+        weeks.forEachIndexed { i, w ->
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Canvas(Modifier.fillMaxWidth().height(90.dp)) {
+                    drawRoundRect(Color.White.copy(alpha = 0.10f), size = size, cornerRadius = CornerRadius(6f))
+                    var y = size.height
+                    for ((mood, n) in w.entries.sortedBy { it.key }) {
+                        val h = size.height * n / max
+                        drawRect(MOOD_COLORS[mood] ?: Color.White, topLeft = Offset(0f, y - h), size = Size(size.width, h))
+                        y -= h
+                    }
                 }
                 Text(labels.getOrElse(i) { "" }, style = SmallStyle.copy(fontSize = 10.sp))
             }

@@ -4,8 +4,6 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -98,7 +96,6 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var word by remember { mutableStateOf("") }
     var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
     val planned = cfg.minutes * 60
-    val dim by animateFloatAsState(if (cfg.eyesClosed && !peek && !ended) 0.97f else 0f, tween(1600), label = "dim")
 
     fun finish() {
         if (ended) return
@@ -203,10 +200,18 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             }
         }
 
-        // eyes closed: the screen fades to near black; a touch brings the light back for a few seconds
-        if (dim > 0.01f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim))) {
-            AnimatedVisibility(dim > 0.9f && elapsed < 12f, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
-                Text("Zatvori oči.\nDah će te voditi.", style = HeadStyle.copy(color = Color(0x99FFFFFF), fontSize = 24.sp), textAlign = TextAlign.Center)
+        // eyes closed: the sky itself fades to black (see SkyScene); a touch brings the light back for a few seconds
+        AnimatedVisibility(host.dark && elapsed in 1.5f..12f, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
+            Text("Zatvori oči.\nDah će te voditi.", style = HeadStyle.copy(color = Color(0x99FFFFFF), fontSize = 24.sp), textAlign = TextAlign.Center)
+        }
+
+        // drawn above the eyes-closed darkness, so the question is there for the first breaths
+        val weekQuestion = remember { app.library.byId(app.settings.activeWeekKoan())?.question }
+        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type != "thoughts", enter = fadeIn(), exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.screenPadding()) {
+                Text("PITANJE SEDMICE", style = LabelStyle)
+                Text(weekQuestion, style = HeadStyle.copy(fontSize = 24.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic), textAlign = TextAlign.Center)
             }
         }
 

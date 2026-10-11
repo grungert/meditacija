@@ -174,13 +174,14 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         else -> "u istom duhu"
     }
 
-    suspend fun pick(words: String, moods: List<String>, afterSession: Boolean, exclude: Set<String> = emptySet()): Pick = withContext(Dispatchers.Default) {
+    suspend fun pick(words: String, moods: List<String>, afterSession: Boolean, exclude: Set<String> = emptySet(), koansOnly: Boolean = false): Pick = withContext(Dispatchers.Default) {
         lock.withLock {
             if (Lexicon.soundsLikeDistress(words)) return@withLock Pick(null, "", distress = true)
             val moodThemes = moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }
             val detected = (Lexicon.themes(words) + moodThemes).distinct()
             val recent = db.recentKoanIds(12).toSet() + exclude
-            val candidates = library.items.filter { it.id !in recent }.ifEmpty { library.items }
+            val pool = if (koansOnly) library.items.filter { it.isKoan } else library.items
+            val candidates = pool.filter { it.id !in recent }.ifEmpty { pool }
             if (candidates.isEmpty()) return@withLock Pick(null, "Biblioteka koana još nije učitana.")
 
             val e = embedderOrNull()

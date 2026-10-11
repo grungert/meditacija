@@ -12,6 +12,7 @@ uniform vec3 uSh, uMd, uLt, uRim;
 uniform vec3 uSunCol, uGrassTop, uGrassBot;
 uniform vec2 uSunPos, uMoonPos;   // in uv space
 uniform float uSunAmt, uMoonAmt, uStars;
+uniform float uDim;               // 0 normal, 1 fully dark (eyes closed)
 uniform vec3 uLight;              // normalised direction towards the sun or moon
 
 float hash(vec2 p) {
@@ -236,5 +237,6 @@ void main() {
 
   col *= 1.0 - (0.10 + 0.14 * uStars) * pow(length(uv - 0.5) * 1.2, 2.0);
   col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * 0.012;
+  col *= 1.0 - uDim;
   gl_FragColor = vec4(col, 1.0);
 }

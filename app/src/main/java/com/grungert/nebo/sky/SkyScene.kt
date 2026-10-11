@@ -99,6 +99,8 @@ fun SkyScene(
                 scenery.stepWalk(dWalk * 0.55f, engine.walkOn)
                 day.step(dt)
                 state.walkAmt += ((if (engine.walkOn) 1f else 0f) - state.walkAmt) * minOf(1f, dt * 1.5f)
+                // eyes closed: the whole scene fades to black inside GL and the overlay, never under an opaque layer
+                state.dim += ((if (isDark) 1f else 0f) - state.dim) * minOf(1f, dt * 1.8f)
                 val h = day.hour
                 state.pal = DayCycle.paletteAt(h)
                 state.light = DayCycle.lightDir(h)
@@ -106,7 +108,7 @@ fun SkyScene(
                 skyView.renderer.frame = SkyFrame(
                     state.time, engine.drift, engine.morph, engine.windPhase, engine.walk, engine.breath,
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h),
-                    DayCycle.sunAmount(h), DayCycle.moonAmount(h), state.light,
+                    DayCycle.sunAmount(h), DayCycle.moonAmount(h), state.light, state.dim,
                 )
                 lightCb(state.pal, DayCycle.sunAmount(h))
                 frameCb(dt)
@@ -115,20 +117,16 @@ fun SkyScene(
         }
     }
 
-    // with eyes closed the sky stops rendering entirely; only the breath keeps time
-    LaunchedEffect(dark) {
-        skyView.renderMode = if (dark) android.opengl.GLSurfaceView.RENDERMODE_WHEN_DIRTY else android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
-    }
-
     Box(modifier.fillMaxSize()) {
         AndroidView({ skyView }, Modifier.fillMaxSize())
         val tapMod = if (onTap != null) Modifier.pointerInput(Unit) { detectTapGestures { onTap(it) } } else Modifier
         Canvas(Modifier.fillMaxSize().then(tapMod)) {
-            if (tick == -1L || isDark) return@Canvas // reading tick redraws the overlay every frame
+            if (tick == -1L || state.dim > 0.98f) return@Canvas // reading tick redraws the overlay every frame
             scenery.resize(size.width, size.height)
             drawIntoCanvas { c ->
                 scenery.draw(c.nativeCanvas, engine, state.pal, state.light, state.time, state.dt,
                     SceneFlags(showCircle = showCircle, showLandmarks = true), state.walkAmt)
+                if (state.dim > 0.01f) c.nativeCanvas.drawColor(android.graphics.Color.argb((state.dim * 255).toInt(), 0, 0, 0))
             }
         }
     }
@@ -138,6 +136,7 @@ private class FrameState {
     var time = 0f
     var dt = 0f
     var walkAmt = 0f
+    var dim = 0f
     var pal: Palette = DayCycle.paletteAt(12f)
     var light = floatArrayOf(0f, 1f, 0.3f)
 }
