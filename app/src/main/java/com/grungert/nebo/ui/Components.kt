@@ -80,9 +80,10 @@ val BodyStyle = TextStyle(fontFamily = UiFont, fontSize = 16.sp, lineHeight = 24
 val SmallStyle = TextStyle(fontFamily = UiFont, fontSize = 13.sp, lineHeight = 19.sp, color = Ink.soft, shadow = shadow)
 val LabelStyle = TextStyle(fontFamily = UiFont, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.8.sp, color = Ink.soft, shadow = shadow)
 
-private val glassFill = Brush.verticalGradient(listOf(Color(0x5A1B305E), Color(0x8C0C1A38)))
-private val glassEdge = Brush.verticalGradient(listOf(Color(0x80FFFFFF), Color(0x1AFFFFFF)))
-private val pillFill = Brush.verticalGradient(listOf(Color(0x40FFFFFF), Color(0x1AFFFFFF)))
+private val glassFill = Brush.verticalGradient(listOf(Color(0x8C1B305E), Color(0xB30C1A38)))
+private val glassEdge = Brush.verticalGradient(listOf(Color(0x99FFFFFF), Color(0x33FFFFFF)))
+// controls sit on dark night-blue glass, so white text stays readable over a bright cloud or the sun itself
+private val pillFill = Brush.verticalGradient(listOf(Color(0x8C1E3466), Color(0xB3122347)))
 
 @Composable
 fun GlassButton(

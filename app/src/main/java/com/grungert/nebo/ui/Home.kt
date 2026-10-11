@@ -127,6 +127,10 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
 
+    // a soft dusk under the menu, so the controls read even over a bright cloud
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
+        0f to Color(0x33081830), 0.25f to Color.Transparent, 0.45f to Color.Transparent, 1f to Color(0xA6081830),
+    )))
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).screenPadding().padding(vertical = 20.dp),
     ) {
