@@ -15,6 +15,7 @@ class SkyFrame(
     val breath: Float, val motion: Float, val pal: Palette,
     val sun: FloatArray, val moon: FloatArray, val sunAmt: Float, val moonAmt: Float, val light: FloatArray,
     val dim: Float = 0f,
+    val cover: Float = 0f,
 )
 
 /** Renders the painted sky shader (the same GLSL as the browser prototype) at reduced resolution. */
@@ -55,7 +56,7 @@ class SkyRenderer(private val context: Context) : GLSurfaceView.Renderer {
         loc.clear()
         for (n in listOf("uRes", "uTime", "uDrift", "uMorph", "uWind", "uWalk", "uBreath", "uMotion", "uSkyTop", "uSkyMid",
             "uSkyHor", "uSh", "uMd", "uLt", "uRim", "uSunCol", "uGrassTop", "uGrassBot", "uSunPos", "uMoonPos",
-            "uSunAmt", "uMoonAmt", "uStars", "uLight", "uDim")) {
+            "uSunAmt", "uMoonAmt", "uStars", "uLight", "uDim", "uCover")) {
             loc[n] = GLES20.glGetUniformLocation(program, n)
         }
     }
@@ -83,7 +84,7 @@ class SkyRenderer(private val context: Context) : GLSurfaceView.Renderer {
         GLES20.glUniform2f(loc["uSunPos"]!!, f.sun[0], f.sun[1])
         GLES20.glUniform2f(loc["uMoonPos"]!!, f.moon[0], f.moon[1])
         u1("uSunAmt", f.sunAmt); u1("uMoonAmt", f.moonAmt); u1("uStars", f.pal.stars)
-        u3("uLight", f.light); u1("uDim", f.dim)
+        u3("uLight", f.light); u1("uDim", f.dim); u1("uCover", f.cover)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
     }
 

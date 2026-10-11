@@ -14,6 +14,9 @@ Android aplikacija za meditaciju i razumijevanje vlastitih uvida. Nebo s oblacim
 - **Zvuk prirode:** vjetar koji jača na izdah, ptice danju, cvrčci noću, sve sintetizovano u kodu.
 - **Zatvorene oči:** ekran se zatamni, dah vode vibracija koja raste i opada i tihi tonovi.
 - **Odgovor iz notifikacije:** „Napiši" (odgovor u samoj notifikaciji), „mirno", „nemirno".
+- **Koan sedmice:** jedan koan nosiš sedam dana; vraća se poslije sesija, njegovo pitanje otvara svaku sesiju, bilješke se skupljaju uz njega. Po želji pitanje dana ujutro.
+- **Godišnja doba i vrijeme:** po kalendaru ili ručno; proljeće s cvijećem i laticama, jesen sa zlatnom travom i lišćem, zima sa snijegom i golim drvetom; kiša (i njen zvuk), magla, snijeg.
+- **Rezervna kopija:** sve u jednom zip fajlu, vraćanje iz kopije, automatska kopija jednom sedmično u izabrani folder.
 - **Dnevnik, pregled i izvoz:** minute po sedmici, doba dana, teme koje se vraćaju, „prije → poslije". Izvoz je u običan tekst. Bez nizova i bodova.
 
 Fontovi: Cormorant Garamond i Nunito (SIL Open Font License, licence u `content/fonts/`).
@@ -27,7 +30,9 @@ git submodule update --init
 ./gradlew :app:assembleDebug
 ```
 
-APK se pojavi u `app/build/outputs/apk/debug/`. Whisper (whisper.cpp v1.9.4) se kompajlira iz `third_party/whisper.cpp`, uvijek kao Release.
+APK se pojavi u `app/build/outputs/apk/debug/`. Za manji APK (oko 39 MB): `./gradlew :app:assembleRelease`.
+
+Sve verzije potpisuje isti ključ (`~/.nebo/nebo-signing.jks`, podešavanja u `~/.gradle/gradle.properties`), pa svaka nova verzija prelazi preko stare i čuva zapise. Ključ čuvaj: bez njega se nova verzija ne može instalirati preko postojeće. Whisper (whisper.cpp v1.9.4) se kompajlira iz `third_party/whisper.cpp`, uvijek kao Release.
 
 Test tokenizera poredi Kotlin implementaciju s Hugging Face tokenizerom:
 

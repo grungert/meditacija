@@ -20,6 +20,14 @@ class Settings(context: Context) {
     var timeMode: String
         get() = p.getString("timeMode", "clock")!!
         set(v) = p.edit { putString("timeMode", v) }
+    /** "auto" follows the calendar, or a season name. */
+    var seasonMode: String
+        get() = p.getString("seasonMode", "auto")!!
+        set(v) = p.edit { putString("seasonMode", v) }
+    /** "auto" lets the day decide, or a weather name. */
+    var weatherMode: String
+        get() = p.getString("weatherMode", "auto")!!
+        set(v) = p.edit { putString("weatherMode", v) }
     var intervalBell: Boolean
         get() = p.getBoolean("intervalBell", false)
         set(v) = p.edit { putBoolean("intervalBell", v) }

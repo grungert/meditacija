@@ -12,6 +12,7 @@ uniform vec3 uSh, uMd, uLt, uRim;
 uniform vec3 uSunCol, uGrassTop, uGrassBot;
 uniform vec2 uSunPos, uMoonPos;   // in uv space
 uniform float uSunAmt, uMoonAmt, uStars;
+uniform float uCover;             // extra cloud cover for rain, snow and fog
 uniform float uDim;               // 0 normal, 1 fully dark (eyes closed)
 uniform vec3 uLight;              // normalised direction towards the sun or moon
 
@@ -197,11 +198,11 @@ void main() {
     col = mix(col, mix(uMd, uLt, 0.6), smoothstep(0.56, 0.74, ci) * band * 0.40);
   }
 
-  vec4 L1 = layer(pc + vec2(uDrift * 0.35, 0.0), 0.36, 0.14, 3.0, 1.0, 0.06, 0.030, 0.42, skyC);
+  vec4 L1 = layer(pc + vec2(uDrift * 0.35, 0.0), 0.36, 0.14, 3.0, 1.0, 0.06 + uCover, 0.030, 0.42, skyC);
   col = mix(col, L1.rgb, L1.a);
-  vec4 L2 = layer(pc + vec2(uDrift * 0.60, 0.0), 0.25, 0.28, 1.9, 2.0, 0.08, 0.018, 0.16, skyC);
+  vec4 L2 = layer(pc + vec2(uDrift * 0.60, 0.0), 0.25, 0.28, 1.9, 2.0, 0.08 + uCover, 0.018, 0.16, skyC);
   col = mix(col, L2.rgb, L2.a);
-  vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10, 0.012, 0.0, skyC);
+  vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10 + uCover, 0.012, 0.0, skyC);
   col = mix(col, L3.rgb, L3.a);
 
   // distant ridges, hazed into the sky; they scroll slowly while walking

@@ -18,6 +18,7 @@ class Ambience {
     @Volatile var swell = 0f       // 0..1, rises through each out-breath
     @Volatile var day = 1f         // birds
     @Volatile var night = 0f       // crickets
+    @Volatile var rain = 0f        // hiss of rain and single drops
     @Volatile private var running = false
     private var thread: Thread? = null
 
@@ -49,6 +50,7 @@ class Ambience {
         var lp1 = 0f; var lp2 = 0f
         var fade = 0f
         val a2 = 1f - exp(-2f * PI.toFloat() * 110f / sr)
+        var rlp = 0f; var drop = 0.0; var dropHz = 2000.0; var dropPhase = 0.0
         // birds
         var birdWait = 2.0; var notesLeft = 0; var noteT = 0.0; var noteDur = 0.1; var f0 = 3000.0; var f1 = 4000.0; var gap = 0.0; var phaseB = 0.0
         // crickets: two of them, slightly out of step
@@ -71,6 +73,13 @@ class Ambience {
                 lp2 += a2 * (lp1 - lp2)
                 var s = (lp1 - 0.7f * lp2) * (0.18f + 0.32f * wind * gust + 0.45f * swell)
 
+                // rain: high hiss and the odd heavier drop
+                if (rain > 0.02f) {
+                    rlp += 0.3f * (n - rlp)
+                    s += (n - rlp) * 0.09f * rain
+                    if (rnd.nextFloat() < 0.0009f * rain) { drop = 1.0; dropHz = 1400.0 + rnd.nextDouble() * 3200.0 }
+                    if (drop > 0.001) { dropPhase += 2 * PI * dropHz / sr; s += (0.10 * drop * sin(dropPhase)).toFloat(); drop *= 0.992 }
+                }
                 // birds by day: short rising or falling chirps in little phrases
                 if (day > 0.02f) {
                     if (notesLeft == 0) {

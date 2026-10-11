@@ -103,6 +103,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
         host.engine.walkOn = false
         host.onTap = null; host.onPhase = null; host.onFrame = null
         host.day.mode = s.timeMode
+        host.applyWeatherSettings(s.seasonMode, s.weatherMode)
     }
     var weekMinutes by remember { mutableIntStateOf(0) }
     var weekSessions by remember { mutableIntStateOf(0) }
@@ -213,6 +214,8 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     var eyes by remember { mutableStateOf(s.eyesClosed) }
     var ambient by remember { mutableStateOf(s.ambient) }
     var volume by remember { mutableStateOf(s.ambientVolume) }
+    var seasonMode by remember { mutableStateOf(s.seasonMode) }
+    var weatherMode by remember { mutableStateOf(s.weatherMode) }
     val paced = type == "breath" || type == "walk"
 
     LaunchedEffect(type, pattern) {
@@ -223,6 +226,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
         host.showCircle = paced
     }
     LaunchedEffect(timeMode) { host.day.mode = timeMode }
+    LaunchedEffect(seasonMode, weatherMode) { host.applyWeatherSettings(seasonMode, weatherMode) }
 
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
@@ -263,6 +267,16 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
                         Chip(label, timeMode == h, { timeMode = h })
                     }
                 }
+                Text("Godišnje doba", style = SmallStyle)
+                ChipRow {
+                    Chip("po kalendaru", seasonMode == "auto", { seasonMode = "auto" })
+                    for (sn in com.grungert.nebo.sky.Season.entries) Chip(sn.label, seasonMode == sn.name, { seasonMode = sn.name })
+                }
+                Text("Vrijeme", style = SmallStyle)
+                ChipRow {
+                    Chip("kako dođe", weatherMode == "auto", { weatherMode = "auto" })
+                    for (w in com.grungert.nebo.sky.Weather.entries) Chip(w.label, weatherMode == w.name, { weatherMode = w.name })
+                }
             }
             Panel {
                 SectionLabel("Bilješka glasom")
@@ -273,6 +287,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
                 s.sessionType = type; s.minutes = minutes; s.pattern = pattern; s.timeMode = timeMode
                 s.intervalBell = intervalBell; s.checkInBefore = before; s.checkInAfter = after
                 s.eyesClosed = eyes; s.ambient = ambient; s.ambientVolume = volume
+                s.seasonMode = seasonMode; s.weatherMode = weatherMode
                 val cfg = SessionConfig(type, minutes, pattern, intervalBell, before, after, eyes && paced, ambient)
                 go(if (before) Screen.CheckIn("before", config = cfg) else Screen.Session(cfg))
             }, Modifier.fillMaxWidth(), strong = true)

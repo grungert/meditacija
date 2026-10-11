@@ -54,6 +54,13 @@ sealed class Screen {
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
     var dark by mutableStateOf(false)
+    var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
+    var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
+
+    fun applyWeatherSettings(seasonMode: String, weatherMode: String) {
+        season = com.grungert.nebo.sky.Seasons.season(seasonMode)
+        weather = com.grungert.nebo.sky.Seasons.weather(weatherMode, season)
+    }
     val ambience = com.grungert.nebo.audio.Ambience()
 
     /** Keeps the meadow's sound in step with the sky: wind and breath, birds by day, crickets by night. */
@@ -65,8 +72,11 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
             Phase.IN -> 0.1f
             else -> 0f
         }
-        ambience.day = sunAmount * (1f - pal.stars)
-        ambience.night = pal.stars
+        // birds stay home in rain and winter; crickets sing in the warm half of the year
+        val w = weather; val s = season
+        ambience.day = sunAmount * (1f - pal.stars) * (if (w == com.grungert.nebo.sky.Weather.RAIN || w == com.grungert.nebo.sky.Weather.SNOW || s == com.grungert.nebo.sky.Season.WINTER) 0f else 1f)
+        ambience.night = pal.stars * when (s) { com.grungert.nebo.sky.Season.WINTER -> 0f; com.grungert.nebo.sky.Season.AUTUMN -> 0.45f; else -> 1f } * (if (w == com.grungert.nebo.sky.Weather.RAIN) 0f else 1f)
+        ambience.rain = if (w == com.grungert.nebo.sky.Weather.RAIN) 1f else 0f
     }
     var onTap: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
     var onPhase: ((Phase) -> Unit)? = null
@@ -101,6 +111,7 @@ class MainActivity : ComponentActivity() {
         val host = remember {
             val reduced = SysSettings.Global.getFloat(contentResolver, SysSettings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
             SkyHost(BreathEngine(patternById(s.pattern)).apply { paced = false; reducedMotion = reduced }, DayClock(s.timeMode))
+                .also { it.applyWeatherSettings(s.seasonMode, s.weatherMode) }
         }
         val scenery = rememberScenery()
         val go: (Screen) -> Unit = { screen = it }
@@ -123,6 +134,8 @@ class MainActivity : ComponentActivity() {
                 onFrame = { host.onFrame?.invoke(it) },
                 onLight = { pal, sun -> host.tuneAmbience(pal, sun) },
                 dark = host.dark,
+                season = host.season,
+                weather = host.weather,
             )
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
                 when (sc) {

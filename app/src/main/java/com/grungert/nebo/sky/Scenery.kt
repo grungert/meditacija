@@ -22,6 +22,8 @@ import kotlin.math.sin
 class SceneFlags(
     val showCircle: Boolean,
     val showLandmarks: Boolean,
+    val season: Season = Season.SUMMER,
+    val weather: Weather = Weather.CLEAR,
 )
 
 /**
@@ -48,7 +50,11 @@ class Scenery(private val u: Float) {
 
     private var blades = emptyList<Blade>()
     private var plumes = emptyList<Plume>()
-    private val leaves = List(6) { i -> Leaf(delay = i * 2.6f + rand() * 2f) }
+    private val leaves = List(12) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
+    private var season = Season.SUMMER
+    private var weather = Weather.CLEAR
+    private val drops = List(140) { floatArrayOf(rand(), rand(), 0.6f + rand() * 0.8f) }   // x, y (0..1), speed
+    private val flakes = List(110) { floatArrayOf(rand(), rand(), 0.5f + rand(), rand() * 6.28f) } // x, y, size, phase
     private val flies = List(24) { Fly(rand(), rand(), rand() * 6.28f, 0.4f + rand() * 0.8f, 0.6f + rand() * 0.8f) }
     private val motes = List(44) { Mote(rand() * 6.28f, (0.05f + rand() * 0.14f) * if (rand() < 0.7f) 1 else -1,
         rand() * 2 - 1, rand(), 0.5f + rand() * 1.1f, rand() * 6.28f) }
@@ -139,11 +145,18 @@ class Scenery(private val u: Float) {
         walk = e.walk
         windPhase = e.windPhase
         now = t
+        season = flags.season; weather = flags.weather
         drawLeaves(c, pal, dt, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
         drawMeadow(c, pal, t, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
-        drawFireflies(c, pal, t)
+        if (season != Season.WINTER && weather != Weather.RAIN) drawFireflies(c, pal, t)
+        when (weather) {
+            Weather.RAIN -> drawRain(c, dt, e.wind)
+            Weather.SNOW -> drawSnow(c, t, dt, e.wind)
+            Weather.FOG -> drawFog(c, pal, t)
+            Weather.CLEAR -> {}
+        }
         drawThoughts(c, pal, t, dt, e.wind)
         if (flags.showCircle) drawCircle(c, e, pal, t, dt)
     }
@@ -156,16 +169,21 @@ class Scenery(private val u: Float) {
         bladePaths.forEach { it.rewind() }
         val margin = 30 * u
         val span = W + 2 * margin
-        for (b in blades) {
+        val winter = season == Season.WINTER
+        val blossoms = if (season == Season.SPRING) ArrayList<FloatArray>() else null
+        for ((index, b) in blades.withIndex()) {
+            if (winter && index % 9 < 5) continue // most grass lies under the snow
             val bx = wrapX(b.x, 0.55f + 0.45f * b.frac, margin, span)
             val y0 = hillY(bx)
             val by = if (b.d == 0f) y0 + b.off else y0 + (H - y0) * b.frac
             val g = gustAt(crestX(bx))
             val ang = b.lean - amp * g * b.flex + sin(t * 2.3f + b.ph) * 0.05f * b.flex
-            val tx = bx + sin(ang) * b.h
-            val ty = by - cos(ang) * b.h
-            val cx = bx + sin(ang * 0.45f) * b.h * 0.55f
-            val cy = by - cos(ang * 0.45f) * b.h * 0.55f
+            val bh = if (winter) b.h * 0.5f else b.h
+            val tx = bx + sin(ang) * bh
+            val ty = by - cos(ang) * bh
+            val cx = bx + sin(ang * 0.45f) * bh * 0.55f
+            val cy = by - cos(ang * 0.45f) * bh * 0.55f
+            if (blossoms != null && index % 7 == 0 && b.d >= 0.28f) blossoms += floatArrayOf(tx, ty, b.d, (index / 7 % 3).toFloat())
             val p = bladePaths[min(buckets - 1, floor(b.d * buckets).toInt()) * 2 + if (b.lit) 1 else 0]
             p.moveTo(bx - b.w / 2, by)
             p.quadTo(cx - b.w * 0.25f, cy, tx, ty)
@@ -181,6 +199,11 @@ class Scenery(private val u: Float) {
             paint.color = argb(shade, 1f); c.drawPath(bladePaths[i * 2], paint)
             paint.color = argb(lit, 1f); c.drawPath(bladePaths[i * 2 + 1], paint)
         }
+        if (blossoms != null) for (bl in blossoms) {
+            paint.color = argb(mix(SPRING_COLS[bl[3].toInt()], pal.gBot, 0.6f * night), 0.95f)
+            c.drawCircle(bl[0], bl[1], (1.8f + 2.6f * bl[2]) * u, paint)
+        }
+        if (winter) return
         // silver-grass plumes
         val plumeCol = mix(mix(pal.sun, floatArrayOf(1f, 1f, 1f), 0.45f), pal.gBot, night * 0.6f)
         for (s in plumes) {
@@ -220,8 +243,10 @@ class Scenery(private val u: Float) {
     // -------- leaves and fireflies --------
     private fun drawLeaves(c: Canvas, pal: Palette, dt: Float, wind: Float, reduced: Boolean) {
         val amt = (1 - pal.stars) * if (reduced) 0f else 1f
-        if (amt < 0.02f) return
-        for (l in leaves) {
+        if (amt < 0.02f || season == Season.WINTER || weather == Weather.RAIN) return
+        val active = when (season) { Season.AUTUMN -> 12; Season.SPRING -> 9; else -> 5 }
+        for ((li, l) in leaves.withIndex()) {
+            if (li >= active) continue
             if (l.delay > 0) {
                 l.delay -= dt
                 if (l.delay <= 0) {
@@ -235,7 +260,11 @@ class Scenery(private val u: Float) {
             l.bob += dt * 1.6f
             l.y += sin(l.bob) * 18 * u * dt
             l.rot += l.vr * dt * (0.4f + 0.6f * wind)
-            val col = mix(mix(floatArrayOf(0.55f, 0.75f, 0.35f), floatArrayOf(0.95f, 0.78f, 0.35f), l.hue * 0.7f), pal.sun, 0.25f)
+            val col = mix(when (season) {
+                Season.SPRING -> mix(floatArrayOf(1f, 0.86f, 0.90f), floatArrayOf(1f, 0.97f, 0.97f), l.hue)        // blossom petals
+                Season.AUTUMN -> mix(floatArrayOf(0.92f, 0.42f, 0.16f), floatArrayOf(0.98f, 0.78f, 0.25f), l.hue)  // red to gold
+                else -> mix(floatArrayOf(0.55f, 0.75f, 0.35f), floatArrayOf(0.95f, 0.78f, 0.35f), l.hue * 0.7f)
+            }, pal.sun, 0.2f)
             c.save()
             c.translate(l.x, l.y); c.rotate(Math.toDegrees(l.rot.toDouble()).toFloat())
             c.scale(1f, 0.35f + 0.65f * abs(sin(l.rot * 0.7f + l.bob)))
@@ -266,6 +295,50 @@ class Scenery(private val u: Float) {
         }
         paint.blendMode = null
         paint.alpha = 255
+    }
+
+    // -------- weather --------
+    private fun drawRain(c: Canvas, dt: Float, wind: Float) {
+        stroke.color = android.graphics.Color.argb(110, 210, 222, 240)
+        stroke.strokeWidth = 1.1f * u
+        val slant = -0.18f - 0.12f * wind
+        for (d in drops) {
+            d[1] += dt * 1.4f * d[2]
+            d[0] += dt * slant * 1.4f * d[2] * H / W
+            if (d[1] > 1.05f) { d[1] = -0.05f; d[0] = rand() * 1.2f }
+            if (d[0] < -0.05f) d[0] += 1.1f
+            val x = d[0] * W; val y = d[1] * H; val len = (14 + 10 * d[2]) * u
+            c.drawLine(x, y, x - slant * len, y - len, stroke)
+        }
+    }
+
+    private fun drawSnow(c: Canvas, t: Float, dt: Float, wind: Float) {
+        paint.color = android.graphics.Color.argb(225, 255, 255, 255)
+        for (f in flakes) {
+            f[1] += dt * 0.06f * (0.6f + f[2] * 0.6f)
+            f[0] += dt * (sin(t * 0.8f + f[3]) * 0.02f - 0.015f * wind)
+            if (f[1] > 1.03f) { f[1] = -0.03f; f[0] = rand() }
+            if (f[0] < -0.03f) f[0] += 1.06f
+            c.drawCircle(f[0] * W, f[1] * H, (1.2f + 2.2f * f[2]) * u, paint)
+        }
+    }
+
+    /** Slow banks of mist drifting low over the meadow. */
+    private fun drawFog(c: Canvas, pal: Palette, t: Float) {
+        val fogCol = mix(floatArrayOf(0.9f, 0.92f, 0.94f), pal.skyHor, 0.3f)
+        val dim = 1f - 0.6f * pal.stars
+        // a thin veil over everything, thickening towards the ground
+        paint.shader = android.graphics.LinearGradient(0f, H * 0.3f, 0f, H, intArrayOf(argb(fogCol, 0f), argb(fogCol, 0.32f * dim)), null, Shader.TileMode.CLAMP)
+        c.drawRect(0f, H * 0.3f, W, H, paint)
+        // and drifting banks along the hills
+        for (k in 0 until 4) {
+            val y = H * (0.58f + 0.09f * k) + sin(t * 0.07f + k * 2f) * 18 * u
+            val h = H * (0.14f + 0.04f * k)
+            paint.shader = android.graphics.LinearGradient(0f, y - h / 2, 0f, y + h / 2,
+                intArrayOf(argb(fogCol, 0f), argb(fogCol, (0.55f - 0.08f * k) * dim), argb(fogCol, 0f)), null, Shader.TileMode.CLAMP)
+            c.drawRect(0f, y - h / 2, W, y + h / 2, paint)
+        }
+        paint.shader = null
     }
 
     // -------- thought clouds --------
@@ -371,7 +444,7 @@ class Scenery(private val u: Float) {
             val y0 = hillY(x)
             val y = if (l.d == 0f) y0 + 3 * u else y0 + (H - y0) * l.d
             when (l.type) {
-                "tree" -> drawTree(c, x, y, H * (0.20f + 0.06f * l.seed), pal, gustAt(crestX(x)), light)
+                "tree" -> drawTree(c, x, y, H * (0.21f + 0.06f * l.seed), pal, gustAt(crestX(x)), light, l.seed)
                 "poles" -> drawPoles(c, x, pal)
                 "shrine" -> drawShrine(c, x, y, H * 0.05f, pal)
                 "stone" -> drawStone(c, x, y, H * 0.045f, pal, light)
@@ -381,48 +454,105 @@ class Scenery(private val u: Float) {
         if (layer >= 0) c.restoreToCount(layer)
     }
 
-    private fun drawTree(c: Canvas, x: Float, y: Float, sc: Float, pal: Palette, g: Float, light: FloatArray) {
+    /**
+     * A lone tree on the crest, painted like the clouds: clumps of foliage in three tones, shaded towards the light,
+     * with a soft shadow at its foot. Spring adds blossom, autumn turns it red and gold, winter leaves bare snowy branches.
+     */
+    private fun drawTree(c: Canvas, x: Float, y: Float, sc: Float, pal: Palette, g: Float, light: FloatArray, seed: Float) {
         val night = pal.stars
         fun fog(col: FloatArray) = mix(col, pal.skyHor, 0.18f * (1 - night))
-        val trunk = fog(mix(floatArrayOf(0.32f, 0.24f, 0.20f), pal.gBot, 0.45f + 0.35f * night))
+        val r = Mulberry((seed * 10_000).toInt() + 5)
+        val trunk = fog(mix(floatArrayOf(0.30f, 0.22f, 0.19f), pal.gBot, 0.40f + 0.35f * night))
+        val sway = (g - 0.3f) * sc * 0.015f
+
+        // shadow on the ground
+        paint.color = argb(scale(pal.gBot, 0.6f), 0.28f)
+        c.drawOval(x - sc * 0.32f, y - sc * 0.025f, x + sc * 0.32f, y + sc * 0.03f, paint)
+
+        // trunk, slightly leaning, and the main limbs
         paint.color = argb(trunk, 1f)
         tmp.rewind()
-        tmp.moveTo(x - sc * 0.04f, y)
-        tmp.quadTo(x - sc * 0.015f, y - sc * 0.3f, x - sc * 0.012f, y - sc * 0.6f)
-        tmp.lineTo(x + sc * 0.012f, y - sc * 0.6f)
-        tmp.quadTo(x + sc * 0.015f, y - sc * 0.3f, x + sc * 0.04f, y)
+        tmp.moveTo(x - sc * 0.045f, y)
+        tmp.quadTo(x - sc * 0.02f, y - sc * 0.28f, x - sc * 0.014f + sway, y - sc * 0.55f)
+        tmp.lineTo(x + sc * 0.014f + sway, y - sc * 0.55f)
+        tmp.quadTo(x + sc * 0.024f, y - sc * 0.28f, x + sc * 0.05f, y)
         tmp.close()
         c.drawPath(tmp, paint)
-        stroke.color = argb(trunk, 1f); stroke.strokeWidth = sc * 0.014f
-        tmp.rewind()
-        tmp.moveTo(x, y - sc * 0.38f); tmp.quadTo(x - sc * 0.08f, y - sc * 0.48f, x - sc * 0.16f, y - sc * 0.56f)
-        tmp.moveTo(x, y - sc * 0.45f); tmp.quadTo(x + sc * 0.09f, y - sc * 0.52f, x + sc * 0.17f, y - sc * 0.58f)
-        c.drawPath(tmp, stroke)
+        stroke.color = argb(trunk, 1f)
+        val limbs = listOf(floatArrayOf(-0.20f, -0.66f, 0.016f), floatArrayOf(0.21f, -0.69f, 0.015f), floatArrayOf(-0.05f, -0.86f, 0.013f),
+            floatArrayOf(0.10f, -0.84f, 0.012f), floatArrayOf(-0.30f, -0.58f, 0.010f), floatArrayOf(0.31f, -0.60f, 0.010f))
+        for (l in limbs) {
+            stroke.strokeWidth = sc * l[2]
+            tmp.rewind(); tmp.moveTo(x + sway * 0.5f, y - sc * 0.48f)
+            tmp.quadTo(x + l[0] * sc * 0.4f, y + l[1] * sc * 0.8f, x + l[0] * sc + sway * -l[1], y + l[1] * sc)
+            c.drawPath(tmp, stroke)
+        }
 
-        val sway = (g - 0.3f) * sc * 0.015f
+        if (season == Season.WINTER) {
+            // bare twigs, and snow along the tops of the limbs
+            stroke.strokeWidth = sc * 0.005f
+            for (l in limbs) for (k in 0 until 3) {
+                val bx = x + l[0] * sc + sway * -l[1]
+                val by = y + l[1] * sc
+                val a = -1.6f + (r() - 0.5f) * 1.8f
+                c.drawLine(bx, by, bx + cos(a) * sc * 0.09f, by + sin(a) * sc * 0.09f, stroke)
+            }
+            stroke.color = android.graphics.Color.argb(230, 245, 248, 255)
+            stroke.strokeWidth = sc * 0.008f
+            for (l in limbs) {
+                tmp.rewind(); tmp.moveTo(x + l[0] * sc * 0.45f, y + l[1] * sc * 0.82f - sc * 0.006f)
+                tmp.quadTo(x + l[0] * sc * 0.75f, y + l[1] * sc * 0.93f - sc * 0.008f, x + l[0] * sc + sway * -l[1], y + l[1] * sc - sc * 0.008f)
+                c.drawPath(tmp, stroke)
+            }
+            return
+        }
+
+        // foliage: clumps on a rounded crown, each with a scalloped upper rim
+        val clumps = ArrayList<FloatArray>()
+        for (i in 0 until 11) {
+            val a = (i / 11f) * 6.283f + r() * 0.4f
+            val rr = 0.22f + r() * 0.12f
+            clumps += floatArrayOf(cos(a) * rr * 1.25f, -0.76f + sin(a) * rr * 0.85f, 0.10f + r() * 0.07f)
+        }
+        clumps += floatArrayOf(0f, -0.74f, 0.2f); clumps += floatArrayOf(-0.1f, -0.92f, 0.13f); clumps += floatArrayOf(0.12f, -0.93f, 0.12f)
         val ln = hypot(light[0], light[1]).coerceAtLeast(1e-4f)
         val ox = light[0] / ln
         val oy = -light[1] / ln
-        val dark = fog(scale(mix(pal.gBot, pal.gTop, 0.15f), 0.85f))
-        val mid = fog(mix(pal.gBot, pal.gTop, 0.55f))
-        val lit = fog(scale(mix(pal.gTop, pal.sun, 0.22f * (1 - night)), 1.05f))
-        fun blobs(rs: Float, off: Float, upperOnly: Boolean): Path {
+        val tones = when (season) {
+            Season.AUTUMN -> listOf(floatArrayOf(0.52f, 0.22f, 0.12f), floatArrayOf(0.84f, 0.44f, 0.16f), floatArrayOf(0.99f, 0.74f, 0.32f))
+            else -> listOf(scale(mix(pal.gBot, pal.gTop, 0.15f), 0.85f), mix(pal.gBot, pal.gTop, 0.55f), scale(mix(pal.gTop, pal.sun, 0.22f * (1 - night)), 1.05f))
+        }
+        fun tone(cl: FloatArray) = fog(if (season == Season.AUTUMN) mix(cl, pal.gBot, 0.55f * night) else cl)
+        fun crown(rs: Float, off: Float, upperOnly: Boolean): Path {
             val p = Path()
-            for (b in TREE_BLOBS) {
-                if (upperOnly && b[1] > -0.6f) continue
+            for (b in clumps) {
+                if (upperOnly && b[1] > -0.66f) continue
                 val bx = x + b[0] * sc + sway * -b[1] + ox * b[2] * sc * off
                 val by = y + b[1] * sc + oy * b[2] * sc * off
                 p.addCircle(bx, by, b[2] * sc * rs, Path.Direction.CW)
+                for (k in 0 until 3) {
+                    val a = -2.4f + k * 0.8f
+                    p.addCircle(bx + cos(a) * b[2] * sc * 0.75f * rs, by + sin(a) * b[2] * sc * 0.75f * rs, b[2] * sc * 0.45f * rs, Path.Direction.CW)
+                }
             }
             return p
         }
-        // shadow silhouette first; lit clumps shifted towards the light and clipped to it
-        val silhouette = blobs(1f, 0f, false)
-        paint.color = argb(dark, 1f); c.drawPath(silhouette, paint)
+        val silhouette = crown(1f, 0f, false)
+        paint.color = argb(tone(tones[0]), 1f); c.drawPath(silhouette, paint)
         c.save()
         c.clipPath(silhouette)
-        paint.color = argb(mid, 1f); c.drawPath(blobs(0.92f, 0.38f, false), paint)
-        paint.color = argb(lit, 1f); c.drawPath(blobs(0.62f, 0.62f, true), paint)
+        paint.color = argb(tone(tones[1]), 1f); c.drawPath(crown(0.9f, 0.4f, false), paint)
+        paint.color = argb(tone(tones[2]), 1f); c.drawPath(crown(0.58f, 0.66f, true), paint)
+        if (season == Season.SPRING) {
+            // blossom scattered through the crown
+            for (k in 0 until 46) {
+                val b = clumps[k % clumps.size]
+                val bx = x + (b[0] + (r() - 0.5f) * b[2] * 2f) * sc
+                val by = y + (b[1] + (r() - 0.5f) * b[2] * 2f) * sc
+                paint.color = argb(mix(SPRING_COLS[k % 3], pal.gBot, 0.5f * night), 0.95f)
+                c.drawCircle(bx, by, sc * (0.010f + 0.008f * r()), paint)
+            }
+        }
         c.restore()
     }
 
@@ -523,17 +653,8 @@ class Scenery(private val u: Float) {
     companion object {
         private val LM_ORDER = listOf("tree", "poles", "flowers", "shrine", "tree", "stone", "flowers", "poles")
         private val LM_DEPTH = mapOf("tree" to 0f, "poles" to 0f, "stone" to 0.08f, "shrine" to 0.12f, "flowers" to 0.55f)
+        private val SPRING_COLS = listOf(floatArrayOf(1f, 1f, 0.97f), floatArrayOf(1f, 0.84f, 0.90f), floatArrayOf(1f, 0.93f, 0.55f))
         private val FLOWER_COLS = listOf(floatArrayOf(1f, 1f, 0.96f), floatArrayOf(1f, 0.88f, 0.45f), floatArrayOf(1f, 0.78f, 0.85f))
-        private val TREE_BLOBS = listOf(
-            floatArrayOf(-0.18f, -0.62f, 0.13f), floatArrayOf(0f, -0.70f, 0.16f), floatArrayOf(0.18f, -0.63f, 0.13f),
-            floatArrayOf(-0.09f, -0.81f, 0.13f), floatArrayOf(0.10f, -0.83f, 0.13f), floatArrayOf(-0.27f, -0.55f, 0.09f),
-            floatArrayOf(0.27f, -0.56f, 0.09f), floatArrayOf(0f, -0.92f, 0.10f), floatArrayOf(-0.05f, -0.55f, 0.12f),
-            floatArrayOf(0.12f, -0.54f, 0.11f), floatArrayOf(-0.20f, -0.74f, 0.10f), floatArrayOf(0.22f, -0.75f, 0.10f),
-            floatArrayOf(-0.33f, -0.62f, 0.065f), floatArrayOf(0.34f, -0.64f, 0.06f), floatArrayOf(-0.29f, -0.71f, 0.07f),
-            floatArrayOf(0.30f, -0.72f, 0.065f), floatArrayOf(-0.14f, -0.93f, 0.075f), floatArrayOf(0.15f, -0.94f, 0.07f),
-            floatArrayOf(-0.22f, -0.49f, 0.07f), floatArrayOf(0.21f, -0.48f, 0.07f), floatArrayOf(0.04f, -1.0f, 0.06f),
-            floatArrayOf(-0.36f, -0.54f, 0.05f), floatArrayOf(0.37f, -0.55f, 0.05f),
-        )
     }
 }
 
