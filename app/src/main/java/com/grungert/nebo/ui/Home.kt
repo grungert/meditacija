@@ -144,7 +144,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             Spacer(Modifier.height(4.dp))
             Text(listOfNotNull(
                 if (weekMinutes > 0) "$weekMinutes min u tišini ove sedmice" else null,
-                if (weekNotes > 0) "$weekNotes ${if (weekNotes == 1) "zapis" else "zapisa"}" else null,
+                if (weekNotes > 0) "$weekNotes ${plural(weekNotes, "zapis", "zapisa", "zapisa")}" else null,
             ).joinToString(" · "), style = SmallStyle.copy(fontSize = 15.sp))
         }
 

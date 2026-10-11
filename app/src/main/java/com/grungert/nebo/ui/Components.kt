@@ -216,3 +216,10 @@ val MOOD_COLORS = mapOf(
     "ljuto" to Color(0xFFE07A62), "zabrinuto" to Color(0xFFC59ADB), "zbunjeno" to Color(0xFFB8B8B8), "zahvalno" to Color(0xFFFFD98A),
     "radosno" to Color(0xFFFFC2A8), "radoznalo" to Color(0xFFA8E0A0),
 )
+
+/** Our plural: 1, 21, 31… take the first form; 2–4, 22–24… the second; everything else the third. */
+fun plural(n: Int, one: String, few: String, many: String): String = when {
+    n % 10 == 1 && n % 100 != 11 -> one
+    n % 10 in 2..4 && n % 100 !in 12..14 -> few
+    else -> many
+}

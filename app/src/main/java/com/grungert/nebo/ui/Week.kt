@@ -172,7 +172,7 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
 
             Panel {
                 SectionLabel("U tišini")
-                Text(if (d.sessions == 0) "Ove sedmice nije bilo sesija." else "${d.minutes} min · ${d.sessions} ${if (d.sessions == 1) "sesija" else "sesija"}", style = HeadStyle.copy(fontSize = 24.sp))
+                Text(if (d.sessions == 0) "Ove sedmice nije bilo sesija." else "${d.minutes} min · ${d.sessions} ${plural(d.sessions, "sesija", "sesije", "sesija")}", style = HeadStyle.copy(fontSize = 24.sp))
                 if (d.types.isNotEmpty()) Text(d.types.joinToString(" · ") { "${TYPE_LABEL[it.first] ?: it.first} ${it.second}" }, style = SmallStyle)
             }
 

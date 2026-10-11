@@ -208,7 +208,7 @@ fun StatsScreen(go: (Screen) -> Unit) {
             val d = data ?: return@Column
             Panel {
                 SectionLabel("Ova sedmica")
-                Text("${d.weekMinutes} min · ${d.weekSessions} ${if (d.weekSessions == 1) "sesija" else "sesija"}", style = HeadStyle)
+                Text("${d.weekMinutes} min · ${d.weekSessions} ${plural(d.weekSessions, "sesija", "sesije", "sesija")}", style = HeadStyle)
             }
             Panel {
                 SectionLabel("Minute po sedmici (zadnjih 8)")
