@@ -36,6 +36,7 @@ class NeboApp : Application() {
             Esm.refresh(this@NeboApp)
             transcriber.drain()
             recommender.warmUp()
+            com.grungert.nebo.data.Backup.autoIfDue(this@NeboApp)
         }
     }
 }

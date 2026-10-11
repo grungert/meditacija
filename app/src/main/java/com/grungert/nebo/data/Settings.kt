@@ -67,6 +67,15 @@ class Settings(context: Context) {
         get() = p.getInt("esmSilenced", 0)
         set(v) = p.edit { putInt("esmSilenced", v) }
 
+    // backups
+    /** A folder (document tree) chosen for the weekly automatic copy, or null. */
+    var backupTree: String?
+        get() = p.getString("backupTree", null)
+        set(v) = p.edit { putString("backupTree", v) }
+    var lastBackup: Long
+        get() = p.getLong("lastBackup", 0)
+        set(v) = p.edit { putLong("lastBackup", v) }
+
     // models
     var whisperModel: String
         get() = p.getString("whisperModel", "small")!!

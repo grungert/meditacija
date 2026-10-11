@@ -12,8 +12,8 @@ android {
         applicationId = "com.grungert.nebo"
         minSdk = 33
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
@@ -25,10 +25,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // One stable key signs every build, so each new version installs over the last and keeps the notes.
+    // It lives outside the repository (~/.nebo, settings in ~/.gradle/gradle.properties).
+    signingConfigs {
+        create("nebo") {
+            val p = { name: String -> (project.findProperty(name) as String?) }
+            storeFile = file(p("NEBO_STORE_FILE") ?: "${System.getProperty("user.home")}/.nebo/nebo-signing.jks")
+            storePassword = p("NEBO_STORE_PASSWORD") ?: "android"
+            keyAlias = p("NEBO_KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = p("NEBO_KEY_PASSWORD") ?: "android"
+        }
+    }
+
     buildTypes {
+        debug { signingConfig = signingConfigs.getByName("nebo") }
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("nebo")
         }
     }
 

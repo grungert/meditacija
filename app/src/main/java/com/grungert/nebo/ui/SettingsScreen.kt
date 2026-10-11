@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.grungert.nebo.Screen
 import com.grungert.nebo.app
@@ -78,6 +79,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ScreenHeader("Postavke", { go(Screen.Home) })
+
+            BackupPanel()
 
             Panel {
                 SectionLabel("Zapažanja tokom dana")
@@ -170,6 +173,82 @@ private fun ModelRow(choice: ModelChoice, refresh: Int, selected: Boolean?, onSe
         when {
             ready -> GlassButton("Obriši", { app.models.delete(choice); ready = false })
             progress == null -> GlassButton("Preuzmi", { app.models.download(choice); progress = 0f })
+        }
+    }
+}
+
+/** Saving everything to one file, restoring it, and a weekly automatic copy into a chosen folder. */
+@Composable
+private fun BackupPanel() {
+    val context = LocalContext.current
+    val app = context.app
+    val s = app.settings
+    var status by remember { mutableStateOf<String?>(null) }
+    var pending by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pendingSummary by remember { mutableStateOf<com.grungert.nebo.data.Backup.Summary?>(null) }
+    var folder by remember { mutableStateOf(s.backupTree) }
+    var last by remember { mutableStateOf(s.lastBackup) }
+    val df = java.text.SimpleDateFormat("d. M. yyyy. HH:mm", java.util.Locale.ROOT)
+
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        status = "Pravim kopiju…"
+        app.scope.launch {
+            status = runCatching {
+                val sum = context.contentResolver.openOutputStream(uri)!!.use { com.grungert.nebo.data.Backup.write(context, it) }
+                s.lastBackup = System.currentTimeMillis(); last = s.lastBackup
+                "Sačuvano: ${sum.entries} zapisa, ${sum.sessions} sesija, ${sum.recordings} snimaka."
+            }.getOrElse { "Kopija nije uspjela: ${it.message}" }
+        }
+    }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        app.scope.launch {
+            val sum = runCatching { context.contentResolver.openInputStream(uri)!!.use { com.grungert.nebo.data.Backup.inspect(it) } }.getOrNull()
+            if (sum == null) status = "Ovo nije Nebo kopija." else { pending = uri; pendingSummary = sum }
+        }
+    }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        context.contentResolver.takePersistableUriPermission(uri,
+            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        s.backupTree = uri.toString(); folder = s.backupTree
+        status = "Pravim prvu kopiju u izabrani folder…"
+        app.scope.launch {
+            status = if (com.grungert.nebo.data.Backup.autoIfDue(context, force = true)) "Kopija je u folderu. Sljedeća za sedam dana." else "U taj folder ne mogu da pišem; izaberi drugi."
+            last = s.lastBackup
+        }
+    }
+
+    Panel {
+        SectionLabel("Rezervna kopija")
+        Text("Bilješke, snimci i podešavanja postoje samo na ovom telefonu. Sačuvaj kopiju na Google Drive ili računar, " +
+            "da ih ne izgubiš ako se telefon izgubi ili pokvari.", style = SmallStyle)
+        Text(if (last > 0) "Zadnja kopija: " + df.format(java.util.Date(last)) else "Kopija još nije pravljena.",
+            style = SmallStyle.copy(color = if (last > 0) Ink.accent else Ink.soft))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GlassButton("Sačuvaj kopiju", { save.launch(com.grungert.nebo.data.Backup.fileName()) }, strong = true)
+            GlassButton("Vrati iz kopije", { open.launch(arrayOf("application/zip", "application/octet-stream")) })
+        }
+        SwitchRow("Automatski jednom sedmično", folder != null, { on ->
+            if (on) pickFolder.launch(null) else { s.backupTree = null; folder = null }
+        }, sub = if (folder != null) "U folder koji si izabrao; čuvaju se zadnje četiri kopije." else "Izaberi folder na telefonu, npr. Documents/Nebo.")
+        status?.let { Text(it, style = SmallStyle.copy(color = Ink.text)) }
+        val p = pending; val ps = pendingSummary
+        if (p != null && ps != null) PaperCard {
+            Text("Kopija od " + df.format(java.util.Date(ps.created)), style = PaperText.copy(fontSize = 20.sp))
+            Text("${ps.entries} zapisa, ${ps.sessions} sesija, ${ps.recordings} snimaka.", style = PaperSmall)
+            Text("Vraćanje zamjenjuje sve sadašnje zapise na ovom telefonu. Aplikacija će se zatim ponovo pokrenuti.", style = PaperSmall.copy(color = Ink.seal))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GlassButton("Vrati", {
+                    status = "Vraćam…"
+                    app.scope.launch {
+                        runCatching { context.contentResolver.openInputStream(p)!!.use { com.grungert.nebo.data.Backup.restore(context, it) } }
+                            .onFailure { status = "Vraćanje nije uspjelo: ${it.message}" }
+                    }
+                })
+                GlassButton("Odustani", { pending = null; pendingSummary = null })
+            }
         }
     }
 }
