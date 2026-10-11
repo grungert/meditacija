@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 
 object WhisperNative {
@@ -31,6 +32,25 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     private val _done = MutableStateFlow(0L)
     /** Bumps with the id of each entry that just got its transcript. */
     val done: StateFlow<Long> = _done
+
+    /** The model id that would transcribe right now, or null when no Whisper model is on the phone. */
+    fun readyModel(): String? = models.readyWhisper()?.id
+
+    /** Transcribes one recording straight away, for showing the text while the person is still on the screen. */
+    suspend fun transcribeNow(file: File): String? = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val choice = models.readyWhisper() ?: return@withLock null
+            val pcm = Recorder.readWav(file)
+            if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) return@withLock ""
+            val ptr = WhisperNative.initContext(models.file(choice.files[0].name).absolutePath)
+            if (ptr == 0L) { Log.e(TAG, "could not load ${choice.id}"); return@withLock null }
+            try {
+                clean(String(WhisperNative.transcribe(ptr, pcm, settings.whisperLang, PROMPT), Charsets.UTF_8))
+            } finally {
+                WhisperNative.freeContext(ptr)
+            }
+        }
+    }
 
     fun drain() {
         scope.launch {

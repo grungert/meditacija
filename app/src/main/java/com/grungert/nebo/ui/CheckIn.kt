@@ -83,6 +83,10 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     val moods = remember { mutableStateListOf<String>() }
     var askedMic by remember { mutableStateOf(false) }
     var silent by remember { mutableStateOf(false) }
+    var transcribing by remember { mutableStateOf(false) }
+    var heard by remember { mutableStateOf<String?>(null) }      // what Whisper heard in the current recording
+    var fieldFromVoice by remember { mutableStateOf(false) }     // the text field holds that transcript, maybe corrected
+    var model by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false }
 
@@ -100,7 +104,22 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             val dur = recorder.record(f, MAX_SECONDS) { level = it }
             recording = false
             silent = recorder.peak < Recorder.SILENCE
-            if (dur > 0.6f && !silent) { audio?.delete(); audio = f } else f.delete()
+            if (dur > 0.6f && !silent) {
+                audio?.delete(); audio = f
+                if (fieldFromVoice) { text = ""; fieldFromVoice = false }
+                heard = null
+                model = app.transcriber.readyModel()
+                if (model != null) {
+                    // turn the note into text right away, so it can be read and corrected before saving
+                    transcribing = true
+                    val t = app.transcriber.transcribeNow(f)
+                    transcribing = false
+                    if (audio == f && t != null) {
+                        heard = t
+                        if (text.isBlank() && t.isNotBlank()) { text = t; fieldFromVoice = true }
+                    }
+                }
+            } else f.delete()
         }
         scope.launch { while (recorder.isRecording || recording) { delay(100); seconds += 0.1f } }
     }
@@ -123,8 +142,13 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         player.stop()
         if (recording) recorder.stop()
         scope.launch {
+            val typed = text.trim().ifBlank { null }
+            // when the field holds the transcript, the corrected version becomes the transcript;
+            // without one yet, the recording is transcribed in the background after saving
+            val transcript = if (fieldFromVoice) typed ?: "" else heard
             val entry = Entry(createdAt = System.currentTimeMillis(), kind = sc.kind, sessionId = sc.sessionId, promptId = sc.promptId,
-                audioPath = audio?.absolutePath, text = text.trim().ifBlank { null }, moods = moods.toList())
+                audioPath = audio?.absolutePath, text = if (fieldFromVoice) null else typed, moods = moods.toList(),
+                transcript = if (audio != null) transcript else null, transcriptModel = if (transcript != null) model else null)
             val id = withContext(Dispatchers.IO) {
                 val id = app.db.insertEntry(entry)
                 sc.promptId?.let { app.db.markPromptAnswered(it, id) }
@@ -179,20 +203,25 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 when {
                     recording -> "Snimam… %d s".format(seconds.toInt())
                     silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
-                    audio != null -> "Snimljeno. Tekst stiže uskoro."
+                    transcribing -> "Pretvaram u tekst…"
+                    audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
+                    audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti prije čuvanja."
+                    audio != null -> "Snimljeno."
                     askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
                     else -> "Najviše $MAX_SECONDS sekundi"
                 }, style = SmallStyle,
             )
             if (audio != null && !recording) GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} })
             if (audio != null && app.models.readyWhisper() == null) {
-                Text("Whisper model još nije preuzet, pa snimak čeka. Preuzmi ga u Postavkama.", style = SmallStyle, textAlign = TextAlign.Center)
+                Text("Za pretvaranje glasa u tekst preuzmi Whisper model u Postavkama. Snimak se čuva i pretvoriće se kad model stigne.",
+                    style = SmallStyle, textAlign = TextAlign.Center)
+                GlassButton("Otvori Postavke", { player.stop(); go(Screen.Settings) })
             }
 
             Panel {
                 SectionLabel("Kako je u tebi (po želji)")
                 ChipRow { for ((m, _) in MOODS) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }) }
-                SectionLabel("Ili napiši")
+                SectionLabel(if (fieldFromVoice) "Tvoje riječi (možeš ispraviti)" else "Ili napiši")
                 BasicTextField(
                     text, { text = it },
                     textStyle = BodyStyle,
@@ -205,7 +234,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     player.stop(); recorder.stop(); audio?.delete()
                     next(null)
                 })
-                GlassButton("Sačuvaj", { save() }, strong = true)
+                GlassButton("Sačuvaj", { save() }, strong = true, enabled = !recording)
             }
             Spacer(Modifier.height(24.dp))
         }
