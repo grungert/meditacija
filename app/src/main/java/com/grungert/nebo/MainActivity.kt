@@ -45,11 +45,28 @@ sealed class Screen {
     data object Journal : Screen()
     data object Stats : Screen()
     data object Settings : Screen()
+    data class Week(val entryId: Long?) : Screen()
+    data class Similar(val entryId: Long) : Screen()
 }
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
+    var dark by mutableStateOf(false)
+    val ambience = com.grungert.nebo.audio.Ambience()
+
+    /** Keeps the meadow's sound in step with the sky: wind and breath, birds by day, crickets by night. */
+    fun tuneAmbience(pal: com.grungert.nebo.sky.Palette, sunAmount: Float) {
+        val e = engine
+        ambience.wind = e.wind
+        ambience.swell = if (!e.paced) 0.25f else when (e.phase) {
+            Phase.OUT -> kotlin.math.sin(Math.PI * e.progress).toFloat()
+            Phase.IN -> 0.1f
+            else -> 0f
+        }
+        ambience.day = sunAmount * (1f - pal.stars)
+        ambience.night = pal.stars
+    }
     var onTap: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
     var onPhase: ((Phase) -> Unit)? = null
     var onFrame: ((Float) -> Unit)? = null
@@ -74,6 +91,7 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
+        if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
     }
 
     @Composable
@@ -88,7 +106,8 @@ class MainActivity : ComponentActivity() {
 
         BackHandler(enabled = screen != Screen.Home) {
             screen = when (val sc = screen) {
-                is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup -> Screen.Home
+                is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup, is Screen.Week -> Screen.Home
+                is Screen.Similar -> Screen.Journal
                 is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
                 else -> Screen.Home
             }
@@ -100,6 +119,8 @@ class MainActivity : ComponentActivity() {
                 onTap = { host.onTap?.invoke(it) },
                 onPhase = { host.onPhase?.invoke(it) },
                 onFrame = { host.onFrame?.invoke(it) },
+                onLight = { pal, sun -> host.tuneAmbience(pal, sun) },
+                dark = host.dark,
             )
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
                 when (sc) {
@@ -111,6 +132,8 @@ class MainActivity : ComponentActivity() {
                     Screen.Journal -> JournalScreen(go)
                     Screen.Stats -> StatsScreen(go)
                     Screen.Settings -> SettingsScreen(go)
+                    is Screen.Week -> com.grungert.nebo.ui.WeekScreen(sc, go)
+                    is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                 }
             }
         }

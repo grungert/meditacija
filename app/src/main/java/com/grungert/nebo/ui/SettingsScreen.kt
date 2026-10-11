@@ -53,6 +53,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     var whisper by remember { mutableStateOf(s.whisperModel) }
     var lang by remember { mutableStateOf(s.whisperLang) }
     var haptics by remember { mutableStateOf(s.haptics) }
+    var ambient by remember { mutableStateOf(s.ambient) }
+    var weekReminder by remember { mutableStateOf(s.weekReminder) }
     var refresh by remember { mutableIntStateOf(0) }
 
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -75,10 +77,7 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                 .screenPadding().padding(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                BackButton { go(Screen.Home) }
-                Text("Postavke", style = HeadStyle)
-            }
+            ScreenHeader("Postavke", { go(Screen.Home) })
 
             Panel {
                 SectionLabel("Zapažanja tokom dana")
@@ -127,6 +126,11 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             Panel {
                 SectionLabel("Ostalo")
                 SwitchRow("Blaga vibracija na udah i izdah", haptics, { haptics = it; s.haptics = it })
+                SwitchRow("Zvuk prirode u sesijama", ambient, { ambient = it; s.ambient = it })
+                SwitchRow("Podsjeti me na sedmični pregled", weekReminder, {
+                    weekReminder = it; s.weekReminder = it
+                    app.scope.launch { Esm.refresh(context) }
+                }, sub = "Nedjeljom u 19 h, ako pregled već nije urađen.")
             }
 
             Panel {

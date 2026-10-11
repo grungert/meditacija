@@ -1,10 +1,14 @@
 package com.grungert.nebo.ui
 
 import android.os.VibrationEffect
+import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +25,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -32,15 +35,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.grungert.nebo.Screen
 import com.grungert.nebo.SkyHost
 import com.grungert.nebo.app
 import com.grungert.nebo.audio.Bell
+import com.grungert.nebo.audio.Cue
 import com.grungert.nebo.data.Session
 import com.grungert.nebo.sky.Phase
 import com.grungert.nebo.sky.Scenery
@@ -51,12 +59,34 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
+/** Haptics that carry the breath when the eyes are closed: a swell to breathe in, an ebb to breathe out. */
+private fun breathHaptic(v: Vibrator, p: Phase, eyesClosed: Boolean) {
+    if (!eyesClosed) {
+        v.vibrate(VibrationEffect.createOneShot(if (p == Phase.IN) 22 else 12, if (p == Phase.IN) 90 else 50))
+        return
+    }
+    if (!v.hasAmplitudeControl()) {
+        when (p) {
+            Phase.IN -> v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 40, 120, 40), -1))
+            Phase.OUT -> v.vibrate(VibrationEffect.createOneShot(160, VibrationEffect.DEFAULT_AMPLITUDE))
+            else -> v.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+        return
+    }
+    when (p) {
+        Phase.IN -> v.vibrate(VibrationEffect.createWaveform(LongArray(12) { if (it == 0) 0 else 90 }, IntArray(12) { minOf(150, it * 13) }, -1))
+        Phase.OUT -> v.vibrate(VibrationEffect.createWaveform(LongArray(12) { if (it == 0) 0 else 90 }, IntArray(12) { maxOf(0, 110 - it * 10) }, -1))
+        else -> v.vibrate(VibrationEffect.createOneShot(18, 60))
+    }
+}
+
 @Composable
 fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     val vibrator = remember { context.getSystemService(VibratorManager::class.java).defaultVibrator }
 
     var elapsed by remember { mutableFloatStateOf(0f) }
@@ -66,12 +96,14 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var lastTouch by remember { mutableFloatStateOf(0f) }
     var thoughts by remember { mutableIntStateOf(0) }
     var word by remember { mutableStateOf("") }
+    var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
     val planned = cfg.minutes * 60
+    val dim by animateFloatAsState(if (cfg.eyesClosed && !peek && !ended) 0.97f else 0f, tween(1600), label = "dim")
 
     fun finish() {
         if (ended) return
         ended = true
-        host.showCircle = false
+        host.showCircle = false; host.dark = false
         word = ""
         host.engine.paced = false
         scope.launch {
@@ -81,6 +113,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 app.db.finishSession(id, System.currentTimeMillis(), elapsed.toInt(), scenery.thoughtCount)
             }
             delay(2500)
+            host.ambience.stop()
             go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
         }
     }
@@ -93,14 +126,16 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         e.running = true
         e.setPatternAndRestart(patternById(cfg.pattern))
         host.showCircle = cfg.paced
+        host.dark = cfg.eyesClosed
         scenery.resetThoughts()
         if (cfg.type == "walk") scenery.resetWalkSpawns()
+        host.ambience.volume = app.settings.ambientVolume
+        if (cfg.ambient) host.ambience.start()
         host.onPhase = { p ->
-            if (cfg.paced) {
+            if (cfg.paced && !ended) {
                 word = p.label
-                if (app.settings.haptics) runCatching {
-                    vibrator.vibrate(VibrationEffect.createOneShot(if (p == Phase.IN) 22 else 12, if (p == Phase.IN) 90 else 50))
-                }
+                if (app.settings.haptics || cfg.eyesClosed) runCatching { breathHaptic(vibrator, p, cfg.eyesClosed) }
+                if (cfg.eyesClosed) Cue.play(when (p) { Phase.IN -> "in"; Phase.OUT -> "out"; else -> "hold" })
             }
         }
         var nextBell = 300f
@@ -108,7 +143,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (!ended) {
                 elapsed += dt
                 lastTouch += dt
-                if (lastTouch > 5f) showUi = false
+                if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
                 if (cfg.intervalBell && elapsed >= nextBell && (planned == 0 || elapsed < planned - 30)) {
                     nextBell += 300f
                     scope.launch { Bell.ring(soft = true) }
@@ -118,6 +153,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
         host.onTap = { pos ->
             lastTouch = 0f; showUi = true
+            if (cfg.eyesClosed && !ended) { peek = true; host.dark = false }
             if (cfg.type == "thoughts" && !ended) { scenery.addThought(pos.x, pos.y); thoughts = scenery.thoughtCount }
         }
         word = if (cfg.paced) e.phase.label else ""
@@ -128,34 +164,49 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     pattern = cfg.pattern, walk = cfg.type == "walk"))
             }
         }
+        // the meadow falls silent while the app is in the background
+        val obs = LifecycleEventObserver { _, ev ->
+            when (ev) {
+                Lifecycle.Event.ON_STOP -> host.ambience.stop()
+                Lifecycle.Event.ON_START -> if (cfg.ambient && !ended) host.ambience.start()
+                else -> {}
+            }
+        }
+        lifecycle.addObserver(obs)
         onDispose {
+            lifecycle.removeObserver(obs)
             view.keepScreenOn = false
+            host.ambience.stop()
             host.onPhase = null; host.onFrame = null; host.onTap = null
-            host.showCircle = false
+            host.showCircle = false; host.dark = false
             e.paced = false; e.walkOn = false
         }
     }
 
     Box(Modifier.fillMaxSize()) {
         // the phase word sits inside the breathing circle (the circle is centred 36% from the top)
-        if (cfg.paced) BoxWithConstraints(Modifier.fillMaxSize()) {
+        if (cfg.paced && !ended) BoxWithConstraints(Modifier.fillMaxSize()) {
             val e = host.engine
             val remaining = ceil(e.phaseDuration - e.phaseT).toInt()
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
-            Column(
-                Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f - 34.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                @Suppress("UNUSED_VARIABLE") val tick = elapsed
-                Text(word, style = TitleStyle.copy(fontSize = 34.sp), modifier = Modifier.alpha(fade))
+            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f - 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (elapsed < 0f) return@Column // reading elapsed refreshes the countdown every frame
+                Text(word, style = TitleStyle.copy(fontSize = 38.sp), modifier = Modifier.alpha(fade))
                 Text("$remaining", style = SmallStyle)
             }
         }
 
         if (cfg.type == "thoughts") {
             AnimatedVisibility(elapsed < 9f, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
-                Text("Kad primijetiš da je misao odlutala,\ndodirni nebo i pusti je.", style = BodyStyle.copy(fontSize = 18.sp),
+                Text("Kad primijetiš da je misao odlutala,\ndodirni nebo i pusti je.", style = HeadStyle.copy(fontSize = 24.sp),
                     textAlign = TextAlign.Center, modifier = Modifier.screenPadding())
+            }
+        }
+
+        // eyes closed: the screen fades to near black; a touch brings the light back for a few seconds
+        if (dim > 0.01f) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim))) {
+            AnimatedVisibility(dim > 0.9f && elapsed < 12f, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
+                Text("Zatvori oči.\nDah će te voditi.", style = HeadStyle.copy(color = Color(0x99FFFFFF), fontSize = 24.sp), textAlign = TextAlign.Center)
             }
         }
 
@@ -163,7 +214,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().screenPadding().padding(vertical = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     val shown = if (planned > 0) (planned - elapsed).coerceAtLeast(0f) else elapsed
-                    Text("%d:%02d".format(shown.toInt() / 60, shown.toInt() % 60), style = BodyStyle.copy(fontSize = 18.sp))
+                    Text("%d:%02d".format(shown.toInt() / 60, shown.toInt() % 60), style = HeadStyle.copy(fontSize = 24.sp))
                     if (cfg.type == "thoughts") Text("· oblaka: $thoughts", style = SmallStyle)
                     Box(Modifier.weight(1f))
                     GlassButton(if (ended) "Završeno" else "Završi", { finish() }, enabled = !ended)

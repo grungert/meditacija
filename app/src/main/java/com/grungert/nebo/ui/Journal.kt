@@ -1,6 +1,15 @@
 package com.grungert.nebo.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,11 +71,16 @@ fun JournalScreen(go: (Screen) -> Unit) {
     val app = context.app
     val transcribed by app.transcriber.done.collectAsState()
     var rows by remember { mutableStateOf<List<Any>>(emptyList()) }
+    var onlyInsights by remember { mutableStateOf(false) }
+    var reload by remember { mutableIntStateOf(0) }
     val player = remember { NotePlayer() }
+    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(transcribed) {
+    LaunchedEffect(transcribed, onlyInsights, reload) {
         rows = withContext(Dispatchers.IO) {
-            (app.db.sessions().map { it.startedAt to it } + app.db.entries().map { it.createdAt to it }).sortedByDescending { it.first }
+            val entries = app.db.entries().filter { !onlyInsights || it.starred }
+            val sessions = if (onlyInsights) emptyList() else app.db.sessions()
+            (sessions.map { it.startedAt to it } + entries.map { it.createdAt to it }).sortedByDescending { it.first }
                 .flatMap { (t, item) -> listOf(dayFmt.format(Date(t)), item) }
                 .fold(mutableListOf<Any>()) { acc, x -> if (x is String && acc.lastOrNull { it is String } == x) acc else acc.apply { add(x) } }
         }
@@ -75,36 +89,102 @@ fun JournalScreen(go: (Screen) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().screenPadding().padding(top = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                BackButton { player.stop(); go(Screen.Home) }
-                Text("Dnevnik", style = HeadStyle, modifier = Modifier.weight(1f))
+            ScreenHeader("Dnevnik", { player.stop(); go(Screen.Home) }) {
                 GlassButton("Izvezi", { Export.share(context, app.db, app.library) })
             }
             Spacer(Modifier.height(12.dp))
-            if (rows.isEmpty()) Text("Ovdje će se pojaviti tvoje sesije i zapažanja.", style = BodyStyle.copy(color = Ink.soft))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Chip("Sve", !onlyInsights, { onlyInsights = false })
+                Chip("Uvidi", onlyInsights, { onlyInsights = true }, dot = Ink.accent)
+            }
+            Spacer(Modifier.height(8.dp))
+            if (rows.isEmpty()) Text(if (onlyInsights) "Označi zvjezdicom bilješke koje su ti nešto otvorile; ovdje će se skupljati."
+                else "Ovdje će se pojaviti tvoje sesije i zapažanja.", style = BodyStyle.copy(color = Ink.soft), modifier = Modifier.padding(top = 12.dp))
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(rows) { row ->
                     when (row) {
-                        is String -> Text(row.replaceFirstChar { it.uppercase() }, style = LabelStyle, modifier = Modifier.padding(top = 14.dp))
-                        is Session -> Panel {
-                            Text("${timeFmt.format(Date(row.startedAt))} · ${TYPE_LABEL[row.type] ?: row.type}, ${row.actualSec / 60} min",
-                                style = BodyStyle)
-                            if (row.thoughts > 0) Text("Oblaka misli: ${row.thoughts}", style = SmallStyle)
-                            app.library.byId(row.koanId)?.let { Text("Koan: ${it.title ?: it.text.take(50)}", style = SmallStyle) }
-                        }
-                        is Entry -> Panel {
-                            Text("${timeFmt.format(Date(row.createdAt))} · ${KIND_LABEL[row.kind] ?: row.kind}", style = SmallStyle)
-                            if (row.moods.isNotEmpty()) Text(row.moods.joinToString(" · "), style = SmallStyle.copy(color = Ink.accent))
-                            row.text?.takeIf { it.isNotBlank() }?.let { Text(it, style = BodyStyle) }
-                            when {
-                                !row.transcript.isNullOrBlank() -> Text("„${row.transcript}“", style = BodyStyle.copy(fontStyle = FontStyle.Italic))
-                                row.audioPath != null && row.transcript == null -> Text("Snimak čeka da postane tekst.", style = SmallStyle)
+                        is String -> Text(row.replaceFirstChar { it.uppercase() }, style = HeadStyle.copy(fontSize = 20.sp), modifier = Modifier.padding(top = 18.dp, bottom = 2.dp))
+                        is Session -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp)) {
+                            val t = SESSION_TYPES.firstOrNull { it.id == row.type }
+                            Icon(t?.icon ?: NeboIcon.Breath, Ink.soft, 20.dp)
+                            Column(Modifier.weight(1f)) {
+                                Text("${timeFmt.format(Date(row.startedAt))} · ${TYPE_LABEL[row.type] ?: row.type}, ${row.actualSec / 60} min" +
+                                    (if (row.thoughts > 0) " · oblaka: ${row.thoughts}" else ""), style = SmallStyle.copy(fontSize = 14.sp))
+                                app.library.byId(row.koanId)?.let { Text("koan: ${it.title ?: it.text.take(40)}", style = SmallStyle.copy(color = Ink.accent)) }
                             }
-                            if (row.audioPath != null) GlassButton("Preslušaj", { player.play(row.audioPath) {} })
                         }
+                        is Entry -> EntryCard(row, player, onStar = {
+                            scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred)) }; reload++ }
+                        }, onSimilar = { go(Screen.Similar(row.id)) })
                     }
                 }
                 item { Spacer(Modifier.height(32.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null) {
+    Panel(padding = 16.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.moods.forEach { m -> Box(Modifier.size(9.dp).clip(CircleShape).background(MOOD_COLORS[m] ?: Ink.soft)) }
+            Text("${timeFmt.format(Date(row.createdAt))} · ${KIND_LABEL[row.kind] ?: row.kind}" +
+                (if (row.moods.isNotEmpty()) " · " + row.moods.joinToString(", ") else ""), style = SmallStyle, modifier = Modifier.weight(1f))
+            Box(Modifier.size(34.dp).clip(CircleShape).clickable(onClickLabel = if (row.starred) "Ukloni oznaku uvida" else "Označi kao uvid", onClick = onStar),
+                contentAlignment = Alignment.Center) {
+                Icon(if (row.starred) NeboIcon.StarFilled else NeboIcon.Star, if (row.starred) Ink.accent else Ink.faint, 20.dp)
+            }
+        }
+        row.text?.takeIf { it.isNotBlank() }?.let { Text(it, style = BodyStyle) }
+        when {
+            !row.transcript.isNullOrBlank() -> Text("„${row.transcript}“", style = HeadStyle.copy(fontSize = 21.sp, lineHeight = 28.sp, fontStyle = FontStyle.Italic, fontWeight = FontWeight.Normal))
+            row.audioPath != null && row.transcript == null -> Text("Snimak čeka da postane tekst.", style = SmallStyle)
+        }
+        if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accent))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (row.audioPath != null) GlassButton("Preslušaj", { player.play(row.audioPath) {} }, icon = NeboIcon.Play)
+            if (onSimilar != null && row.words.isNotBlank()) GlassButton("Slične", onSimilar, icon = NeboIcon.Similar)
+        }
+    }
+}
+
+/** "When did I feel like this before?": earlier notes closest in meaning to one note. */
+@Composable
+fun SimilarScreen(sc: Screen.Similar, go: (Screen) -> Unit) {
+    val app = LocalContext.current.app
+    val player = remember { NotePlayer() }
+    var target by remember { mutableStateOf<Entry?>(null) }
+    var result by remember { mutableStateOf<List<Pair<Entry, Float>>?>(null) }
+    LaunchedEffect(sc.entryId) {
+        val (t, all) = withContext(Dispatchers.IO) { app.db.entry(sc.entryId) to app.db.entries() }
+        target = t
+        result = if (t == null) emptyList() else app.recommender.similar(t, all, 5)
+    }
+    Box(Modifier.fillMaxSize()) {
+        Scrim(Modifier.fillMaxSize())
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
+                .screenPadding().padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ScreenHeader("Kad sam se ovako osjećao", { player.stop(); go(Screen.Journal) })
+            target?.let { t ->
+                PaperCard {
+                    Text(dayFmt.format(Date(t.createdAt)).replaceFirstChar { it.uppercase() } + " · " + timeFmt.format(Date(t.createdAt)), style = PaperSmall)
+                    Text(t.words, style = PaperText)
+                }
+            }
+            val r = result
+            when {
+                r == null -> Text("Tražim po značenju…", style = BodyStyle)
+                r.isEmpty() -> Text("Još nema dovoljno bilješki za poređenje. Kako budeš zapisivao, ovdje će se pokazivati ranija slična stanja.", style = BodyStyle)
+                else -> {
+                    Text(if (app.recommender.usesMeaning) "Najbliže po značenju, od najsličnijeg:" else "Bilješke s istim temama ili raspoloženjem:", style = SmallStyle)
+                    for ((e, score) in r) EntryCard(e, player, onStar = {}, onSimilar = null,
+                        footer = dayFmt.format(Date(e.createdAt)).replaceFirstChar { it.uppercase() } + " · " + app.recommender.closeness(score))
+                }
             }
         }
     }
@@ -124,10 +204,7 @@ fun StatsScreen(go: (Screen) -> Unit) {
                 .screenPadding().padding(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                BackButton { go(Screen.Home) }
-                Text("Pregled", style = HeadStyle)
-            }
+            ScreenHeader("Pregled", { go(Screen.Home) })
             val d = data ?: return@Column
             Panel {
                 SectionLabel("Ova sedmica")

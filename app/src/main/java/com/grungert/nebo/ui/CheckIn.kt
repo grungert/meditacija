@@ -94,6 +94,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         "before" -> "Kako si sada?" to "Prije nego što počneš: šta je u tebi?"
         "after" -> "Šta primjećuješ?" to "Šta se pojavilo dok si sjedio? Riječ ili dvije su dovoljne."
         "esm" -> "Kako si sada?" to "Pritisni i reci šta je u tebi. Nema pogrešnog odgovora."
+        "week" -> "Tvoja sedmica" to "Prije nego što ti pokažem obrasce: šta ti primjećuješ u ovoj sedmici?"
         else -> "Zapažanje" to "Šta primjećuješ u sebi upravo sada?"
     }
 
@@ -134,6 +135,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         when (sc.kind) {
             "before" -> go(Screen.Session(sc.config!!))
             "after" -> go(Screen.Koan(sc.sessionId, entryId))
+            "week" -> go(Screen.Week(entryId))
             else -> go(Screen.Koan(null, entryId))
         }
     }
@@ -168,9 +170,9 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (sc.kind == "note" || sc.kind == "esm") BackButton { player.stop(); recorder.stop(); go(Screen.Home) }
+                if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week") BackButton { player.stop(); recorder.stop(); go(Screen.Home) }
             }
-            Text(title, style = TitleStyle)
+            Text(title, style = TitleStyle, textAlign = TextAlign.Center)
             Text(prompt, style = BodyStyle.copy(color = Ink.soft), textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
 
@@ -220,7 +222,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
 
             Panel {
                 SectionLabel("Kako je u tebi (po želji)")
-                ChipRow { for ((m, _) in MOODS) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }) }
+                ChipRow { for ((m, _) in MOODS) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m]) }
                 SectionLabel(if (fieldFromVoice) "Tvoje riječi (možeš ispraviti)" else "Ili napiši")
                 BasicTextField(
                     text, { text = it },
@@ -238,6 +240,14 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+/** A small red seal, the way a painting or a page of a sutra is signed. */
+@Composable
+private fun Seal() {
+    Box(Modifier.size(34.dp).clip(RoundedCornerShape(7.dp)).background(Ink.seal.copy(alpha = 0.88f)), contentAlignment = Alignment.Center) {
+        Icon(NeboIcon.Cloud, Ink.paper, 22.dp)
     }
 }
 
@@ -320,24 +330,29 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                     val item = p.item
                     Spacer(Modifier.height(24.dp))
                     if (item == null) Text(p.reason, style = BodyStyle) else {
-                        Text(if (item.isKoan) "KOAN" else "PORUKA", style = LabelStyle)
-                        item.title?.let { Text(it, style = HeadStyle.copy(fontSize = 28.sp)) }
-                        Panel {
-                            Text(item.text, style = BodyStyle.copy(fontSize = 17.sp, lineHeight = 27.sp))
+                        Text(if (item.isKoan) "KOAN ZA TEBE" else "PORUKA ZA TEBE", style = LabelStyle)
+                        PaperCard {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(item.title ?: "", style = PaperText.copy(fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold),
+                                    modifier = Modifier.weight(1f))
+                                Seal()
+                            }
+                            Text(item.text, style = PaperText)
                             item.question?.let {
-                                Text(it, style = BodyStyle.copy(fontStyle = FontStyle.Italic, color = Ink.accent, fontFamily = Serif, fontSize = 18.sp))
+                                Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.inkOnPaper.copy(alpha = 0.15f)))
+                                Text(it, style = PaperText.copy(fontStyle = FontStyle.Italic, color = Ink.seal, fontSize = 21.sp))
                             }
-                        }
-                        if (item.comment != null || item.verse != null) {
-                            Text(if (showComment) "Sakrij komentar" else "Mumonov komentar i stih",
-                                style = SmallStyle.copy(color = Ink.text), modifier = Modifier.clickable { showComment = !showComment }.padding(4.dp))
-                            if (showComment) Panel {
-                                item.comment?.let { Text(it, style = BodyStyle.copy(fontSize = 15.sp)) }
-                                item.verse?.let { Text(it, style = BodyStyle.copy(fontFamily = Serif, fontStyle = FontStyle.Italic)) }
+                            if (item.comment != null || item.verse != null) {
+                                Text(if (showComment) "Sakrij Mumonov komentar" else "Mumonov komentar i stih",
+                                    style = PaperSmall.copy(color = Ink.seal), modifier = Modifier.clickable { showComment = !showComment }.padding(vertical = 4.dp))
+                                if (showComment) {
+                                    item.comment?.let { Text(it, style = PaperText.copy(fontSize = 18.sp, lineHeight = 26.sp)) }
+                                    item.verse?.let { Text(it, style = PaperText.copy(fontSize = 19.sp, fontStyle = FontStyle.Italic)) }
+                                }
                             }
+                            item.source?.let { Text(it, style = PaperSmall.copy(fontSize = 11.sp)) }
                         }
                         Text(p.reason, style = SmallStyle)
-                        item.source?.let { Text(it, style = SmallStyle.copy(fontSize = 11.sp, color = Ink.faint)) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         GlassButton("Drugi", { pick = null; round++ })

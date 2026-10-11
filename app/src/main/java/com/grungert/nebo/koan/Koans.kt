@@ -136,6 +136,44 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         }
     }
 
+    /**
+     * Earlier notes closest in meaning to this one, most similar first. Without the meaning model,
+     * notes that share themes or moods (Jaccard overlap) stand in.
+     */
+    suspend fun similar(target: com.grungert.nebo.data.Entry, all: List<com.grungert.nebo.data.Entry>, k: Int = 4):
+        List<Pair<com.grungert.nebo.data.Entry, Float>> = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val pool = all.filter { it.id != target.id && it.words.isNotBlank() }
+            if (target.words.isBlank() || pool.isEmpty()) return@withLock emptyList()
+            val e = embedderOrNull()
+            if (e != null) {
+                fun vec(x: com.grungert.nebo.data.Entry): FloatArray {
+                    val key = "entry:${x.id}"
+                    val h = x.words.hashCode()
+                    return db.embedding(key, Embedder.MODEL_ID, h) ?: e.embed(x.words).also { db.putEmbedding(key, Embedder.MODEL_ID, h, it) }
+                }
+                val tv = vec(target)
+                pool.map { it to Embedder.cosine(tv, vec(it)) }.sortedByDescending { it.second }.take(k)
+            } else {
+                fun tags(x: com.grungert.nebo.data.Entry) = (Lexicon.themes(x.words) + x.moods + x.themes).toSet()
+                val tt = tags(target)
+                pool.map { x ->
+                    val xt = tags(x)
+                    x to if (tt.isEmpty() || xt.isEmpty()) 0f else (tt intersect xt).size.toFloat() / (tt union xt).size
+                }.filter { it.second > 0f }.sortedByDescending { it.second }.take(k)
+            }
+        }
+    }
+
+    /** Plain words for how close two notes are. */
+    fun closeness(score: Float): String = when {
+        !usesMeaning -> if (score >= 0.5f) "iste teme" else "slične teme"
+        // e5 similarities sit high (unrelated notes still score around 0.8), so the bands are narrow
+        score >= 0.915f -> "vrlo blisko"
+        score >= 0.88f -> "blisko"
+        else -> "u istom duhu"
+    }
+
     suspend fun pick(words: String, moods: List<String>, afterSession: Boolean, exclude: Set<String> = emptySet()): Pick = withContext(Dispatchers.Default) {
         lock.withLock {
             if (Lexicon.soundsLikeDistress(words)) return@withLock Pick(null, "", distress = true)

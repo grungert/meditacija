@@ -9,7 +9,14 @@ Android aplikacija za meditaciju i razumijevanje vlastitih uvida. Nebo s oblacim
 - **Bilješke glasom:** snimak se uvijek čuva, a Whisper ga na telefonu pretvara u tekst. Može se i pisati i izabrati raspoloženje.
 - **Koan ili poruka:** 49 koana iz *Bezvratne kapije* (javno vlasništvo, prepričano na naš jezik) i 42 originalne poruke. Bira ih model za značenje (multilingual-e5-small), a bez njega ključne riječi.
 - **Zapažanja tokom dana:** 2–5 notifikacija u nasumično vrijeme, u prozoru koji izabereš, uz mogućnost da utišaš dan.
+- **Uvidi:** zvjezdicom označiš bilješku kao uvid; „Slične" pokaže ranije bilješke najbliže po značenju („kad sam se ovako osjećao").
+- **Sedmični pregled:** prvo tvoje zapažanje, pa šta se vraćalo u odnosu na prošlu sedmicu, kada, tvojim riječima i ranija slična stanja. Podsjetnik nedjeljom u 19 h.
+- **Zvuk prirode:** vjetar koji jača na izdah, ptice danju, cvrčci noću, sve sintetizovano u kodu.
+- **Zatvorene oči:** ekran se zatamni, dah vode vibracija koja raste i opada i tihi tonovi.
+- **Odgovor iz notifikacije:** „Napiši" (odgovor u samoj notifikaciji), „mirno", „nemirno".
 - **Dnevnik, pregled i izvoz:** minute po sedmici, doba dana, teme koje se vraćaju, „prije → poslije". Izvoz je u običan tekst. Bez nizova i bodova.
+
+Fontovi: Cormorant Garamond i Nunito (SIL Open Font License, licence u `content/fonts/`).
 
 ## Build
 

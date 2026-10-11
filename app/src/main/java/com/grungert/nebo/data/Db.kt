@@ -35,6 +35,7 @@ data class Entry(
     val moods: List<String> = emptyList(),
     val themes: List<String> = emptyList(),
     val koanId: String? = null,
+    val starred: Boolean = false,
 ) {
     /** What the person said, preferring their own typed words, then the transcript. */
     val words: String get() = listOfNotNull(text?.takeIf { it.isNotBlank() }, transcript?.takeIf { it.isNotBlank() }).joinToString("\n")
@@ -43,7 +44,7 @@ data class Entry(
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
-class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 1) {
+class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
@@ -51,7 +52,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 1) {
             walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT)""")
         db.execSQL("""CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
             session_id INTEGER, prompt_id INTEGER, audio_path TEXT, text TEXT, transcript TEXT, transcript_model TEXT,
-            moods TEXT, themes TEXT, koan_id TEXT)""")
+            moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE prompts(id INTEGER PRIMARY KEY AUTOINCREMENT, scheduled_at INTEGER NOT NULL, fired_at INTEGER,
             answered_entry_id INTEGER, dismissed INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE embeddings(item_id TEXT PRIMARY KEY, model TEXT NOT NULL, text_hash INTEGER NOT NULL, vec BLOB NOT NULL)""")
@@ -59,7 +60,9 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 1) {
         db.execSQL("CREATE INDEX sessions_started ON sessions(started_at)")
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("ALTER TABLE entries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
+    }
 
     // ---------- sessions ----------
     fun insertSession(s: Session): Long = writableDatabase.insert("sessions", null, ContentValues().apply {
@@ -119,12 +122,14 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 1) {
         put("created_at", createdAt); put("kind", kind); put("session_id", sessionId); put("prompt_id", promptId)
         put("audio_path", audioPath); put("text", text); put("transcript", transcript); put("transcript_model", transcriptModel)
         put("moods", moods.joinToString(",")); put("themes", themes.joinToString(",")); put("koan_id", koanId)
+        put("starred", if (starred) 1 else 0)
     }
 
     private fun Cursor.toEntry() = Entry(
         id = long("id"), createdAt = long("created_at"), kind = str("kind")!!, sessionId = longOrNull("session_id"),
         promptId = longOrNull("prompt_id"), audioPath = str("audio_path"), text = str("text"), transcript = str("transcript"),
         transcriptModel = str("transcript_model"), moods = csv(str("moods")), themes = csv(str("themes")), koanId = str("koan_id"),
+        starred = int("starred") == 1,
     )
 
     // ---------- prompts ----------

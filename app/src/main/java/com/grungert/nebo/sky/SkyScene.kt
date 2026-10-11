@@ -54,6 +54,8 @@ fun SkyScene(
     onTap: ((Offset) -> Unit)? = null,
     onPhase: (Phase) -> Unit = {},
     onFrame: (dt: Float) -> Unit = {},
+    onLight: (pal: Palette, sunAmount: Float) -> Unit = { _, _ -> },
+    dark: Boolean = false,
     scenery: Scenery = rememberScenery(),
 ) {
     val context = LocalContext.current
@@ -61,6 +63,8 @@ fun SkyScene(
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val phaseCb by rememberUpdatedState(onPhase)
     val frameCb by rememberUpdatedState(onFrame)
+    val lightCb by rememberUpdatedState(onLight)
+    val isDark by rememberUpdatedState(dark)
     var tick by remember { mutableLongStateOf(0L) }
     val state = remember { FrameState() }
 
@@ -104,17 +108,23 @@ fun SkyScene(
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h),
                     DayCycle.sunAmount(h), DayCycle.moonAmount(h), state.light,
                 )
+                lightCb(state.pal, DayCycle.sunAmount(h))
                 frameCb(dt)
                 tick = now
             }
         }
     }
 
+    // with eyes closed the sky stops rendering entirely; only the breath keeps time
+    LaunchedEffect(dark) {
+        skyView.renderMode = if (dark) android.opengl.GLSurfaceView.RENDERMODE_WHEN_DIRTY else android.opengl.GLSurfaceView.RENDERMODE_CONTINUOUSLY
+    }
+
     Box(modifier.fillMaxSize()) {
         AndroidView({ skyView }, Modifier.fillMaxSize())
         val tapMod = if (onTap != null) Modifier.pointerInput(Unit) { detectTapGestures { onTap(it) } } else Modifier
         Canvas(Modifier.fillMaxSize().then(tapMod)) {
-            if (tick == -1L) return@Canvas // reading tick redraws the overlay every frame
+            if (tick == -1L || isDark) return@Canvas // reading tick redraws the overlay every frame
             scenery.resize(size.width, size.height)
             drawIntoCanvas { c ->
                 scenery.draw(c.nativeCanvas, engine, state.pal, state.light, state.time, state.dt,

@@ -29,6 +29,22 @@ class Settings(context: Context) {
     var checkInAfter: Boolean
         get() = p.getBoolean("checkInAfter", true)
         set(v) = p.edit { putBoolean("checkInAfter", v) }
+    var ambient: Boolean
+        get() = p.getBoolean("ambient", true)
+        set(v) = p.edit { putBoolean("ambient", v) }
+    var ambientVolume: Float
+        get() = p.getFloat("ambientVolume", 0.6f)
+        set(v) = p.edit { putFloat("ambientVolume", v) }
+    var eyesClosed: Boolean
+        get() = p.getBoolean("eyesClosed", false)
+        set(v) = p.edit { putBoolean("eyesClosed", v) }
+    /** yyyyww of the last week whose review was done. */
+    var weekReviewed: Int
+        get() = p.getInt("weekReviewed", 0)
+        set(v) = p.edit { putInt("weekReviewed", v) }
+    var weekReminder: Boolean
+        get() = p.getBoolean("weekReminder", true)
+        set(v) = p.edit { putBoolean("weekReminder", v) }
     var haptics: Boolean
         get() = p.getBoolean("haptics", true)
         set(v) = p.edit { putBoolean("haptics", v) }
