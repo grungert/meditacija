@@ -82,6 +82,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var text by remember { mutableStateOf("") }
     val moods = remember { mutableStateListOf<String>() }
     var askedMic by remember { mutableStateOf(false) }
+    var silent by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false }
 
@@ -98,7 +99,8 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         scope.launch {
             val dur = recorder.record(f, MAX_SECONDS) { level = it }
             recording = false
-            if (dur > 0.6f) { audio?.delete(); audio = f } else f.delete()
+            silent = recorder.peak < Recorder.SILENCE
+            if (dur > 0.6f && !silent) { audio?.delete(); audio = f } else f.delete()
         }
         scope.launch { while (recorder.isRecording || recording) { delay(100); seconds += 0.1f } }
     }
@@ -176,6 +178,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             Text(
                 when {
                     recording -> "Snimam… %d s".format(seconds.toInt())
+                    silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
                     audio != null -> "Snimljeno. Tekst stiže uskoro."
                     askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
                     else -> "Najviše $MAX_SECONDS sekundi"

@@ -43,10 +43,10 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
                 try {
                     for (e in pending) {
                         val f = File(e.audioPath ?: continue)
-                        val text = if (!f.exists()) "" else {
-                            val pcm = Recorder.readWav(f)
-                            String(WhisperNative.transcribe(ptr, pcm, settings.whisperLang, PROMPT), Charsets.UTF_8).trim()
-                        }
+                        val pcm = if (f.exists()) Recorder.readWav(f) else FloatArray(0)
+                        // silence makes Whisper invent words, so it never gets to hear it
+                        val text = if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) "" else
+                            clean(String(WhisperNative.transcribe(ptr, pcm, settings.whisperLang, PROMPT), Charsets.UTF_8))
                         db.updateEntry(e.copy(transcript = text, transcriptModel = choice.id))
                         _done.value = e.id
                     }
@@ -58,6 +58,9 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     }
 
     companion object {
+        /** Drops Whisper's bracketed guesses such as "[muzika]" or "(tišina)". */
+        fun clean(raw: String) = raw.replace(Regex("[\\[(][^\\])]*[\\])]"), " ").replace(Regex("\\s+"), " ").trim()
+
         private const val TAG = "NeboTranscriber"
         /** Nudges Whisper towards Latin-script ijekavian and everyday words about inner life. */
         private const val PROMPT = "Ovo je kratka bilješka poslije meditacije, na crnogorskom, latinicom. Osjećam se mirnije, ali i umorno."

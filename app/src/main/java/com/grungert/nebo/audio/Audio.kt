@@ -24,6 +24,8 @@ const val SAMPLE_RATE = 16_000
 class Recorder {
     @Volatile private var recording = false
     @Volatile var level = 0f; private set
+    /** Loudest moment of the last recording, 0..1; near zero means the microphone heard nothing. */
+    @Volatile var peak = 0f; private set
 
     val isRecording get() = recording
 
@@ -39,6 +41,7 @@ class Recorder {
         val buf = ShortArray(SAMPLE_RATE / 10)
         val bytes = ByteBuffer.allocate(buf.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         var total = 0
+        peak = 0f
         recording = true
         rec.startRecording()
         try {
@@ -51,6 +54,7 @@ class Recorder {
                 raf.write(bytes.array(), 0, n * 2)
                 total += n
                 level = peak / 32768f
+                this@Recorder.peak = maxOf(this@Recorder.peak, level)
                 onLevel(level)
             }
         } finally {
@@ -76,6 +80,9 @@ class Recorder {
 
     companion object {
         /** Reads a 16-bit mono WAV written by [record] as floats in -1..1. */
+        /** Below this peak a recording is treated as silence (a muted or missing microphone). */
+        const val SILENCE = 0.01f
+
         fun readWav(file: File): FloatArray {
             val b = file.readBytes()
             val bb = ByteBuffer.wrap(b, 44, b.size - 44).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
