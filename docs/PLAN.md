@@ -10,12 +10,12 @@ Android aplikacija za smirenje i razumijevanje vlastitih uvida. Dva stuba dijele
 | Tema | Odluka |
 |---|---|
 | Platforma | Android 13+ (minSdk 33), Kotlin + Jetpack Compose |
-| Nebo | Shader u stvarnom vremenu: prototip u WebGL-u (browser), zatim port u AGSL (`RuntimeShader`) |
+| Nebo | Shader u stvarnom vremenu: prototip u WebGL-u, na Androidu isti GLSL kroz OpenGL ES (`GLSurfaceView`, smanjena rezolucija) |
 | Redoslijed | Nebo i disanje prvo, zatim zapažanja |
 | Alati | Android Studio instalira korisnik; build i iz terminala (`./gradlew`) |
 | Notifikacije | `AlarmManager.setAndAllowWhileIdle` (ne WorkManager — Doze ga može odgoditi satima) |
 | Glas | Snimak se uvijek čuva kao audio; transkripcija je zaseban, ponovljiv korak |
-| Podaci | Sve lokalno (Room); izvoz u običan `.txt` |
+| Podaci | Sve lokalno (SQLite); izvoz u običan `.txt` |
 
 ## Nebo — vizuelni jezik
 
@@ -52,12 +52,12 @@ Ritmovi: 4–6 (podrazumijevano), 5,5–5,5 koherentno, 4–7–8, kvadrat 4–4
 
 | Faza | Sadržaj | Status |
 |---|---|---|
-| 0 | Prototip neba u browseru (`prototype/nebo/`) | u toku |
-| 1a | Android kostur, ekran Nebo (AGSL port), izbor ritma | |
-| 1b | Zapažanja: nasumične notifikacije (3–4 dnevno u prozoru, npr. 9–20h), utišaj dan, snimak glasa i/ili tekst, dnevnik, izvoz `.txt` | |
-| 2 | Whisper na telefonu (whisper.cpp) + ponovna transkripcija na računaru | |
-| 3 | Laya + sinhronizacija s računarom | otvoreno: šta Laya tačno radi |
-| 4 | Baza priča i koana | |
+| 0 | Prototip neba u browseru (`prototype/nebo/`) | gotovo |
+| 1a | Android kostur, nebo (isti GLSL shader kroz OpenGL ES), krug disanja, šetnja, doba dana | gotovo |
+| 1b | Meni sesija (Disanje, Šetnja, Oblaci misli, Tišina), zvono, bilješka glasom prije/poslije, dnevnik, izvoz `.txt`, nasumične notifikacije | gotovo |
+| 2 | Whisper na telefonu (whisper.cpp v1.9.4, JNI) | gotovo; ponovna transkripcija na računaru još nije |
+| 3 | Izbor koana po značenju: multilingual-e5-small na ONNX Runtime, vlastiti SentencePiece tokenizer | gotovo (umjesto Laye, koja bez treniranja bira skoro nasumično) |
+| 4 | Biblioteka: 49 koana iz *Bezvratne kapije* + 42 poruke | gotovo; proširenje pričama po želji |
 
 ## Principi zapažanja
 

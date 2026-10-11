@@ -1,0 +1,118 @@
+package com.grungert.nebo
+
+import android.content.Intent
+import android.os.Bundle
+import android.provider.Settings as SysSettings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import com.grungert.nebo.esm.Esm
+import com.grungert.nebo.sky.BreathEngine
+import com.grungert.nebo.sky.DayClock
+import com.grungert.nebo.sky.Phase
+import com.grungert.nebo.sky.SkyScene
+import com.grungert.nebo.sky.patternById
+import com.grungert.nebo.sky.rememberScenery
+import com.grungert.nebo.ui.CheckInScreen
+import com.grungert.nebo.ui.HomeScreen
+import com.grungert.nebo.ui.JournalScreen
+import com.grungert.nebo.ui.KoanScreen
+import com.grungert.nebo.ui.SessionConfig
+import com.grungert.nebo.ui.SessionScreen
+import com.grungert.nebo.ui.SettingsScreen
+import com.grungert.nebo.ui.SetupScreen
+import com.grungert.nebo.ui.StatsScreen
+
+sealed class Screen {
+    data object Home : Screen()
+    data object Setup : Screen()
+    data class CheckIn(val kind: String, val config: SessionConfig? = null, val sessionId: Long? = null, val promptId: Long? = null) : Screen()
+    data class Session(val config: SessionConfig) : Screen()
+    data class Koan(val sessionId: Long?, val entryId: Long?) : Screen()
+    data object Journal : Screen()
+    data object Stats : Screen()
+    data object Settings : Screen()
+}
+
+/** The one sky shared by every screen, plus hooks the current screen can set. */
+class SkyHost(val engine: BreathEngine, val day: DayClock) {
+    var showCircle by mutableStateOf(false)
+    var onTap: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
+    var onPhase: ((Phase) -> Unit)? = null
+    var onFrame: ((Float) -> Unit)? = null
+}
+
+class MainActivity : ComponentActivity() {
+    private var screen by mutableStateOf<Screen>(Screen.Home)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        handle(intent)
+        setContent { App() }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    /** A tap on a random-moment notification opens the quick check-in. */
+    private fun handle(intent: Intent?) {
+        val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
+        if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
+    }
+
+    @Composable
+    private fun App() {
+        val s = app.settings
+        val host = remember {
+            val reduced = SysSettings.Global.getFloat(contentResolver, SysSettings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+            SkyHost(BreathEngine(patternById(s.pattern)).apply { paced = false; reducedMotion = reduced }, DayClock(s.timeMode))
+        }
+        val scenery = rememberScenery()
+        val go: (Screen) -> Unit = { screen = it }
+
+        BackHandler(enabled = screen != Screen.Home) {
+            screen = when (val sc = screen) {
+                is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup -> Screen.Home
+                is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
+                else -> Screen.Home
+            }
+        }
+
+        Box(Modifier.fillMaxSize()) {
+            SkyScene(
+                engine = host.engine, day = host.day, showCircle = host.showCircle, scenery = scenery,
+                onTap = { host.onTap?.invoke(it) },
+                onPhase = { host.onPhase?.invoke(it) },
+                onFrame = { host.onFrame?.invoke(it) },
+            )
+            AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
+                when (sc) {
+                    Screen.Home -> HomeScreen(host, go)
+                    Screen.Setup -> SetupScreen(host, go)
+                    is Screen.CheckIn -> CheckInScreen(sc, host, go)
+                    is Screen.Session -> SessionScreen(sc.config, host, scenery, go)
+                    is Screen.Koan -> KoanScreen(sc, host, go)
+                    Screen.Journal -> JournalScreen(go)
+                    Screen.Stats -> StatsScreen(go)
+                    Screen.Settings -> SettingsScreen(go)
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A round patch of sky with one painted cloud and a ring of breath. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FF3B78C8" android:pathData="M54,4a50,50 0,1 1,0 100a50,50 0,1 1,0 -100z" />
+    <path android:fillColor="#FF7FB6EA" android:pathData="M4,62a50,50 0,0 0,100 0z" />
+    <path android:fillColor="#FFB9D2F0" android:pathData="M26,74h56a10,10 0,0 0,-6 -17a14,14 0,0 0,-24 -8a11,11 0,0 0,-19 9a9,9 0,0 0,-7 16z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M31,69h44a8,8 0,0 0,-5 -12a12,12 0,0 0,-21 -6a9,9 0,0 0,-16 8a7,7 0,0 0,-2 10z" />
+    <path android:strokeColor="#E6FFFFFF" android:strokeWidth="2.5" android:fillColor="#00000000"
+        android:pathData="M54,18a18,18 0,1 1,0 36a18,18 0,1 1,0 -36z" />
+    <path android:fillColor="#FF4E8A3E" android:pathData="M4,86q25,-10 50,-6t50,2v4a50,50 0,0 1,-100 0z" />
+</vector>

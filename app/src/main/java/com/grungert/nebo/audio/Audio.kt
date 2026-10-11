@@ -1,0 +1,140 @@
+package com.grungert.nebo.audio
+
+import android.annotation.SuppressLint
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.exp
+import kotlin.math.sin
+
+const val SAMPLE_RATE = 16_000
+
+/** Records 16 kHz mono PCM (what Whisper wants) straight into a WAV file. */
+class Recorder {
+    @Volatile private var recording = false
+    @Volatile var level = 0f; private set
+
+    val isRecording get() = recording
+
+    @SuppressLint("MissingPermission")
+    suspend fun record(out: File, maxSeconds: Int, onLevel: (Float) -> Unit = {}): Float = withContext(Dispatchers.IO) {
+        val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, SAMPLE_RATE))
+        out.parentFile?.mkdirs()
+        val raf = RandomAccessFile(out, "rw")
+        raf.setLength(0)
+        raf.write(ByteArray(44))
+        val buf = ShortArray(SAMPLE_RATE / 10)
+        val bytes = ByteBuffer.allocate(buf.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        var total = 0
+        recording = true
+        rec.startRecording()
+        try {
+            while (recording && total < maxSeconds * SAMPLE_RATE) {
+                val n = rec.read(buf, 0, buf.size)
+                if (n <= 0) continue
+                bytes.clear()
+                var peak = 0
+                for (i in 0 until n) { bytes.putShort(buf[i]); peak = maxOf(peak, abs(buf[i].toInt())) }
+                raf.write(bytes.array(), 0, n * 2)
+                total += n
+                level = peak / 32768f
+                onLevel(level)
+            }
+        } finally {
+            recording = false
+            rec.stop(); rec.release()
+            writeWavHeader(raf, total)
+            raf.close()
+        }
+        total / SAMPLE_RATE.toFloat()
+    }
+
+    fun stop() { recording = false }
+
+    private fun writeWavHeader(raf: RandomAccessFile, samples: Int) {
+        val dataLen = samples * 2
+        val h = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+        h.put("RIFF".toByteArray()); h.putInt(36 + dataLen); h.put("WAVE".toByteArray())
+        h.put("fmt ".toByteArray()); h.putInt(16); h.putShort(1); h.putShort(1); h.putInt(SAMPLE_RATE)
+        h.putInt(SAMPLE_RATE * 2); h.putShort(2); h.putShort(16)
+        h.put("data".toByteArray()); h.putInt(dataLen)
+        raf.seek(0); raf.write(h.array())
+    }
+
+    companion object {
+        /** Reads a 16-bit mono WAV written by [record] as floats in -1..1. */
+        fun readWav(file: File): FloatArray {
+            val b = file.readBytes()
+            val bb = ByteBuffer.wrap(b, 44, b.size - 44).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+            return FloatArray(bb.remaining()) { bb.get(it) / 32768f }
+        }
+    }
+}
+
+/** A singing-bowl bell synthesised on the spot: a few inharmonic partials with long, slow decays. */
+object Bell {
+    private val partials = listOf(
+        floatArrayOf(1f, 1f, 7f), floatArrayOf(2.71f, 0.55f, 5f), floatArrayOf(5.12f, 0.28f, 3.2f),
+        floatArrayOf(8.25f, 0.12f, 2f), floatArrayOf(1.006f, 0.6f, 7f),
+    )
+
+    private fun render(baseHz: Float, seconds: Float, volume: Float): ShortArray {
+        val sr = 44_100
+        val n = (sr * seconds).toInt()
+        val out = ShortArray(n)
+        for (i in 0 until n) {
+            val t = i / sr.toFloat()
+            var s = 0f
+            for (p in partials) s += p[1] * exp(-t / p[2] * 2.2f) * sin(2 * PI.toFloat() * baseHz * p[0] * t)
+            val attack = (t / 0.004f).coerceAtMost(1f)
+            out[i] = (s * attack * volume * 0.32f * Short.MAX_VALUE).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        return out
+    }
+
+    suspend fun ring(soft: Boolean = false) = withContext(Dispatchers.Default) {
+        val pcm = render(if (soft) 392f else 262f, if (soft) 5f else 9f, if (soft) 0.5f else 0.9f)
+        val track = AudioTrack.Builder()
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+            .setAudioFormat(AudioFormat.Builder().setSampleRate(44_100).setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+            .setTransferMode(AudioTrack.MODE_STATIC)
+            .setBufferSizeInBytes(pcm.size * 2)
+            .build()
+        track.write(pcm, 0, pcm.size)
+        track.setNotificationMarkerPosition(pcm.size - 1)
+        track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
+            override fun onMarkerReached(t: AudioTrack) { t.release() }
+            override fun onPeriodicNotification(t: AudioTrack) {}
+        })
+        track.play()
+    }
+}
+
+/** Plays back a recorded note. */
+class NotePlayer {
+    private var player: MediaPlayer? = null
+    fun play(path: String, onDone: () -> Unit) {
+        stop()
+        player = MediaPlayer().apply {
+            setDataSource(path)
+            setOnCompletionListener { onDone(); stop() }
+            prepare(); start()
+        }
+    }
+    fun stop() { player?.release(); player = null }
+}

@@ -1,0 +1,382 @@
+[
+  {
+    "id": "p-01",
+    "tekst": "Umor nije greška. Danas je možda dovoljno samo sjesti i disati, bez cilja da sjedenje ispadne dobro.",
+    "teme": [
+      "umor",
+      "samokritika"
+    ],
+    "kadaPomaze": "Kad sam umoran i meditacija mi je bila teška, oči mi se sklapaju i misli se vuku. Kad se ljutim na sebe što nemam snage ni za ovo malo. Kad mi treba dozvola da danas sve bude sporo i jednostavno."
+  },
+  {
+    "id": "p-02",
+    "tekst": "Tijelo nosi cijeli dan sa sobom. Ako je teško, to je zato što je mnogo nošeno. Spusti ramena, makar za jedan dah.",
+    "teme": [
+      "umor",
+      "svakodnevica"
+    ],
+    "kadaPomaze": "Kad osjećam težinu u tijelu poslije dugog dana na poslu. Kad sam iscrpljen od obaveza i ljudi i jedva sam sjeo da meditiram. Kad mi ramena i vilica ostanu zategnuti i tek sad primijetim koliko sam se trošio."
+  },
+  {
+    "id": "p-03",
+    "tekst": "Tuga ne mora da ode da bi ti bio ovdje. Može da sjedi pored tebe kao tih gost, dok dišeš.",
+    "teme": [
+      "tuga",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad mi je tužno, a ne znam tačno zašto. Kad mi je tokom meditacije došla neka težina u grudima ili su mi se oči napunile suzama. Kad ne želim da tugu otjeram, ali ni da me potpuno preplavi."
+  },
+  {
+    "id": "p-04",
+    "tekst": "Ono što nedostaje, nedostaje zato što je bilo važno. U tom bolu ima i traga ljubavi.",
+    "teme": [
+      "tuga",
+      "prolaznost",
+      "odnosi"
+    ],
+    "kadaPomaze": "Kad mi nedostaje neko ko više nije tu, ili neko vrijeme koje je prošlo. Kad se sjetim nečega što se završilo i zaboli me. Kad osjećam čežnju za ljudima i mjestima koja su se promijenila."
+  },
+  {
+    "id": "p-05",
+    "tekst": "Ljutnja je talas u tijelu. Možeš da je osjetiš u grudima i u rukama, a da joj još ne daš riječ.",
+    "teme": [
+      "ljutnja",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad sam ljut na nekoga i dok sjedim stalno vrtim u glavi šta mi je rekao. Kad osjetim bijes u stomaku, u grudima ili u stisnutim šakama. Kad ne želim da planem, ali ni da se pravim da me ništa ne dira."
+  },
+  {
+    "id": "p-06",
+    "tekst": "Ne moraš danas presuditi ko je u pravu. Dovoljno je primijetiti koliko te to peče i ostaviti odluku za mirniji čas.",
+    "teme": [
+      "ljutnja",
+      "odnosi",
+      "odluka"
+    ],
+    "kadaPomaze": "Kad sam se posvađao s nekim bliskim i još ključam. Kad mi se u glavi vrti razgovor koji bih volio da sam drukčije vodio. Kad osjećam da bih sad rekao nešto zbog čega bih kasnije žalio."
+  },
+  {
+    "id": "p-07",
+    "tekst": "Nemiran um nije pokvaren um. On samo traži gdje da sleti. Daj mu jedan dah, pa još jedan.",
+    "teme": [
+      "nemir",
+      "samokritika"
+    ],
+    "kadaPomaze": "Kad nijesam mogao da sjedim mirno, stalno sam se meškoljio i gledao na sat. Kad mi misli skaču s jedne stvari na drugu i ne mogu da ih uhvatim. Kad mislim da ne umijem da meditiram jer mi je glava puna."
+  },
+  {
+    "id": "p-08",
+    "tekst": "Rasut dan ostavlja rasut um. Ne moraš ga sabrati odjednom; dovoljno je da primijetiš gdje si sad.",
+    "teme": [
+      "nemir",
+      "svakodnevica",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad mi je dan bio rascjepkan, pun prekida, poruka i sitnih obaveza. Kad osjećam da sam bio svuda i nigdje. Kad mi treba da se vratim sebi poslije haotičnog dana."
+  },
+  {
+    "id": "p-09",
+    "tekst": "Strah gleda unaprijed. Tijelo je ipak ovdje, na stolici ili na podu, i sad diše.",
+    "teme": [
+      "strah",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad me brine nešto što tek treba da se desi: razgovor, put, pregled ili važan dan. Kad mi se u glavi nižu najgori scenariji. Kad osjećam stezanje u grudima zbog onoga što dolazi."
+  },
+  {
+    "id": "p-10",
+    "tekst": "Ne možeš znati kako će se završiti. Možeš znati kako sjediš sada i kako dišeš sada.",
+    "teme": [
+      "strah",
+      "kontrola"
+    ],
+    "kadaPomaze": "Kad želim da unaprijed znam ishod i ne mogu da se smirim dok ga ne saznam. Kad pokušavam da isplaniram svaku sitnicu da bih se osjećao sigurno. Kad me plaši neizvjesnost."
+  },
+  {
+    "id": "p-11",
+    "tekst": "Ima stvari koje danas možeš da promijeniš i stvari koje ne možeš. Ruke mogu da se odmore od ovih drugih.",
+    "teme": [
+      "kontrola",
+      "smirenost"
+    ],
+    "kadaPomaze": "Kad se trudim da sve držim pod kontrolom i iscrpljujem se. Kad me ljuti što ljudi i situacije ne idu onako kako sam zamislio. Kad shvatim koliko snage trošim na ono na šta ne mogu da utičem."
+  },
+  {
+    "id": "p-12",
+    "tekst": "Glas koji ti govori da nijesi dovoljno dobar nije jedini glas. Postoji i onaj tiši, koji je primijetio da si danas ipak sjeo.",
+    "teme": [
+      "samokritika"
+    ],
+    "kadaPomaze": "Kad sam strog prema sebi i stalno nalazim šta nijesam uradio kako treba. Kad mi u glavi odzvanja kritika i poredim se s drugima. Kad mislim da ni meditaciju ne radim dobro."
+  },
+  {
+    "id": "p-13",
+    "tekst": "Danas možda nijesi bio onakav kakav si htio da budeš. To ne briše sve ostalo što jesi.",
+    "teme": [
+      "samokritika",
+      "tuga"
+    ],
+    "kadaPomaze": "Kad sam danas pogriješio, planuo ili nekoga razočarao i ne mogu da prestanem da mislim o tome. Kad se osjećam kao da sam podbacio. Kad mi treba malo blagosti prema sebi poslije lošeg dana."
+  },
+  {
+    "id": "p-14",
+    "tekst": "Osjećaj da si sam je stvaran. A ipak, dok dišeš, dišeš isti vazduh kao i svi ljudi u ovom gradu.",
+    "teme": [
+      "usamljenost",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad se osjećam usamljeno, čak i kad sam među ljudima. Kad mi nedostaje neko s kim bih podijelio dan. Kad tišina u stanu postane preteška."
+  },
+  {
+    "id": "p-15",
+    "tekst": "Možda postoji neko kome bi jedna kratka poruka danas značila koliko i tebi. Ne mora biti ništa veliko.",
+    "teme": [
+      "usamljenost",
+      "odnosi"
+    ],
+    "kadaPomaze": "Kad sam se udaljio od prijatelja i ne znam kako da se ponovo javim. Kad čeznem za bliskošću, a stidim se da prvi pružim ruku. Kad osjetim da mi nedostaju ljudi."
+  },
+  {
+    "id": "p-16",
+    "tekst": "Nešto te danas ipak držalo: šolja čaja, nečiji glas, svjetlo kroz prozor. Vrijedi se za trenutak zadržati kod toga.",
+    "teme": [
+      "zahvalnost",
+      "svakodnevica"
+    ],
+    "kadaPomaze": "Kad poslije meditacije osjetim zahvalnost za male stvari. Kad primijetim da je dan imao i lijepih trenutaka, iako nije bio lak. Kad mi je drago zbog nečega sasvim običnog."
+  },
+  {
+    "id": "p-17",
+    "tekst": "Neko je danas bio dobar prema tebi, makar na sekund. Ta dobrota može da ide i dalje, kroz tebe.",
+    "teme": [
+      "zahvalnost",
+      "odnosi",
+      "radost"
+    ],
+    "kadaPomaze": "Kad mislim na ljude koji su mi blizu i osjetim toplinu. Kad sam zahvalan nekome ko mi je pomogao ili me saslušao. Kad me dirne nečija ljubaznost."
+  },
+  {
+    "id": "p-18",
+    "tekst": "Radost ne mora imati razlog niti trajati. Može samo da bude, kao sunce na zidu.",
+    "teme": [
+      "radost",
+      "prolaznost"
+    ],
+    "kadaPomaze": "Kad osjećam lakoću i radost poslije meditacije. Kad mi je lijepo bez nekog posebnog razloga. Kad se bojim da će ovo dobro raspoloženje proći, pa ne umijem ni da uživam u njemu."
+  },
+  {
+    "id": "p-19",
+    "tekst": "Primijeti kako se radost osjeća u tijelu: u licu, u grudima, u dahu. Ne treba je hvatati, dovoljno je pozdraviti je.",
+    "teme": [
+      "radost",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad se osjećam živo i svježe, kao da su mi se čula otvorila. Kad mi se tokom sjedenja javio osmijeh. Kad sam srećan zbog nečega što se danas desilo."
+  },
+  {
+    "id": "p-20",
+    "tekst": "Sjeo si danas. To je mali, pravi korak, i ne treba mu publika.",
+    "teme": [
+      "svakodnevica",
+      "radost"
+    ],
+    "kadaPomaze": "Kad osjetim da mi meditacija polako postaje dio dana. Kad primijetim malu promjenu, da se lakše smirim ili ranije primijetim misao. Kad sam zadovoljan što sam uopšte sjeo, iako nije bilo ništa posebno."
+  },
+  {
+    "id": "p-21",
+    "tekst": "Kad primijetiš da si odlutao i vratiš se dahu, to vraćanje i jeste vježba. Nema boljeg ni lošijeg vraćanja.",
+    "teme": [
+      "prisutnost",
+      "samokritika"
+    ],
+    "kadaPomaze": "Kad sam se tokom meditacije mnogo puta izgubio u mislima i vraćao se. Kad se pitam da li to uopšte radim kako treba. Kad mi se čini da mi um stalno bježi."
+  },
+  {
+    "id": "p-22",
+    "tekst": "Ovaj mir ne moraš čuvati. Dovoljno je da znaš kakav je, pa da ga prepoznaš kad opet naiđe.",
+    "teme": [
+      "smirenost",
+      "prolaznost"
+    ],
+    "kadaPomaze": "Kad osjećam duboku smirenost poslije sjedenja i ne bih da je izgubim. Kad mi je u glavi tiho i prostrano. Kad se plašim da će se gužva u glavi vratiti čim ustanem."
+  },
+  {
+    "id": "p-23",
+    "tekst": "Ne znati je ponekad najpoštenije mjesto na kome čovjek može da stoji.",
+    "teme": [
+      "zbunjenost",
+      "sumnja"
+    ],
+    "kadaPomaze": "Kad sam zbunjen i ne znam šta osjećam ni šta hoću. Kad mi se sve pomiješalo u glavi. Kad nemam odgovor, a čini mi se da bi trebalo da ga imam."
+  },
+  {
+    "id": "p-24",
+    "tekst": "Sumnja u to da li ovo ima smisla dio je puta, a ne njegov kraj. Možeš sjediti i s njom.",
+    "teme": [
+      "sumnja"
+    ],
+    "kadaPomaze": "Kad se pitam da li meditacija uopšte ima smisla i da li mi išta od ovoga pomaže. Kad sumnjam u sebe i u ono što radim. Kad mi se sve čini kao gubljenje vremena."
+  },
+  {
+    "id": "p-25",
+    "tekst": "Velika odluka ne mora pasti danas. Danas možeš samo da osjetiš uz koji izbor ti je dah lakši.",
+    "teme": [
+      "odluka",
+      "nemir"
+    ],
+    "kadaPomaze": "Kad stojim pred važnom odlukom i vrtim se između dvije mogućnosti. Kad me pritiska rok i ne mogu da se odlučim. Kad tražim savršen izbor i plašim se greške."
+  },
+  {
+    "id": "p-26",
+    "tekst": "Nijedan izbor ne dolazi s garancijom. Ni neodlučivanje nije stajanje u mjestu; i ono te nekud vodi.",
+    "teme": [
+      "odluka",
+      "strah"
+    ],
+    "kadaPomaze": "Kad odlažem odluku jer se bojim posljedica. Kad čekam da budem potpuno siguran prije nego što krenem. Kad shvatim da me neodlučnost iscrpljuje više nego sama odluka."
+  },
+  {
+    "id": "p-27",
+    "tekst": "Želja je došla i proći će ako je ne hraniš. Gledaj je kao oblak koji prelazi preko neba.",
+    "teme": [
+      "zudnja",
+      "prolaznost"
+    ],
+    "kadaPomaze": "Kad mi tokom sjedenja stalno dolazi želja da uzmem telefon, pojedem nešto slatko ili ustanem. Kad ne mogu da prestanem da mislim na nešto što želim da imam. Kad me vuče navika koje bih volio da se oslobodim."
+  },
+  {
+    "id": "p-28",
+    "tekst": "Držati nekoga previše čvrsto umara i tebe i njega. Ruke mogu ostati tople i kad su otvorene.",
+    "teme": [
+      "zudnja",
+      "odnosi"
+    ],
+    "kadaPomaze": "Kad se previše vežem za nekoga i plašim se da ću ga izgubiti. Kad mi treba nečija stalna pažnja i potvrda. Kad osjećam ljubomoru ili posesivnost i ne sviđa mi se to u sebi."
+  },
+  {
+    "id": "p-29",
+    "tekst": "Nije potrebno da danas budeš poseban. Možeš biti samo jedan čovjek koji sjedi i diše.",
+    "teme": [
+      "ego",
+      "smirenost"
+    ],
+    "kadaPomaze": "Kad mi je važno kako me drugi vide i umoran sam od dokazivanja. Kad osjećam da moram biti najbolji, najpametniji ili najduhovniji. Kad mi lakne kad se sjetim da smijem biti običan."
+  },
+  {
+    "id": "p-30",
+    "tekst": "Povrijeđen ponos stvarno boli. Ispod njega obično stoji nešto jednostavnije: želja da te neko zaista vidi.",
+    "teme": [
+      "ego",
+      "odnosi"
+    ],
+    "kadaPomaze": "Kad me neko ignorisao, potcijenio ili ponizio i to me i dalje peče. Kad osjećam da nijesam dobio priznanje koje sam zaslužio. Kad mi je ponos povrijeđen."
+  },
+  {
+    "id": "p-31",
+    "tekst": "Ovaj dan se neće ponoviti, ni dobar ni loš. U tome ima i olakšanja i ljepote.",
+    "teme": [
+      "prolaznost",
+      "smirenost"
+    ],
+    "kadaPomaze": "Kad mislim o tome kako vrijeme brzo prolazi. Kad primijetim da djeca rastu, roditelji stare, a godišnja doba se smjenjuju. Kad osjećam i tugu i olakšanje što ništa ne traje."
+  },
+  {
+    "id": "p-32",
+    "tekst": "Žao ti je onoga što se promijenilo, i to je razumljivo. A ono što si sada takođe vrijedi upoznati.",
+    "teme": [
+      "prolaznost",
+      "tuga"
+    ],
+    "kadaPomaze": "Kad osjećam da starim i da tijelo više ne može kao prije. Kad mi je žao nečega što se promijenilo i ne vraća se. Kad se opraštam od jedne faze života."
+  },
+  {
+    "id": "p-33",
+    "tekst": "Šta ako ovaj trenutak još ne poznaješ? Pogledaj ga kao da si prvi put ovdje.",
+    "teme": [
+      "radoznalost",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad mi je sjedenje bilo zanimljivo i primijetio sam nešto novo o sebi. Kad me zanima kako mi um radi. Kad poželim da svijet gledam svježim očima, kao dijete."
+  },
+  {
+    "id": "p-34",
+    "tekst": "Neobična misao ili osjećaj ne moraju se odmah objasniti. Mogu ostati otvoreno pitanje, kao vrata odškrinuta u drugu sobu.",
+    "teme": [
+      "radoznalost",
+      "zbunjenost"
+    ],
+    "kadaPomaze": "Kad mi se tokom meditacije javila neka čudna slika, sjećanje ili osjećaj koje ne razumijem. Kad me nešto u meni iznenadilo. Kad ne znam šta da mislim o onome što sam doživio."
+  },
+  {
+    "id": "p-35",
+    "tekst": "Pranje suđa, put do posla, kuvanje kafe: i to su mjesta na kojima možeš biti budan.",
+    "teme": [
+      "svakodnevica",
+      "prisutnost"
+    ],
+    "kadaPomaze": "Kad mi se život čini jednoličnim i svaki dan liči na prethodni. Kad se pitam kako da mir iz meditacije prenesem u obične poslove. Kad me rutina guši."
+  },
+  {
+    "id": "p-36",
+    "tekst": "Spisak obaveza neće nestati dok sjediš. Ali ni ti ne moraš nestati u njemu.",
+    "teme": [
+      "svakodnevica",
+      "nemir",
+      "umor"
+    ],
+    "kadaPomaze": "Kad imam previše obaveza i osjećam da ništa ne stižem. Kad mi je raspored pretrpan i stalno nešto jurim. Kad mi se čini da nemam vremena ni da dišem."
+  },
+  {
+    "id": "p-37",
+    "tekst": "Ljudi koje volimo najlakše nas dotaknu tamo gdje boli. To ne znači da je ljubav pogrešna.",
+    "teme": [
+      "odnosi",
+      "tuga"
+    ],
+    "kadaPomaze": "Kad sam razočaran u nekoga iz porodice ili u partnera. Kad me najbliži povrijede nekom sitnicom. Kad osjećam i ljubav i ljutnju prema istoj osobi."
+  },
+  {
+    "id": "p-38",
+    "tekst": "Stopala na podu, dlanovi na koljenima, dah koji dolazi sam od sebe. To je sve što ovaj trenutak traži.",
+    "teme": [
+      "prisutnost",
+      "smirenost"
+    ],
+    "kadaPomaze": "Kad sam se tokom meditacije osjećao prisutno, svjestan tijela i daha. Kad sam bar na trenutak bio potpuno ovdje. Kad osjećam da sam prizemljen i stabilan."
+  },
+  {
+    "id": "p-39",
+    "tekst": "Ako su došle suze, neka dođu. Ne moraš znati zašto da bi ih pustio.",
+    "teme": [
+      "tuga"
+    ],
+    "kadaPomaze": "Kad sam se rasplakao tokom ili poslije meditacije i ne znam tačno zbog čega. Kad osjetim da se nešto u meni olabavilo. Kad mi je neprijatno zbog suza."
+  },
+  {
+    "id": "p-40",
+    "tekst": "Kad san ne dolazi, i ležanje u tišini je neka vrsta odmora. Ne moraš se boriti s noći.",
+    "teme": [
+      "umor",
+      "nemir"
+    ],
+    "kadaPomaze": "Kad ne mogu da zaspim i misli mi se vrte. Kad meditiram uveče jer sam premoren, a opet sam budan. Kad me hvata nervoza što ne spavam."
+  },
+  {
+    "id": "p-41",
+    "tekst": "Ovih nekoliko minuta tišine danas su bili tvoji. Neka ti bude drago zbog njih, bez potrebe da ih bilo kome opravdavaš.",
+    "teme": [
+      "zahvalnost",
+      "smirenost"
+    ],
+    "kadaPomaze": "Kad sam zadovoljan što sam našao vremena za sebe usred gužve. Kad osjećam da sam zaslužio malo mira. Kad mi je neprijatno što uzimam vrijeme za sebe dok drugi rade."
+  },
+  {
+    "id": "p-42",
+    "tekst": "Ne mora biti savršeno da bi bilo dobro. Ni meditacija, ni dan, ni ti.",
+    "teme": [
+      "kontrola",
+      "samokritika"
+    ],
+    "kadaPomaze": "Kad mi ništa nije dovoljno dobro i sve mora biti besprijekorno. Kad me nervira svaka greška, i moja i tuđa. Kad shvatim da sam umoran od toga da sve držim na visini."
+  }
+]
