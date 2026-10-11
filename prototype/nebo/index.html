@@ -4,7 +4,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600&family=Zen+Maru+Gothic:wght@400;500;700&display=swap">
 <style>
-/* Layout: full-bleed live sky; one phase word in the upper third; quiet glass controls at the bottom that fade when idle.
+/* Layout: full-bleed live sky with a breathing circle of light in the upper third, a swaying meadow below,
+   and quiet glass controls at the edges that fade when idle.
    Deliberately single-look: the sky is the world, so colours are set explicitly rather than following light/dark. */
 :root {
   --ink: #ffffff;
@@ -12,7 +13,8 @@
   --glass: rgba(255, 255, 255, 0.14);
   --glass-strong: rgba(255, 255, 255, 0.32);
   --glass-line: rgba(255, 255, 255, 0.40);
-  --shade: rgba(24, 52, 104, 0.40);
+  --menu-bg: rgba(20, 34, 70, 0.42);
+  --shade: rgba(16, 32, 72, 0.45);
   --sky-fallback: #5aa6e6;
   --font-word: "Shippori Mincho", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --font-ui: "Zen Maru Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
@@ -31,6 +33,7 @@ body {
   -webkit-user-select: none;
 }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { pointer-events: none; }
 
 .stage {
   position: fixed; inset: 0;
@@ -43,11 +46,10 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 .ui { transition: opacity 0.9s ease; }
 body.idle .ui { opacity: 0; pointer-events: none; }
 
-.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.mark { font-family: var(--font-word); font-weight: 600; font-size: 1.15rem; letter-spacing: 0.06em; }
-.toggles { display: flex; gap: 8px; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.mark { font-family: var(--font-word); font-weight: 600; font-size: 1.15rem; letter-spacing: 0.06em; padding-top: 4px; }
 
-.pill, .chip, .play {
+.pill, .chip, .play, .opt {
   font: inherit;
   color: var(--ink);
   background: var(--glass);
@@ -57,34 +59,49 @@ body.idle .ui { opacity: 0; pointer-events: none; }
   cursor: pointer;
   text-shadow: inherit;
 }
-.pill { font-size: 0.82rem; padding: 6px 12px; border-radius: 999px; }
-.pill[aria-pressed="true"], .chip[aria-checked="true"] { background: var(--glass-strong); border-color: var(--ink); }
-.pill:focus-visible, .chip:focus-visible, .play:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.pill { font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; display: inline-flex; gap: 6px; align-items: baseline; }
+.pill .sub { color: var(--ink-soft); font-size: 0.78rem; }
+.chip[aria-checked="true"], .opt[aria-checked="true"] { background: var(--glass-strong); border-color: var(--ink); }
+.pill:focus-visible, .chip:focus-visible, .play:focus-visible, .opt:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.timewrap { position: relative; display: grid; justify-items: end; }
+.menu {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  width: min(300px, calc(100vw - 32px));
+  display: grid; gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--menu-bg);
+  border: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.menu-label { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+.menu-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt { font-size: 0.85rem; padding: 6px 11px; border-radius: 10px; }
 
 .breath {
-  align-self: start;
-  margin-top: 12vh;
-  display: grid; justify-items: center; gap: 10px;
+  position: absolute; left: 50%; top: 36%;
+  transform: translate(-50%, -50%);
+  display: grid; justify-items: center; gap: 6px;
   pointer-events: none;
+  text-align: center;
 }
 .word {
   margin: 0;
   font-family: var(--font-word);
   font-weight: 500;
-  font-size: clamp(2.6rem, 9vw, 4.4rem);
+  font-size: clamp(1.7rem, 6.4vw, 2.5rem);
   letter-spacing: 0.04em;
   line-height: 1;
+  text-shadow: 0 1px 3px rgba(16, 32, 72, 0.35), 0 2px 22px rgba(16, 32, 72, 0.55);
 }
-.track { width: min(46vw, 220px); height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); overflow: hidden; }
-.track span { display: block; height: 100%; width: 0; background: var(--ink); }
-.count { margin: 0; font-size: 0.95rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+.count { margin: 0; font-size: 0.9rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
 
-.bottom { display: grid; gap: 14px; justify-items: center; }
+.top { grid-row: 1; }
+.bottom { grid-row: 3; align-self: end; display: grid; gap: 14px; justify-items: center; }
 .patterns { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.chip {
-  display: grid; gap: 1px; justify-items: center;
-  min-width: 76px; padding: 8px 12px; border-radius: 14px;
-}
+.chip { display: grid; gap: 1px; justify-items: center; min-width: 76px; padding: 8px 12px; border-radius: 14px; }
 .chip b { font-weight: 500; font-size: 0.98rem; font-variant-numeric: tabular-nums; }
 .chip small { font-size: 0.72rem; color: var(--ink-soft); letter-spacing: 0.03em; }
 .row { display: flex; align-items: center; gap: 14px; }
@@ -100,18 +117,33 @@ body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
 </style>
 
 <canvas id="sky" aria-hidden="true"></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
 <main class="stage" id="stage">
   <header class="top ui">
     <span class="mark">Nebo</span>
-    <div class="toggles">
-      <button id="tDusk" class="pill" type="button" aria-pressed="false">Zalazak</button>
-      <button id="tMeadow" class="pill" type="button" aria-pressed="true">Livada</button>
+    <div class="timewrap">
+      <button id="timeBtn" class="pill" type="button" aria-expanded="false" aria-controls="timeMenu">
+        <span id="timeLabel">Dan</span><span class="sub" id="timeSub">po satu</span>
+      </button>
+      <div id="timeMenu" class="menu" hidden>
+        <span class="menu-label">Doba dana</span>
+        <div class="menu-row" role="radiogroup" aria-label="Kako se mijenja doba dana">
+          <button class="opt" type="button" role="radio" data-mode="clock" id="m-clock">Po satu</button>
+          <button class="opt" type="button" role="radio" data-mode="cycle" id="m-cycle">Ciklus dana</button>
+        </div>
+        <div class="menu-row" role="radiogroup" aria-label="Izaberi doba dana">
+          <button class="opt" type="button" role="radio" data-hour="6.2" id="m-6.2">Zora</button>
+          <button class="opt" type="button" role="radio" data-hour="12.5" id="m-12.5">Dan</button>
+          <button class="opt" type="button" role="radio" data-hour="18.9" id="m-18.9">Zalazak</button>
+          <button class="opt" type="button" role="radio" data-hour="20.3" id="m-20.3">Sumrak</button>
+          <button class="opt" type="button" role="radio" data-hour="23.5" id="m-23.5">Noć</button>
+        </div>
+      </div>
     </div>
   </header>
 
   <section class="breath">
     <p class="word" id="word" aria-live="polite">Udah</p>
-    <div class="track" aria-hidden="true"><span id="fill"></span></div>
     <p class="count" id="count">4</p>
   </section>
 
@@ -122,7 +154,7 @@ body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
         <svg id="icoPause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
         <svg id="icoPlay" viewBox="0 0 24 24" hidden><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
       </button>
-      <span class="stats" id="stats">0:00 · 0 udaha</span>
+      <span class="stats" id="stats">0:00 · 1 udah</span>
     </div>
   </footer>
 </main>
@@ -132,12 +164,17 @@ body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
 precision highp float;
 uniform vec2 uRes;
 uniform float uTime;
-uniform float uDrift;   // integrated wind (slows during holds)
-uniform float uMorph;   // integrated shape evolution
-uniform float uBreath;  // 0 = empty lungs, 1 = full
-uniform float uDusk;    // 0 day, 1 sunset
-uniform float uMeadow;  // 0 none, 1 meadow
-uniform float uMotion;  // 1 normal, ~0.3 reduced motion
+uniform float uDrift;     // integrated wind (slows during holds)
+uniform float uMorph;     // integrated shape evolution
+uniform float uWind;      // integrated gust phase, shared with the grass blades
+uniform float uBreath;    // 0 = empty lungs, 1 = full
+uniform float uMotion;    // 1 normal, ~0.3 reduced motion
+uniform vec3 uSkyTop, uSkyMid, uSkyHor;
+uniform vec3 uSh, uMd, uLt, uRim;
+uniform vec3 uSunCol, uGrassTop, uGrassBot;
+uniform vec2 uSunPos, uMoonPos;   // in uv space
+uniform float uSunAmt, uMoonAmt, uStars;
+uniform vec3 uLight;              // normalised direction towards the sun or moon
 
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -174,8 +211,7 @@ float smax(float a, float b, float k) {
 }
 
 // Union of round puffs on a jittered grid: the hand-drawn "cauliflower" lobes.
-// x: field (> 0 inside a puff, cell units). y: sphere shading of the front-most puff (-1..1).
-const vec3 SUN = vec3(-0.55, 0.75, 0.30);
+// x: field (> 0 inside a puff, cell units). y: sphere shading towards the light (-1..1).
 vec2 puffs(vec2 q, float seed) {
   vec2 i = floor(q);
   vec2 f = fract(q);
@@ -197,7 +233,7 @@ vec2 puffs(vec2 q, float seed) {
       vec3 n = vec3(n2, sqrt(max(0.0, 1.0 - dot(n2, n2))));
       float w = exp(14.0 * bulge);
       wSum += w;
-      sSum += w * dot(n, normalize(SUN));
+      sSum += w * dot(n, uLight);
     }
   }
   return vec2(field, sSum / max(wSum, 1e-4));
@@ -223,103 +259,128 @@ float cloud(vec2 p, float base, float height, float scale, float seed, float cov
   return min(d, bottom);
 }
 
-// Painterly three-tone shading with a warm rim on the sun side.
-vec4 layer(vec2 p, float base, float height, float scale, float seed, float cover,
-           float edge, float haze, vec3 skyC, vec3 sh, vec3 md, vec3 lt, vec3 rim) {
+// Painterly three-tone shading with a warm rim on the lit side.
+vec4 layer(vec2 p, float base, float height, float scale, float seed, float cover, float edge, float haze, vec3 skyC) {
   if (p.y < base - 0.03 || p.y > base + height * 1.6 + 0.08) return vec4(0.0);
   float mass;
   float shade;
   float d = cloud(p, base, height, scale, seed, cover, mass, shade);
   if (d < -0.02) return vec4(0.0);
 
-  float facing = shade;
   float vf = clamp((p.y - base) / (height * max(mass, 0.25)), 0.0, 1.0);
   float l = clamp(0.02 + 0.30 * vf + 0.62 * (shade * 0.5 + 0.5) + (uBreath - 0.4) * 0.18, 0.0, 1.0);
 
-  // three painted tones with narrow, slightly soft transitions
-  vec3 col = mix(sh, md, smoothstep(0.40, 0.43, l));
-  col = mix(col, lt, smoothstep(0.64, 0.67, l));
+  vec3 col = mix(uSh, uMd, smoothstep(0.40, 0.43, l));
+  col = mix(col, uLt, smoothstep(0.64, 0.67, l));
   col *= 0.95 + 0.07 * l;
 
-  float rimMask = (1.0 - smoothstep(0.0, edge * 4.0, d)) * smoothstep(0.1, 0.5, facing);
-  col = mix(col, rim, rimMask * (0.7 + 0.3 * uBreath));
+  float rimMask = (1.0 - smoothstep(0.0, edge * 4.0, d)) * smoothstep(0.1, 0.5, shade);
+  col = mix(col, uRim, rimMask * (0.7 + 0.3 * uBreath));
 
   float baseShade = 1.0 - smoothstep(0.04, 0.16, (p.y - base) / height);
-  col = mix(col, sh * 0.97, baseShade * 0.55);
+  col = mix(col, uSh * 0.97, baseShade * 0.55);
 
   col = mix(col, skyC, haze);
   return vec4(col, smoothstep(0.0, edge, d));
 }
 
 vec3 skyColor(float y) {
-  vec3 top = mix(vec3(0.13, 0.42, 0.82), vec3(0.17, 0.20, 0.46), uDusk);
-  vec3 mid = mix(vec3(0.36, 0.66, 0.93), vec3(0.62, 0.47, 0.66), uDusk);
-  vec3 hor = mix(vec3(0.80, 0.92, 0.97), vec3(1.00, 0.72, 0.52), uDusk);
-  vec3 c = mix(hor, mid, smoothstep(0.0, 0.45, y));
-  return mix(c, top, smoothstep(0.40, 1.0, y));
+  vec3 c = mix(uSkyHor, uSkyMid, smoothstep(0.0, 0.45, y));
+  return mix(c, uSkyTop, smoothstep(0.40, 1.0, y));
+}
+
+float hill(float x) {
+  return 0.115 + 0.03 * sin(x * 1.6 + 0.8) + 0.018 * sin(x * 3.7 + 2.0);
+}
+
+// Gust strength along the meadow; the same formula bends the blades drawn on top.
+float gust(float x) {
+  float g = 0.5 + 0.5 * sin(x * 3.0 + uWind + 0.6 * sin(x * 1.3 - uWind * 0.3));
+  return g * g;
 }
 
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y;
   vec2 p = vec2(uv.x * asp, uv.y);
-  vec2 sunP = vec2(asp * 0.18 + 0.05, 0.98);
+  vec2 sunP = vec2(uSunPos.x * asp, uSunPos.y);
+  vec2 moonP = vec2(uMoonPos.x * asp, uMoonPos.y);
   float b = uBreath;
 
   vec3 skyC = skyColor(uv.y);
   vec3 col = skyC;
-  vec3 sunCol = mix(vec3(1.0, 0.97, 0.88), vec3(1.0, 0.72, 0.42), uDusk);
 
+  // stars, behind everything
+  if (uStars > 0.01) {
+    vec2 sg = p * 90.0;
+    vec2 id = floor(sg);
+    float h = hash(id);
+    if (h > 0.972) {
+      float k = (h - 0.972) / 0.028;
+      vec2 sp = id + vec2(hash(id + 3.1), hash(id + 7.7));
+      float tw = 0.55 + 0.45 * sin(uTime * (0.8 + k * 2.5) + h * 40.0);
+      float s = smoothstep(0.10 + 0.16 * k, 0.0, length(sg - sp)) * tw * smoothstep(0.12, 0.45, uv.y);
+      col += vec3(0.86, 0.90, 1.0) * s * uStars * (0.35 + 0.65 * k) * 1.6;
+    }
+    // faint milky band
+    float band = exp(-pow((p.y - 0.55 - (p.x - asp * 0.5) * 0.35) * 5.0, 2.0));
+    col += vec3(0.30, 0.34, 0.50) * band * fbm(p * 6.0) * 0.18 * uStars;
+  }
+
+  // moon
+  vec2 dvm = p - moonP;
+  float dm = length(dvm);
+  if (uMoonAmt > 0.01) {
+    float disc = smoothstep(0.036, 0.033, dm);
+    float lit = smoothstep(0.030, 0.037, length(dvm - vec2(0.014, 0.008)));
+    vec3 moonCol = vec3(0.98, 0.96, 0.88) * mix(0.30, 1.0, lit) * (0.92 + 0.08 * noise(p * 140.0));
+    col = mix(col, moonCol, disc * uMoonAmt);
+    col += vec3(0.55, 0.65, 0.90) * (exp(-dm * 8.0) * 0.22 + exp(-dm * 30.0) * 0.20) * uMoonAmt;
+  }
+
+  // sun disc and rays
   vec2 dv = p - sunP;
   float dist = length(dv);
-  float ang = atan(dv.y, dv.x);
-  float rays = noise(vec2(ang * 5.0, uTime * 0.03)) * noise(vec2(ang * 11.0, 2.0 + uTime * 0.02));
-  col += sunCol * rays * exp(-dist * 1.8) * (0.05 + 0.13 * b);
+  if (uSunAmt > 0.01) {
+    col = mix(col, uSunCol * 0.4 + vec3(0.65), smoothstep(0.032, 0.026, dist) * uSunAmt);
+    float ang = atan(dv.y, dv.x);
+    float rays = noise(vec2(ang * 5.0, uTime * 0.03)) * noise(vec2(ang * 11.0, 2.0 + uTime * 0.02));
+    col += uSunCol * rays * exp(-dist * 1.8) * (0.05 + 0.13 * b) * uSunAmt;
+  }
 
   vec2 c = vec2(asp * 0.5, 0.42);
   vec2 pc = c + (p - c) / (1.0 + 0.035 * b * uMotion);
-
-  vec3 sh  = mix(vec3(0.55, 0.62, 0.83), vec3(0.45, 0.38, 0.60), uDusk);
-  vec3 md  = mix(vec3(0.86, 0.90, 0.97), vec3(0.90, 0.66, 0.68), uDusk);
-  vec3 lt  = mix(vec3(1.00, 0.99, 0.96), vec3(1.00, 0.87, 0.70), uDusk);
-  vec3 rim = mix(vec3(1.00, 0.94, 0.82), vec3(1.00, 0.78, 0.50), uDusk);
 
   // high cirrus streaks
   float band = smoothstep(0.62, 0.76, pc.y) * (1.0 - smoothstep(0.86, 0.98, pc.y));
   if (band > 0.0) {
     float ci = fbm(vec2(pc.x * 1.4 + uDrift * 0.15 + pc.y * 0.8, pc.y * 16.0));
-    col = mix(col, mix(md, lt, 0.6), smoothstep(0.56, 0.74, ci) * band * 0.40);
+    col = mix(col, mix(uMd, uLt, 0.6), smoothstep(0.56, 0.74, ci) * band * 0.40);
   }
 
-  vec4 L1 = layer(pc + vec2(uDrift * 0.35, 0.0), 0.36, 0.14, 3.0, 1.0, 0.06, 0.030, 0.42, skyC, sh, md, lt, rim);
+  vec4 L1 = layer(pc + vec2(uDrift * 0.35, 0.0), 0.36, 0.14, 3.0, 1.0, 0.06, 0.030, 0.42, skyC);
   col = mix(col, L1.rgb, L1.a);
-  vec4 L2 = layer(pc + vec2(uDrift * 0.60, 0.0), 0.25, 0.28, 1.9, 2.0, 0.08, 0.018, 0.16, skyC, sh, md, lt, rim);
+  vec4 L2 = layer(pc + vec2(uDrift * 0.60, 0.0), 0.25, 0.28, 1.9, 2.0, 0.08, 0.018, 0.16, skyC);
   col = mix(col, L2.rgb, L2.a);
-  vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10, 0.012, 0.0, skyC, sh, md, lt, rim);
+  vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10, 0.012, 0.0, skyC);
   col = mix(col, L3.rgb, L3.a);
 
-  if (uMeadow > 0.001) {
-    float hx = p.x;
-    float hill = 0.115 + 0.03 * sin(hx * 1.6 + 0.8) + 0.018 * sin(hx * 3.7 + 2.0)
-               + (noise(vec2(hx * 60.0, 1.0)) - 0.5) * 0.006;
-    hill = mix(-0.06, hill, uMeadow);
-    float inG = 1.0 - smoothstep(hill - 0.002, hill + 0.002, p.y);
-    if (inG > 0.0) {
-      float depth = clamp((hill - p.y) / 0.15, 0.0, 1.0);
-      vec3 gTop = mix(vec3(0.47, 0.70, 0.33), vec3(0.66, 0.52, 0.34), uDusk);
-      vec3 gBot = mix(vec3(0.17, 0.40, 0.22), vec3(0.22, 0.20, 0.26), uDusk);
-      vec3 g = mix(gTop, gBot, depth);
-      float w = sin(p.x * 4.0 - uDrift * 55.0 + p.y * 25.0 + fbm(p * vec2(3.0, 12.0)) * 4.0);
-      g += vec3(0.10, 0.10, 0.04) * smoothstep(0.6, 1.0, w) * (1.0 - depth * 0.6);
-      g *= 0.94 + 0.08 * noise(vec2(p.x * 220.0, p.y * 18.0));
-      col = mix(col, g, inG);
-    }
+  // meadow: painted mass with rolling gust highlights; blades are drawn on top
+  float hl = hill(p.x) + (noise(vec2(p.x * 60.0, 1.0)) - 0.5) * 0.006;
+  float inG = 1.0 - smoothstep(hl - 0.002, hl + 0.002, p.y);
+  if (inG > 0.0) {
+    float depth = clamp((hl - p.y) / 0.15, 0.0, 1.0);
+    vec3 g = mix(uGrassTop, uGrassBot, depth);
+    float w = gust(p.x + (hl - p.y) * 0.8);
+    g += uSunCol * 0.13 * smoothstep(0.35, 0.95, w) * (1.0 - depth * 0.6) * (0.25 + 0.75 * uSunAmt);
+    g *= 0.94 + 0.08 * noise(vec2(p.x * 220.0, p.y * 18.0));
+    col = mix(col, g, inG);
   }
 
   float glow = exp(-dist * 2.6) * 0.35 + exp(-dist * 9.0) * 0.45;
-  col += sunCol * glow * (0.50 + 0.80 * b);
+  col += uSunCol * glow * (0.50 + 0.80 * b) * uSunAmt;
 
-  col *= 1.0 - 0.10 * pow(length(uv - 0.5) * 1.2, 2.0);
+  col *= 1.0 - (0.10 + 0.14 * uStars) * pow(length(uv - 0.5) * 1.2, 2.0);
   col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * 0.012;
   gl_FragColor = vec4(col, 1.0);
 }
@@ -334,6 +395,57 @@ void main() {
     { id: "box", ratio: "4–4–4–4", name: "kvadrat",    phases: [["in", 4], ["hold", 4], ["out", 4], ["rest", 4]] },
   ];
   const LABEL = { in: "Udah", hold: "Zadrži", out: "Izdah", rest: "Zadrži" };
+  const CYCLE_SECONDS = 180; // one full day in "Ciklus dana"
+
+  // ---------- times of day ----------
+  const NIGHT = { skyTop: [0.02, 0.04, 0.12], skyMid: [0.05, 0.09, 0.22], skyHor: [0.12, 0.17, 0.33],
+    sh: [0.07, 0.09, 0.18], md: [0.16, 0.20, 0.34], lt: [0.36, 0.42, 0.60], rim: [0.70, 0.78, 0.95],
+    sun: [0.75, 0.82, 1.00], gTop: [0.10, 0.18, 0.20], gBot: [0.03, 0.06, 0.09], stars: 1 };
+  const DAWN = { skyTop: [0.20, 0.27, 0.52], skyMid: [0.62, 0.55, 0.70], skyHor: [1.00, 0.70, 0.55],
+    sh: [0.42, 0.40, 0.60], md: [0.88, 0.70, 0.74], lt: [1.00, 0.88, 0.78], rim: [1.00, 0.80, 0.60],
+    sun: [1.00, 0.78, 0.55], gTop: [0.45, 0.52, 0.38], gBot: [0.15, 0.22, 0.22], stars: 0.15 };
+  const MORNING = { skyTop: [0.16, 0.43, 0.80], skyMid: [0.42, 0.68, 0.92], skyHor: [0.84, 0.92, 0.95],
+    sh: [0.55, 0.62, 0.82], md: [0.87, 0.90, 0.96], lt: [1.00, 0.98, 0.94], rim: [1.00, 0.94, 0.84],
+    sun: [1.00, 0.95, 0.85], gTop: [0.48, 0.70, 0.34], gBot: [0.17, 0.40, 0.22], stars: 0 };
+  const DAY = { skyTop: [0.13, 0.42, 0.82], skyMid: [0.36, 0.66, 0.93], skyHor: [0.80, 0.92, 0.97],
+    sh: [0.55, 0.62, 0.83], md: [0.86, 0.90, 0.97], lt: [1.00, 0.99, 0.96], rim: [1.00, 0.94, 0.82],
+    sun: [1.00, 0.97, 0.88], gTop: [0.47, 0.70, 0.33], gBot: [0.17, 0.40, 0.22], stars: 0 };
+  const GOLDEN = { skyTop: [0.15, 0.36, 0.72], skyMid: [0.50, 0.66, 0.86], skyHor: [0.98, 0.86, 0.66],
+    sh: [0.52, 0.54, 0.74], md: [0.94, 0.86, 0.80], lt: [1.00, 0.93, 0.78], rim: [1.00, 0.82, 0.55],
+    sun: [1.00, 0.85, 0.60], gTop: [0.58, 0.66, 0.30], gBot: [0.20, 0.34, 0.18], stars: 0 };
+  const SUNSET = { skyTop: [0.17, 0.20, 0.46], skyMid: [0.62, 0.47, 0.66], skyHor: [1.00, 0.66, 0.45],
+    sh: [0.45, 0.38, 0.60], md: [0.90, 0.66, 0.68], lt: [1.00, 0.87, 0.70], rim: [1.00, 0.75, 0.45],
+    sun: [1.00, 0.68, 0.38], gTop: [0.62, 0.50, 0.32], gBot: [0.20, 0.18, 0.24], stars: 0 };
+  const DUSK = { skyTop: [0.07, 0.10, 0.28], skyMid: [0.22, 0.25, 0.48], skyHor: [0.55, 0.45, 0.60],
+    sh: [0.18, 0.19, 0.34], md: [0.38, 0.36, 0.55], lt: [0.62, 0.55, 0.72], rim: [0.90, 0.65, 0.60],
+    sun: [0.85, 0.60, 0.65], gTop: [0.22, 0.26, 0.30], gBot: [0.07, 0.09, 0.14], stars: 0.4 };
+  const KEYS = [[0, NIGHT], [4.8, NIGHT], [6.0, DAWN], [8.0, MORNING], [12, DAY], [15.5, DAY],
+    [17.5, GOLDEN], [19.0, SUNSET], [20.3, DUSK], [21.5, NIGHT], [24, NIGHT]];
+
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+  const sstep = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const mixArr = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  function paletteAt(h) {
+    let i = 0;
+    while (i < KEYS.length - 2 && h >= KEYS[i + 1][0]) i++;
+    const [h0, A] = KEYS[i], [h1, B] = KEYS[i + 1];
+    const t = sstep(0, 1, (h - h0) / (h1 - h0));
+    const out = {};
+    for (const k in A) out[k] = Array.isArray(A[k]) ? mixArr(A[k], B[k], t) : A[k] + (B[k] - A[k]) * t;
+    return out;
+  }
+  function arcPos(s) { return [0.08 + 0.84 * s, -0.06 + 1.0 * Math.sin(Math.PI * s)]; }
+  const sunPos = (h) => arcPos((h - 5.8) / 13.8);
+  const moonPos = (h) => arcPos((((h - 19.4) % 24) + 24) % 24 / 11);
+  function periodName(h) {
+    if (h < 5.4) return "Noć";
+    if (h < 7.6) return "Zora";
+    if (h < 17.8) return "Dan";
+    if (h < 19.7) return "Zalazak";
+    if (h < 21.1) return "Sumrak";
+    return "Noć";
+  }
+  const clockHour = () => { const d = new Date(); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; };
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem("nebo." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
@@ -341,15 +453,17 @@ void main() {
   };
 
   const $ = (id) => document.getElementById(id);
-  const wordEl = $("word"), fillEl = $("fill"), countEl = $("count"), statsEl = $("stats");
+  const wordEl = $("word"), countEl = $("count"), statsEl = $("stats");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   let pattern = PATTERNS.find((p) => p.id === store.get("pattern", "46")) || PATTERNS[0];
-  let dusk = store.get("dusk", false), meadow = store.get("meadow", true);
+  let timeMode = store.get("time", "clock"); // "clock" | "cycle" | hour number
+  let tod = timeMode === "clock" || timeMode === "cycle" ? clockHour() : Number(timeMode);
   let running = true, phaseIdx = 0, phaseT = 0, elapsed = 0, breaths = 1, touched = false;
-  let breath = 0, wind = 1, drift = 0, morph = 0, duskV = dusk ? 1 : 0, meadowV = meadow ? 1 : 0;
+  let breath = 0, wind = 1, drift = 0, morph = 0, windPhase = 0, clock = 0;
+  const ripples = [];
 
-  // ---------- controls ----------
+  // ---------- breathing controls ----------
   const patternsEl = $("patterns");
   for (const p of PATTERNS) {
     const b = document.createElement("button");
@@ -367,12 +481,6 @@ void main() {
   }
   selectPattern(pattern); breaths = 1;
 
-  const tDusk = $("tDusk"), tMeadow = $("tMeadow");
-  const syncToggles = () => { tDusk.setAttribute("aria-pressed", String(dusk)); tMeadow.setAttribute("aria-pressed", String(meadow)); };
-  tDusk.addEventListener("click", () => { dusk = !dusk; store.set("dusk", dusk); syncToggles(); });
-  tMeadow.addEventListener("click", () => { meadow = !meadow; store.set("meadow", meadow); syncToggles(); });
-  syncToggles();
-
   const playBtn = $("play");
   function setRunning(r) {
     running = r;
@@ -381,8 +489,51 @@ void main() {
     if (r) requestWake();
   }
   playBtn.addEventListener("click", () => setRunning(!running));
-  addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); setRunning(!running); } poke(); });
+  addEventListener("keydown", (e) => {
+    if (e.code === "Space") { e.preventDefault(); setRunning(!running); }
+    if (e.key === "Escape") closeMenu();
+    poke();
+  });
 
+  // ---------- time-of-day menu ----------
+  const timeBtn = $("timeBtn"), timeMenu = $("timeMenu");
+  function closeMenu() { timeMenu.hidden = true; timeBtn.setAttribute("aria-expanded", "false"); }
+  timeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = timeMenu.hidden;
+    timeMenu.hidden = !open; timeBtn.setAttribute("aria-expanded", String(open));
+  });
+  timeMenu.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const btn = e.target.closest(".opt");
+    if (!btn) return;
+    timeMode = btn.dataset.mode || Number(btn.dataset.hour);
+    store.set("time", timeMode);
+    syncTimeUi();
+  });
+  document.addEventListener("click", closeMenu);
+  function syncTimeUi() {
+    for (const o of timeMenu.querySelectorAll(".opt")) {
+      const on = o.dataset.mode ? o.dataset.mode === timeMode : Number(o.dataset.hour) === timeMode;
+      o.setAttribute("aria-checked", String(on));
+    }
+  }
+  syncTimeUi();
+
+  function stepTime(dt) {
+    if (timeMode === "cycle") { tod = (tod + dt * 24 / CYCLE_SECONDS) % 24; }
+    else {
+      const target = timeMode === "clock" ? clockHour() : timeMode;
+      let diff = (((target - tod) % 24) + 24) % 24; // always travel forward through the day
+      if (diff > 23.95) diff = 0;
+      if (diff < 0.002) tod = target;
+      else tod = (tod + Math.min(diff, Math.max(0.6, diff * 0.8) * dt)) % 24;
+    }
+    $("timeLabel").textContent = periodName(tod);
+    $("timeSub").textContent = timeMode === "clock" ? "po satu" : timeMode === "cycle" ? "ciklus" : "";
+  }
+
+  // ---------- idle, wake lock ----------
   let lastPoke = performance.now();
   function poke() { lastPoke = performance.now(); document.body.classList.remove("idle"); }
   addEventListener("pointerdown", () => { touched = true; }, { once: true, passive: true });
@@ -399,11 +550,14 @@ void main() {
   function announce() {
     const [type] = pattern.phases[phaseIdx];
     wordEl.textContent = LABEL[type];
-    if (touched) { try { navigator.vibrate && navigator.vibrate(type === "in" ? 18 : 10); } catch {} }
+    ripples.push({ t0: clock, strong: type === "in" || type === "out" });
+    const active = !navigator.userActivation || navigator.userActivation.hasBeenActive;
+    if (touched && active) { try { navigator.vibrate && navigator.vibrate(type === "in" ? 18 : 10); } catch {} }
   }
 
   // ---------- breath engine ----------
-  const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(x, 0), 1));
+  const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * clamp01(x));
+  let progress = 0;
   function stepBreath(dt) {
     if (running) {
       elapsed += dt;
@@ -416,8 +570,8 @@ void main() {
       }
     }
     const [type, dur] = pattern.phases[phaseIdx];
-    const x = phaseT / dur;
-    let target = type === "in" ? ease(x) : type === "out" ? 1 - ease(x) : type === "hold" ? 1 : 0;
+    progress = phaseT / dur;
+    let target = type === "in" ? ease(progress) : type === "out" ? 1 - ease(progress) : type === "hold" ? 1 : 0;
     if (!running) target = 0.35;
     breath += (target - breath) * Math.min(1, dt * (running ? 20 : 1.5));
 
@@ -426,91 +580,346 @@ void main() {
     const m = reduced ? 0.4 : 1;
     drift += 0.018 * wind * m * dt;
     morph += 0.020 * wind * m * dt;
+    windPhase += 1.1 * wind * m * dt;
 
-    // overlay
-    const fade = running ? Math.max(0.2, Math.min(1, phaseT / 0.45, (dur - phaseT) / 0.45)) : 0.55;
+    const fade = running ? Math.max(0.25, Math.min(1, phaseT / 0.45, (dur - phaseT) / 0.45)) : 0.6;
     wordEl.style.opacity = fade.toFixed(3);
-    fillEl.style.width = (running ? x * 100 : 0).toFixed(2) + "%";
     countEl.textContent = running ? String(Math.ceil(dur - phaseT)) : "pauza";
     const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
     statsEl.textContent = `${mm}:${String(ss).padStart(2, "0")} · ${breaths} ${breaths % 10 === 1 && breaths % 100 !== 11 ? "udah" : "udaha"}`;
 
-    if (running && performance.now() - lastPoke > 5000) document.body.classList.add("idle");
+    if (running && timeMenu.hidden && performance.now() - lastPoke > 5000) document.body.classList.add("idle");
   }
 
-  // ---------- WebGL ----------
+  // ---------- overlay: circle, grass, leaves, fireflies ----------
+  const fx = $("fx");
+  const ctx = fx.getContext("2d");
+  let W = 0, H = 0, DPR = 1;
+  let blades = [], plumes = [];
+  const rand = mulberry(7);
+  function mulberry(a) { return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+  function makeSprite(r, g, b) {
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const x = c.getContext("2d");
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${r},${g},${b},1)`);
+    gr.addColorStop(0.25, `rgba(${r},${g},${b},0.55)`);
+    gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+    return c;
+  }
+  const moteSprite = makeSprite(255, 252, 240);
+  const flySprite = makeSprite(214, 255, 150);
+
+  const hillY = (x) => { const xw = x / H; return H * (1 - (0.115 + 0.03 * Math.sin(xw * 1.6 + 0.8) + 0.018 * Math.sin(xw * 3.7 + 2.0))); };
+  const gustAt = (xw) => { const g = 0.5 + 0.5 * Math.sin(xw * 3.0 + windPhase + 0.6 * Math.sin(xw * 1.3 - windPhase * 0.3)); return g * g; };
+
+  function buildMeadow() {
+    blades = []; plumes = [];
+    const r = mulberry(11);
+    const u = DPR;
+    // crest: short, dense blades that make the hill edge fuzzy
+    for (let x = -12 * u; x < W + 12 * u; x += (2.2 + r() * 2.2) * u) {
+      blades.push({ x, y: hillY(x) + r() * 5 * u, h: (7 + r() * 13) * u, w: (1.6 + r()) * u, lean: -0.08 + r() * 0.1, flex: 0.5 + r() * 0.5, ph: r() * 6.28, d: 0, lit: r() < 0.45 });
+    }
+    // rows down to the bottom edge, larger and darker towards the viewer
+    const rows = 7;
+    for (let k = 1; k <= rows; k++) {
+      const d = k / rows;
+      const step = (5.5 - d * 2.2) * u;
+      for (let x = -30 * u; x < W + 30 * u; x += step * (0.6 + r() * 0.8)) {
+        const y0 = hillY(x);
+        const y = y0 + (H - y0) * (d * 0.92 + r() * 0.1);
+        blades.push({ x, y, h: (14 + 95 * Math.pow(d, 1.35) * (0.6 + r() * 0.7)) * u, w: (2 + 5 * d) * u * (0.7 + r() * 0.6), lean: -0.12 + r() * 0.16, flex: 0.6 + r() * 0.6, ph: r() * 6.28, d, lit: r() < 0.4 });
+      }
+    }
+    blades.sort((a, b) => a.y - b.y);
+    // a few tall silver-grass stalks with plumes
+    for (let i = 0; i < 7; i++) {
+      const x = W * (0.06 + 0.88 * r());
+      const y0 = hillY(x);
+      const y = y0 + (H - y0) * (0.35 + 0.6 * r());
+      plumes.push({ x, y, h: (120 + 120 * r()) * u * Math.min(1, H / (800 * u) + 0.4), flex: 0.9 + r() * 0.4, ph: r() * 6.28 });
+    }
+  }
+
+  const leaves = Array.from({ length: 6 }, (_, i) => ({ x: -1, y: 0, s: 0, rot: 0, vr: 0, bob: 0, delay: i * 2.6 + rand() * 2, hue: rand() }));
+  function resetLeaf(l) {
+    l.x = W + (20 + rand() * 120) * DPR; l.y = H * (0.18 + rand() * 0.55);
+    l.s = (5 + rand() * 6) * DPR; l.rot = rand() * 6.28; l.vr = (rand() - 0.5) * 5; l.bob = rand() * 6.28; l.hue = rand();
+  }
+  const flies = Array.from({ length: 24 }, () => ({ x: rand(), y: rand(), ph: rand() * 6.28, sp: 0.4 + rand() * 0.8, s: 0.6 + rand() * 0.8 }));
+  const motes = Array.from({ length: 44 }, () => ({ a: rand() * 6.28, spd: (0.05 + rand() * 0.14) * (rand() < 0.7 ? 1 : -1), off: rand() * 2 - 1, loose: rand(), s: 0.5 + rand() * 1.1, tw: rand() * 6.28 }));
+
+  function resizeFx() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = Math.round(fx.clientWidth * DPR); H = Math.round(fx.clientHeight * DPR);
+    fx.width = W; fx.height = H;
+    buildMeadow();
+  }
+
+  const css = (c, a) => `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
+
+  function drawMeadow(pal, t) {
+    const amp = (0.18 + 0.42 * wind) * (reduced ? 0.4 : 1);
+    const night = pal.stars;
+    // two tones per depth bucket so the blades read as painted strokes, not a flat fill
+    const buckets = 6;
+    const paths = [];
+    for (let i = 0; i < buckets * 2; i++) paths.push(new Path2D());
+    for (const b of blades) {
+      const g = gustAt(b.x / H);
+      const ang = b.lean - amp * g * b.flex + Math.sin(t * 2.3 + b.ph) * 0.05 * b.flex;
+      const tx = b.x + Math.sin(ang) * b.h, ty = b.y - Math.cos(ang) * b.h;
+      const cx = b.x + Math.sin(ang * 0.45) * b.h * 0.55, cy = b.y - Math.cos(ang * 0.45) * b.h * 0.55;
+      const p = paths[Math.min(buckets - 1, Math.floor(b.d * buckets)) * 2 + (b.lit ? 1 : 0)];
+      p.moveTo(b.x - b.w / 2, b.y);
+      p.quadraticCurveTo(cx - b.w * 0.25, cy, tx, ty);
+      p.quadraticCurveTo(cx + b.w * 0.25, cy, b.x + b.w / 2, b.y);
+    }
+    for (let i = 0; i < buckets; i++) {
+      const d = i / (buckets - 1);
+      const base = mixArr(pal.gTop, pal.gBot, Math.min(1, d * 1.15));
+      const shade = base.map((v) => v * 0.80);
+      const lit = mixArr(base.map((v) => v * 1.12), pal.sun, 0.10 * (1 - night));
+      ctx.fillStyle = css(shade, 1); ctx.fill(paths[i * 2]);
+      ctx.fillStyle = css(lit, 1); ctx.fill(paths[i * 2 + 1]);
+    }
+    // silver-grass plumes
+    const plumeCol = mixArr(mixArr(pal.sun, [1, 1, 1], 0.45), pal.gBot, night * 0.6);
+    ctx.lineCap = "round";
+    for (const s of plumes) {
+      const g = gustAt(s.x / H);
+      const ang = -0.05 - amp * 0.75 * g * s.flex + Math.sin(t * 1.7 + s.ph) * 0.05;
+      const tx = s.x + Math.sin(ang) * s.h, ty = s.y - Math.cos(ang) * s.h;
+      const cx = s.x + Math.sin(ang * 0.4) * s.h * 0.5, cy = s.y - Math.cos(ang * 0.4) * s.h * 0.5;
+      ctx.strokeStyle = css(mixArr(pal.gTop, pal.gBot, 0.5), 1);
+      ctx.lineWidth = 1.6 * DPR;
+      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.quadraticCurveTo(cx, cy, tx, ty); ctx.stroke();
+      // plume: a few soft, overlapping tufts along the tip, drooping downwind
+      ctx.fillStyle = css(plumeCol, 0.38 * (1 - 0.7 * night));
+      for (let k = 0; k < 5; k++) {
+        const f = k / 4;
+        const bx = cx + (tx - cx) * (0.45 + 0.55 * f), by = cy + (ty - cy) * (0.45 + 0.55 * f);
+        const a2 = ang - 0.3 - amp * g * 0.4 + (k % 2 ? 0.18 : -0.18) + Math.sin(t * 2.6 + k + s.ph) * 0.05;
+        ctx.beginPath();
+        ctx.ellipse(bx, by, 3.2 * DPR, (17 - 5 * f) * DPR, a2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  function drawLeaves(pal, dt, t) {
+    const amt = (1 - pal.stars) * (reduced ? 0 : 1);
+    if (amt < 0.02) return;
+    for (const l of leaves) {
+      if (l.delay > 0) { l.delay -= dt; if (l.delay <= 0) resetLeaf(l); continue; }
+      if (l.x < -40 * DPR) { l.delay = 1 + rand() * 5; continue; }
+      l.x -= (55 + 120 * wind) * DPR * dt;
+      l.bob += dt * 1.6;
+      l.y += Math.sin(l.bob) * 18 * DPR * dt;
+      l.rot += l.vr * dt * (0.4 + 0.6 * wind);
+      const col = mixArr(mixArr([0.55, 0.75, 0.35], [0.95, 0.78, 0.35], l.hue * 0.7), pal.sun, 0.25);
+      ctx.save();
+      ctx.translate(l.x, l.y); ctx.rotate(l.rot);
+      ctx.scale(1, 0.35 + 0.65 * Math.abs(Math.sin(l.rot * 0.7 + l.bob)));
+      ctx.globalAlpha = 0.9 * amt;
+      ctx.fillStyle = css(col, 1);
+      ctx.beginPath(); ctx.ellipse(0, 0, l.s, l.s * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = css(col.map((v) => v * 0.7), 1); ctx.lineWidth = 0.8 * DPR;
+      ctx.beginPath(); ctx.moveTo(-l.s, 0); ctx.lineTo(l.s * 1.25, 0); ctx.stroke();
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFireflies(pal, t) {
+    const amt = pal.stars;
+    if (amt < 0.05) return;
+    ctx.globalCompositeOperation = "lighter";
+    for (const f of flies) {
+      const x = (f.x * W + Math.sin(t * f.sp * 0.5 + f.ph) * 40 * DPR + t * 6 * DPR * f.sp) % (W + 60 * DPR) - 30 * DPR;
+      const yTop = H * 0.58;
+      const y = yTop + f.y * (H - yTop) * 0.9 + Math.cos(t * f.sp * 0.7 + f.ph * 1.3) * 22 * DPR;
+      const blink = Math.pow(Math.max(0, Math.sin(t * 1.2 * f.sp + f.ph * 5)), 2);
+      const s = (10 + 10 * f.s) * DPR;
+      ctx.globalAlpha = amt * (0.15 + 0.85 * blink);
+      ctx.drawImage(flySprite, x - s / 2, y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function drawCircle(pal, t, dt) {
+    const cx = W / 2, cy = H * 0.36;
+    const base = Math.min(W * 0.5, H * 0.32);
+    const r = base * (0.30 + 0.22 * breath);
+    const warm = mixArr([1, 1, 1], pal.sun, 0.35);
+
+    // halo of light around the circle
+    let g = ctx.createRadialGradient(cx, cy, r * 0.5, cx, cy, r * 2.0);
+    g.addColorStop(0, css(warm, 0.14 + 0.16 * breath));
+    g.addColorStop(0.45, css(warm, 0.05 + 0.07 * breath));
+    g.addColorStop(1, css(warm, 0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 2.0, 0, Math.PI * 2); ctx.fill();
+
+    // the orb: brighter rim like a soap bubble, a soft highlight towards the light
+    g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.05, cx, cy, r);
+    const dim = 1 - 0.55 * pal.stars; // a lighter touch on a dark sky
+    g.addColorStop(0, css([1, 1, 1], (0.14 + 0.08 * breath) * dim));
+    g.addColorStop(0.55, css(warm, 0.05 * dim));
+    g.addColorStop(0.92, css(warm, 0.10 * dim));
+    g.addColorStop(1, css([1, 1, 1], 0.22 * dim));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+
+    // a faint cool shadow keeps the ring readable against a bright noon sky
+    ctx.lineCap = "round";
+    ctx.save();
+    ctx.shadowColor = "rgba(16,36,86,0.35)";
+    ctx.shadowBlur = 10 * DPR;
+    ctx.strokeStyle = css([1, 1, 1], 0.6);
+    ctx.lineWidth = 1.5 * DPR;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+
+    // progress through the current phase
+    const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * (running ? progress : 0);
+    ctx.strokeStyle = css([1, 1, 1], 0.97);
+    ctx.lineWidth = 3.2 * DPR;
+    ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke();
+    ctx.restore();
+    if (running) {
+      const s = 26 * DPR;
+      ctx.globalCompositeOperation = "lighter";
+      ctx.drawImage(moteSprite, cx + Math.cos(a1) * r - s / 2, cy + Math.sin(a1) * r - s / 2, s, s);
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    // ripples at each phase change
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const k = (t - ripples[i].t0) / 2.2;
+      if (k >= 1) { ripples.splice(i, 1); continue; }
+      const e = 1 - Math.pow(1 - k, 3);
+      ctx.strokeStyle = css([1, 1, 1], (ripples[i].strong ? 0.5 : 0.3) * (1 - k));
+      ctx.lineWidth = (2.2 - 1.6 * k) * DPR;
+      ctx.beginPath(); ctx.arc(cx, cy, r * (1 + 0.75 * e), 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // motes of light: gathered onto the circle when the lungs are full, released on the out-breath
+    ctx.globalCompositeOperation = "lighter";
+    for (const m of motes) {
+      m.a += m.spd * dt * (0.35 + 0.65 * wind) * (reduced ? 0.3 : 1);
+      const spread = (1 - breath) * 0.6 * m.loose;
+      const rr = r * (1 + m.off * 0.05 + spread + 0.015 * Math.sin(t * 1.3 + m.tw));
+      const x = cx + Math.cos(m.a) * rr, y = cy + Math.sin(m.a) * rr;
+      const tw = 0.5 + 0.5 * Math.sin(t * 2.1 + m.tw);
+      const s = (7 + 9 * m.s) * DPR * (0.8 + 0.4 * breath);
+      ctx.globalAlpha = (0.25 + 0.75 * tw) * (1 - spread * 0.8) * (0.6 + 0.4 * breath);
+      ctx.drawImage(moteSprite, x - s / 2, y - s / 2, s, s);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  function drawOverlay(pal, t, dt) {
+    ctx.clearRect(0, 0, W, H);
+    drawLeaves(pal, dt, t);
+    drawMeadow(pal, t);
+    drawFireflies(pal, t);
+    drawCircle(pal, t, dt);
+  }
+
+  // ---------- WebGL sky ----------
   const canvas = $("sky");
   const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
-  if (!gl) { document.body.classList.add("nogl"); fallbackLoop(); return; }
+  let glOk = !!gl, U = {}, scale = 0.7;
 
-  function compile(type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
-    return s;
+  if (glOk) {
+    const compile = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
+      return s;
+    };
+    const vs = compile(gl.VERTEX_SHADER, "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}");
+    const fs = compile(gl.FRAGMENT_SHADER, $("frag").textContent);
+    const prog = vs && fs ? gl.createProgram() : null;
+    if (prog) {
+      gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(prog)); glOk = false; }
+    } else glOk = false;
+    if (glOk) {
+      gl.useProgram(prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(prog, "a");
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      for (const n of ["uRes", "uTime", "uDrift", "uMorph", "uWind", "uBreath", "uMotion", "uSkyTop", "uSkyMid", "uSkyHor",
+        "uSh", "uMd", "uLt", "uRim", "uSunCol", "uGrassTop", "uGrassBot", "uSunPos", "uMoonPos", "uSunAmt", "uMoonAmt", "uStars", "uLight"]) {
+        U[n] = gl.getUniformLocation(prog, n);
+      }
+    }
   }
-  const vs = compile(gl.VERTEX_SHADER, "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}");
-  const fs = compile(gl.FRAGMENT_SHADER, $("frag").textContent);
-  if (!vs || !fs) { document.body.classList.add("nogl"); fallbackLoop(); return; }
-  const prog = gl.createProgram();
-  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(prog)); document.body.classList.add("nogl"); fallbackLoop(); return; }
-  gl.useProgram(prog);
-
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, "a");
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-
-  const U = {};
-  for (const n of ["uRes", "uTime", "uDrift", "uMorph", "uBreath", "uDusk", "uMeadow", "uMotion"]) U[n] = gl.getUniformLocation(prog, n);
+  if (!glOk) document.body.classList.add("nogl");
 
   // Adaptive resolution: clouds are soft, so rendering below native size is invisible but saves the battery.
-  let scale = 0.7, frames = 0, acc = 0;
   function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = Math.max(1, Math.round(canvas.clientWidth * dpr * scale));
-    const h = Math.max(1, Math.round(canvas.clientHeight * dpr * scale));
-    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
+    if (glOk) {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.max(1, Math.round(canvas.clientWidth * dpr * scale));
+      const h = Math.max(1, Math.round(canvas.clientHeight * dpr * scale));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
+    }
+    resizeFx();
   }
   addEventListener("resize", resize);
   resize();
 
-  let last = performance.now(), t0 = last;
+  function lightDir(pos) { return [(pos[0] - 0.5) * 1.4, Math.max(-0.3, pos[1] - 0.3) + 0.15, 0.35]; }
+  const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return v.map((x) => x / l); };
+
+  let last = performance.now(), frames = 0, acc = 0;
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
-    last = now;
+    last = now; clock += dt;
     stepBreath(dt);
-    duskV += ((dusk ? 1 : 0) - duskV) * Math.min(1, dt * 1.2);
-    meadowV += ((meadow ? 1 : 0) - meadowV) * Math.min(1, dt * 2.0);
+    stepTime(dt);
 
-    acc += dt; frames++;
-    if (frames === 45) {
-      const avg = acc / frames;
-      if (avg > 0.024 && scale > 0.5) { scale = Math.max(0.5, scale * 0.85); resize(); }
-      else if (avg < 0.0145 && scale < 0.95) { scale = Math.min(0.95, scale * 1.08); resize(); }
-      frames = 0; acc = 0;
+    const pal = paletteAt(tod);
+    const sp = sunPos(tod), mp = moonPos(tod);
+    const sunAmt = sstep(5.5, 6.6, tod) * (1 - sstep(19.3, 20.2, tod));
+    const moonAmt = clamp01(1 - sstep(5.2, 6.3, tod) + sstep(19.6, 20.8, tod));
+    const L = norm(mixArr(lightDir(mp), lightDir(sp), sunAmt > 0.001 ? clamp01(sunAmt * 1.5) : 0));
+
+    if (glOk) {
+      acc += dt; frames++;
+      if (frames === 45) {
+        const avg = acc / frames;
+        if (avg > 0.024 && scale > 0.5) { scale = Math.max(0.5, scale * 0.85); resize(); }
+        else if (avg < 0.0145 && scale < 0.95) { scale = Math.min(0.95, scale * 1.08); resize(); }
+        frames = 0; acc = 0;
+      }
+      gl.uniform2f(U.uRes, canvas.width, canvas.height);
+      gl.uniform1f(U.uTime, clock);
+      gl.uniform1f(U.uDrift, drift);
+      gl.uniform1f(U.uMorph, morph);
+      gl.uniform1f(U.uWind, windPhase);
+      gl.uniform1f(U.uBreath, breath);
+      gl.uniform1f(U.uMotion, reduced ? 0.3 : 1);
+      gl.uniform3fv(U.uSkyTop, pal.skyTop); gl.uniform3fv(U.uSkyMid, pal.skyMid); gl.uniform3fv(U.uSkyHor, pal.skyHor);
+      gl.uniform3fv(U.uSh, pal.sh); gl.uniform3fv(U.uMd, pal.md); gl.uniform3fv(U.uLt, pal.lt); gl.uniform3fv(U.uRim, pal.rim);
+      gl.uniform3fv(U.uSunCol, pal.sun); gl.uniform3fv(U.uGrassTop, pal.gTop); gl.uniform3fv(U.uGrassBot, pal.gBot);
+      gl.uniform2fv(U.uSunPos, sp); gl.uniform2fv(U.uMoonPos, mp);
+      gl.uniform1f(U.uSunAmt, sunAmt); gl.uniform1f(U.uMoonAmt, moonAmt); gl.uniform1f(U.uStars, pal.stars);
+      gl.uniform3fv(U.uLight, L);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
-
-    gl.uniform2f(U.uRes, canvas.width, canvas.height);
-    gl.uniform1f(U.uTime, (now - t0) / 1000);
-    gl.uniform1f(U.uDrift, drift);
-    gl.uniform1f(U.uMorph, morph);
-    gl.uniform1f(U.uBreath, breath);
-    gl.uniform1f(U.uDusk, duskV);
-    gl.uniform1f(U.uMeadow, meadowV);
-    gl.uniform1f(U.uMotion, reduced ? 0.3 : 1);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    drawOverlay(pal, clock, dt);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-
-  function fallbackLoop() {
-    let l = performance.now();
-    const f = (n) => { stepBreath(Math.min(0.1, (n - l) / 1000)); l = n; requestAnimationFrame(f); };
-    requestAnimationFrame(f);
-  }
 })();
 </script>

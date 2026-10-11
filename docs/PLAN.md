@@ -22,18 +22,22 @@ Android aplikacija za smirenje i razumijevanje vlastitih uvida. Dva stuba dijele
 - Veliki kumulusi s ravnim dnom i visokim, zaobljenim vrhovima; oštre (ne zamućene) ivice.
 - Slikarsko sjenčenje u 3 tona: topla bijela (osvijetljeno), hladna bijela (sredina), lavanda-plava (sjenka) + krem odsjaj na ivici prema suncu.
 - Jak gradijent neba (azur → blijedo tirkizna kod horizonta), sunčev sjaj i blagi zraci.
-- Slojevi s paralaksom (daleki, srednji, bliski oblaci, cirusi) + niska livada s talasima vjetra.
-- Paleta: dan i zalazak.
+- Slojevi s paralaksom (daleki, srednji, bliski oblaci, cirusi).
+- Livada: pojedinačne vlati trave koje se povijaju u naletima vjetra (isti talas pomjera i odsjaj na brdu), nekoliko stabljika trske s perjanicama, lišće koje vjetar nosi preko neba.
+- Doba dana: noć → zora → jutro → dan → zlatno popodne → zalazak → sumrak → noć. Sunce i mjesec putuju lukom; svjetlo na oblacima dolazi od njih. Noću zvijezde, mlijecni put i krijesnice.
+- Načini: **po satu** (podrazumijevano, prati stvarno vrijeme), **ciklus dana** (cijeli dan za 3 minute) ili ručno izabrano doba; prelaz uvijek ide naprijed kroz dan.
 
 ### Disanje
 
-| Faza | Šta nebo radi |
-|---|---|
-| Udah | sunce jača, osvijetljeni dio oblaka raste, oblaci se blago šire |
-| Zadržavanje | vjetar staje |
-| Izdah | svjetlo se smiruje, oblaci nastavljaju da plove |
+Indikator je **krug svjetla** iznad oblaka: na udah raste, na izdah se smanjuje. Luk oko kruga pokazuje napredak faze, a svjetlucave čestice se na punim plućima skupe na krug i na izdah rasprše. Na svakoj promjeni faze od kruga se odvoji talas.
 
-Ritmovi: 4–6 (podrazumijevano), 5,5–5,5 koherentno, 4–7–8, kvadrat 4–4–4–4. Natpis faze + odbrojavanje; blaga vibracija na promjeni faze.
+| Faza | Šta se dešava |
+|---|---|
+| Udah | krug raste, čestice se skupljaju, sunce jača, osvijetljeni dio oblaka raste |
+| Zadržavanje | vjetar staje: oblaci, trava i lišće se smire |
+| Izdah | krug se smanjuje, čestice se raspršuju, svjetlo se smiruje |
+
+Ritmovi: 4–6 (podrazumijevano), 5,5–5,5 koherentno, 4–7–8, kvadrat 4–4–4–4. Natpis faze + odbrojavanje u krugu; blaga vibracija na promjeni faze.
 
 ## Faze
 
