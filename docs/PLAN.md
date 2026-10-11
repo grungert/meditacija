@@ -27,6 +27,15 @@ Android aplikacija za smirenje i razumijevanje vlastitih uvida. Dva stuba dijele
 - Doba dana: noć → zora → jutro → dan → zlatno popodne → zalazak → sumrak → noć. Sunce i mjesec putuju lukom; svjetlo na oblacima dolazi od njih. Noću zvijezde, mlijecni put i krijesnice.
 - Načini: **po satu** (podrazumijevano, prati stvarno vrijeme), **ciklus dana** (cijeli dan za 3 minute) ili ručno izabrano doba; prelaz uvijek ide naprijed kroz dan.
 
+### Šetnja (uključuje se dugmetom „Šetnja")
+
+Pogled sa strane: livada polako klizi s desna na lijevo, a krug ostaje u mjestu kao sidro.
+
+- Korak ide s dahom: na izdah hodaš, na udah se skoro zaustaviš, na zadržavanju stojiš.
+- Paralaksa: daleka brda (s maglom u dolinama) idu najsporije, greben livade srednje, bliska trava najbrže; oblaci se pomjere tek malo.
+- Usput, otprilike jednom u minut-dva: usamljeno drvo, red telegrafskih stubova, polje cvijeća, mali putni oltar, kamen s mahovinom.
+- Za pregled u browseru: `?brzo` ubrzava šetnju 20 puta (radi samo lokalno).
+
 ### Disanje
 
 Indikator je **krug svjetla** iznad oblaka: na udah raste, na izdah se smanjuje. Luk oko kruga pokazuje napredak faze, a svjetlucave čestice se na punim plućima skupe na krug i na izdah rasprše. Na svakoj promjeni faze od kruga se odvoji talas.

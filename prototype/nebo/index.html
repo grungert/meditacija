@@ -61,7 +61,8 @@ body.idle .ui { opacity: 0; pointer-events: none; }
 }
 .pill { font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; display: inline-flex; gap: 6px; align-items: baseline; }
 .pill .sub { color: var(--ink-soft); font-size: 0.78rem; }
-.chip[aria-checked="true"], .opt[aria-checked="true"] { background: var(--glass-strong); border-color: var(--ink); }
+.chip[aria-checked="true"], .opt[aria-checked="true"], .pill[aria-pressed="true"] { background: var(--glass-strong); border-color: var(--ink); }
+.top-right { display: flex; gap: 8px; align-items: flex-start; }
 .pill:focus-visible, .chip:focus-visible, .play:focus-visible, .opt:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .timewrap { position: relative; display: grid; justify-items: end; }
@@ -121,6 +122,8 @@ body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
 <main class="stage" id="stage">
   <header class="top ui">
     <span class="mark">Nebo</span>
+    <div class="top-right">
+    <button id="walkBtn" class="pill" type="button" aria-pressed="false">Šetnja</button>
     <div class="timewrap">
       <button id="timeBtn" class="pill" type="button" aria-expanded="false" aria-controls="timeMenu">
         <span id="timeLabel">Dan</span><span class="sub" id="timeSub">po satu</span>
@@ -139,6 +142,7 @@ body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
           <button class="opt" type="button" role="radio" data-hour="23.5" id="m-23.5">Noć</button>
         </div>
       </div>
+    </div>
     </div>
   </header>
 
@@ -167,6 +171,7 @@ uniform float uTime;
 uniform float uDrift;     // integrated wind (slows during holds)
 uniform float uMorph;     // integrated shape evolution
 uniform float uWind;      // integrated gust phase, shared with the grass blades
+uniform float uWalk;      // distance walked; the hill crest scrolls at 0.55x, the near ground at 1x
 uniform float uBreath;    // 0 = empty lungs, 1 = full
 uniform float uMotion;    // 1 normal, ~0.3 reduced motion
 uniform vec3 uSkyTop, uSkyMid, uSkyHor;
@@ -365,15 +370,31 @@ void main() {
   vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10, 0.012, 0.0, skyC);
   col = mix(col, L3.rgb, L3.a);
 
+  // distant ridges, hazed into the sky; they scroll slowly while walking
+  // (mist pools at the foot of each ridge)
+  vec3 hazeC = skyColor(0.12);
+  float x1 = p.x + uWalk * 0.15;
+  float r1 = 0.160 + 0.10 * (0.55 * noise(vec2(x1 * 2.6, 4.0)) + 0.30 * noise(vec2(x1 * 6.5, 5.0)) + 0.15 * noise(vec2(x1 * 15.0, 6.0)));
+  vec3 ridge1 = mix(hazeC, uSkyMid * 0.6 + uGrassBot * 0.4, 0.42);
+  ridge1 = mix(ridge1, hazeC, smoothstep(r1 - 0.012, r1 - 0.075, p.y) * 0.55);
+  col = mix(col, ridge1, smoothstep(r1 + 0.0015, r1 - 0.0015, p.y));
+  float x2 = p.x + uWalk * 0.3;
+  float r2 = 0.135 + 0.07 * (0.55 * noise(vec2(x2 * 3.4, 9.0)) + 0.30 * noise(vec2(x2 * 8.0, 10.0)) + 0.15 * noise(vec2(x2 * 18.0, 11.0)));
+  vec3 ridge2 = mix(hazeC, uGrassBot * 0.55 + uGrassTop * 0.45, 0.62);
+  ridge2 = mix(ridge2, hazeC, smoothstep(r2 - 0.01, r2 - 0.06, p.y) * 0.45);
+  col = mix(col, ridge2, smoothstep(r2 + 0.0015, r2 - 0.0015, p.y));
+
   // meadow: painted mass with rolling gust highlights; blades are drawn on top
-  float hl = hill(p.x) + (noise(vec2(p.x * 60.0, 1.0)) - 0.5) * 0.006;
+  float cx0 = p.x + uWalk * 0.55;
+  float hl = hill(cx0) + (noise(vec2(cx0 * 60.0, 1.0)) - 0.5) * 0.006;
   float inG = 1.0 - smoothstep(hl - 0.002, hl + 0.002, p.y);
   if (inG > 0.0) {
     float depth = clamp((hl - p.y) / 0.15, 0.0, 1.0);
+    float wx = p.x + uWalk * (0.55 + 0.45 * clamp((hl - p.y) / max(hl, 0.01), 0.0, 1.0));
     vec3 g = mix(uGrassTop, uGrassBot, depth);
-    float w = gust(p.x + (hl - p.y) * 0.8);
+    float w = gust(cx0 + (hl - p.y) * 0.8);
     g += uSunCol * 0.13 * smoothstep(0.35, 0.95, w) * (1.0 - depth * 0.6) * (0.25 + 0.75 * uSunAmt);
-    g *= 0.94 + 0.08 * noise(vec2(p.x * 220.0, p.y * 18.0));
+    g *= 0.94 + 0.08 * noise(vec2(wx * 220.0, p.y * 18.0));
     col = mix(col, g, inG);
   }
 
@@ -462,6 +483,9 @@ void main() {
   let running = true, phaseIdx = 0, phaseT = 0, elapsed = 0, breaths = 1, touched = false;
   let breath = 0, wind = 1, drift = 0, morph = 0, windPhase = 0, clock = 0;
   const ripples = [];
+  let walkOn = store.get("walk", false), walkS = 0, walkV = 0, walkAmt = walkOn ? 1 : 0;
+  // screen heights per second for the nearest grass, while breathing out (?brzo speeds it up for previewing)
+  const WALK_SPEED = 0.05 * (/[?&]brzo/.test(location.search) ? 20 : 1);
 
   // ---------- breathing controls ----------
   const patternsEl = $("patterns");
@@ -519,6 +543,14 @@ void main() {
     }
   }
   syncTimeUi();
+
+  const walkBtn = $("walkBtn");
+  const syncWalk = () => walkBtn.setAttribute("aria-pressed", String(walkOn));
+  walkBtn.addEventListener("click", () => {
+    walkOn = !walkOn; store.set("walk", walkOn); syncWalk();
+    if (walkOn) lmDist = Math.min(lmDist, 0.25); // meet the first thing soon after setting off
+  });
+  syncWalk();
 
   function stepTime(dt) {
     if (timeMode === "cycle") { tod = (tod + dt * 24 / CYCLE_SECONDS) % 24; }
@@ -582,6 +614,15 @@ void main() {
     morph += 0.020 * wind * m * dt;
     windPhase += 1.1 * wind * m * dt;
 
+    // walking follows the breath: steps on the out-breath, a near-stop on the in-breath, still during holds
+    const walkTarget = walkOn && running ? (type === "out" ? 1 : type === "in" ? 0.18 : 0) : 0;
+    walkV += (walkTarget - walkV) * Math.min(1, dt * 1.2);
+    const dWalk = walkV * WALK_SPEED * m * dt;
+    walkS += dWalk;
+    drift += dWalk * 0.08;
+    walkAmt += ((walkOn ? 1 : 0) - walkAmt) * Math.min(1, dt * 1.5);
+    stepLandmarks(dWalk * 0.55);
+
     const fade = running ? Math.max(0.25, Math.min(1, phaseT / 0.45, (dur - phaseT) / 0.45)) : 0.6;
     wordEl.style.opacity = fade.toFixed(3);
     countEl.textContent = running ? String(Math.ceil(dur - phaseT)) : "pauza";
@@ -612,7 +653,9 @@ void main() {
   const moteSprite = makeSprite(255, 252, 240);
   const flySprite = makeSprite(214, 255, 150);
 
-  const hillY = (x) => { const xw = x / H; return H * (1 - (0.115 + 0.03 * Math.sin(xw * 1.6 + 0.8) + 0.018 * Math.sin(xw * 3.7 + 2.0))); };
+  const hillFn = (xw) => 0.115 + 0.03 * Math.sin(xw * 1.6 + 0.8) + 0.018 * Math.sin(xw * 3.7 + 2.0);
+  const crestX = (sx) => sx / H + walkS * 0.55; // screen px -> world position along the crest
+  const hillY = (sx) => H * (1 - hillFn(crestX(sx)));
   const gustAt = (xw) => { const g = 0.5 + 0.5 * Math.sin(xw * 3.0 + windPhase + 0.6 * Math.sin(xw * 1.3 - windPhase * 0.3)); return g * g; };
 
   function buildMeadow() {
@@ -620,8 +663,9 @@ void main() {
     const r = mulberry(11);
     const u = DPR;
     // crest: short, dense blades that make the hill edge fuzzy
+    // x is the position at the start of the walk; frac is how far down from the crest the root sits
     for (let x = -12 * u; x < W + 12 * u; x += (2.2 + r() * 2.2) * u) {
-      blades.push({ x, y: hillY(x) + r() * 5 * u, h: (7 + r() * 13) * u, w: (1.6 + r()) * u, lean: -0.08 + r() * 0.1, flex: 0.5 + r() * 0.5, ph: r() * 6.28, d: 0, lit: r() < 0.45 });
+      blades.push({ x, off: r() * 5 * u, frac: 0, h: (7 + r() * 13) * u, w: (1.6 + r()) * u, lean: -0.08 + r() * 0.1, flex: 0.5 + r() * 0.5, ph: r() * 6.28, d: 0, lit: r() < 0.45 });
     }
     // rows down to the bottom edge, larger and darker towards the viewer
     const rows = 7;
@@ -629,18 +673,13 @@ void main() {
       const d = k / rows;
       const step = (5.5 - d * 2.2) * u;
       for (let x = -30 * u; x < W + 30 * u; x += step * (0.6 + r() * 0.8)) {
-        const y0 = hillY(x);
-        const y = y0 + (H - y0) * (d * 0.92 + r() * 0.1);
-        blades.push({ x, y, h: (14 + 95 * Math.pow(d, 1.35) * (0.6 + r() * 0.7)) * u, w: (2 + 5 * d) * u * (0.7 + r() * 0.6), lean: -0.12 + r() * 0.16, flex: 0.6 + r() * 0.6, ph: r() * 6.28, d, lit: r() < 0.4 });
+        blades.push({ x, off: 0, frac: d * 0.92 + r() * 0.1, h: (14 + 95 * Math.pow(d, 1.35) * (0.6 + r() * 0.7)) * u, w: (2 + 5 * d) * u * (0.7 + r() * 0.6), lean: -0.12 + r() * 0.16, flex: 0.6 + r() * 0.6, ph: r() * 6.28, d, lit: r() < 0.4 });
       }
     }
-    blades.sort((a, b) => a.y - b.y);
+    blades.sort((a, b) => a.frac - b.frac);
     // a few tall silver-grass stalks with plumes
     for (let i = 0; i < 7; i++) {
-      const x = W * (0.06 + 0.88 * r());
-      const y0 = hillY(x);
-      const y = y0 + (H - y0) * (0.35 + 0.6 * r());
-      plumes.push({ x, y, h: (120 + 120 * r()) * u * Math.min(1, H / (800 * u) + 0.4), flex: 0.9 + r() * 0.4, ph: r() * 6.28 });
+      plumes.push({ x: W * (0.06 + 0.88 * r()), frac: 0.35 + 0.6 * r(), h: (120 + 120 * r()) * u * Math.min(1, H / (800 * u) + 0.4), flex: 0.9 + r() * 0.4, ph: r() * 6.28 });
     }
   }
 
@@ -668,15 +707,21 @@ void main() {
     const buckets = 6;
     const paths = [];
     for (let i = 0; i < buckets * 2; i++) paths.push(new Path2D());
+    // nearer grass slides past faster than the crest (parallax); blades wrap around the screen edges
+    const margin = 30 * DPR, span = W + 2 * margin;
+    const wrapX = (x0, f) => { let x = (x0 + margin - walkS * f * H) % span; if (x < 0) x += span; return x - margin; };
     for (const b of blades) {
-      const g = gustAt(b.x / H);
+      const bx = wrapX(b.x, 0.55 + 0.45 * b.frac);
+      const y0 = hillY(bx);
+      const by = b.d === 0 ? y0 + b.off : y0 + (H - y0) * b.frac;
+      const g = gustAt(crestX(bx));
       const ang = b.lean - amp * g * b.flex + Math.sin(t * 2.3 + b.ph) * 0.05 * b.flex;
-      const tx = b.x + Math.sin(ang) * b.h, ty = b.y - Math.cos(ang) * b.h;
-      const cx = b.x + Math.sin(ang * 0.45) * b.h * 0.55, cy = b.y - Math.cos(ang * 0.45) * b.h * 0.55;
+      const tx = bx + Math.sin(ang) * b.h, ty = by - Math.cos(ang) * b.h;
+      const cx = bx + Math.sin(ang * 0.45) * b.h * 0.55, cy = by - Math.cos(ang * 0.45) * b.h * 0.55;
       const p = paths[Math.min(buckets - 1, Math.floor(b.d * buckets)) * 2 + (b.lit ? 1 : 0)];
-      p.moveTo(b.x - b.w / 2, b.y);
+      p.moveTo(bx - b.w / 2, by);
       p.quadraticCurveTo(cx - b.w * 0.25, cy, tx, ty);
-      p.quadraticCurveTo(cx + b.w * 0.25, cy, b.x + b.w / 2, b.y);
+      p.quadraticCurveTo(cx + b.w * 0.25, cy, bx + b.w / 2, by);
     }
     for (let i = 0; i < buckets; i++) {
       const d = i / (buckets - 1);
@@ -690,13 +735,16 @@ void main() {
     const plumeCol = mixArr(mixArr(pal.sun, [1, 1, 1], 0.45), pal.gBot, night * 0.6);
     ctx.lineCap = "round";
     for (const s of plumes) {
-      const g = gustAt(s.x / H);
+      const sx = wrapX(s.x, 0.55 + 0.45 * s.frac);
+      const sy0 = hillY(sx);
+      const sy = sy0 + (H - sy0) * s.frac;
+      const g = gustAt(crestX(sx));
       const ang = -0.05 - amp * 0.75 * g * s.flex + Math.sin(t * 1.7 + s.ph) * 0.05;
-      const tx = s.x + Math.sin(ang) * s.h, ty = s.y - Math.cos(ang) * s.h;
-      const cx = s.x + Math.sin(ang * 0.4) * s.h * 0.5, cy = s.y - Math.cos(ang * 0.4) * s.h * 0.5;
+      const tx = sx + Math.sin(ang) * s.h, ty = sy - Math.cos(ang) * s.h;
+      const cx = sx + Math.sin(ang * 0.4) * s.h * 0.5, cy = sy - Math.cos(ang * 0.4) * s.h * 0.5;
       ctx.strokeStyle = css(mixArr(pal.gTop, pal.gBot, 0.5), 1);
       ctx.lineWidth = 1.6 * DPR;
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.quadraticCurveTo(cx, cy, tx, ty); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(cx, cy, tx, ty); ctx.stroke();
       // plume: a few soft, overlapping tufts along the tip, drooping downwind
       ctx.fillStyle = css(plumeCol, 0.38 * (1 - 0.7 * night));
       for (let k = 0; k < 5; k++) {
@@ -734,12 +782,203 @@ void main() {
     ctx.globalAlpha = 1;
   }
 
+  // ---------- things met along the walk ----------
+  const LM_ORDER = ["tree", "poles", "flowers", "shrine", "tree", "stone", "flowers", "poles"];
+  const LM_DEPTH = { tree: 0, poles: 0, stone: 0.08, shrine: 0.12, flowers: 0.55 };
+  let landmarks = [], lmDist = 0.25, lmIdx = 0;
+  const lmRand = mulberry(23);
+  function stepLandmarks(dCrest) {
+    if (!walkOn || !H) return;
+    lmDist -= dCrest;
+    if (lmDist <= 0) {
+      const type = LM_ORDER[lmIdx++ % LM_ORDER.length];
+      const f = 0.55 + 0.45 * LM_DEPTH[type];
+      const l = { type, f, d: LM_DEPTH[type], wx: walkS * f + W / H + 0.35, seed: lmRand() };
+      if (type === "flowers") {
+        l.items = Array.from({ length: 60 }, () => ({ dx: (lmRand() - 0.5) * 0.6, frac: 0.25 + lmRand() * 0.65, c: Math.floor(lmRand() * 3), s: 3.5 + lmRand() * 3.5 }));
+      }
+      landmarks.push(l);
+      lmDist = 1.4 + lmRand() * 1.2;
+    }
+    landmarks = landmarks.filter((l) => (l.wx - walkS * l.f) * H > -1.4 * H);
+  }
+
+  const TREE_BLOBS = [[-0.18, -0.62, 0.13], [0, -0.70, 0.16], [0.18, -0.63, 0.13], [-0.09, -0.81, 0.13], [0.10, -0.83, 0.13],
+    [-0.27, -0.55, 0.09], [0.27, -0.56, 0.09], [0, -0.92, 0.10], [-0.05, -0.55, 0.12], [0.12, -0.54, 0.11], [-0.20, -0.74, 0.10], [0.22, -0.75, 0.10],
+    [-0.33, -0.62, 0.065], [0.34, -0.64, 0.06], [-0.29, -0.71, 0.07], [0.30, -0.72, 0.065], [-0.14, -0.93, 0.075], [0.15, -0.94, 0.07],
+    [-0.22, -0.49, 0.07], [0.21, -0.48, 0.07], [0.04, -1.0, 0.06], [-0.36, -0.54, 0.05], [0.37, -0.55, 0.05]];
+
+  // A lone round tree on the crest, painted in three tones like the clouds.
+  function drawTree(x, y, sc, pal, g, L) {
+    const night = pal.stars;
+    const fog = (c) => mixArr(c, pal.skyHor, 0.18 * (1 - night));
+    const trunk = fog(mixArr([0.32, 0.24, 0.20], pal.gBot, 0.45 + 0.35 * night));
+    ctx.fillStyle = css(trunk, 1);
+    ctx.beginPath();
+    ctx.moveTo(x - sc * 0.04, y);
+    ctx.quadraticCurveTo(x - sc * 0.015, y - sc * 0.3, x - sc * 0.012, y - sc * 0.6);
+    ctx.lineTo(x + sc * 0.012, y - sc * 0.6);
+    ctx.quadraticCurveTo(x + sc * 0.015, y - sc * 0.3, x + sc * 0.04, y);
+    ctx.fill();
+    ctx.strokeStyle = css(trunk, 1); ctx.lineWidth = sc * 0.014; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x, y - sc * 0.38); ctx.quadraticCurveTo(x - sc * 0.08, y - sc * 0.48, x - sc * 0.16, y - sc * 0.56);
+    ctx.moveTo(x, y - sc * 0.45); ctx.quadraticCurveTo(x + sc * 0.09, y - sc * 0.52, x + sc * 0.17, y - sc * 0.58);
+    ctx.stroke();
+
+    const sway = (g - 0.3) * sc * 0.015;
+    const ln = Math.hypot(L[0], L[1]) || 1, ox = L[0] / ln, oy = -L[1] / ln;
+    const dark = fog(mixArr(pal.gBot, pal.gTop, 0.15).map((v) => v * 0.85));
+    const mid = fog(mixArr(pal.gBot, pal.gTop, 0.55));
+    const lit = fog(mixArr(pal.gTop, pal.sun, 0.22 * (1 - night)).map((v) => v * 1.05));
+    // shadow silhouette first; lit clumps are shifted towards the light and clipped to it,
+    // so each clump keeps a shadow crescent on its far side
+    const blobPath = (rs, off, upperOnly) => {
+      const p = new Path2D();
+      for (const [dx, dy, r] of TREE_BLOBS) {
+        if (upperOnly && dy > -0.6) continue;
+        const bx = x + dx * sc + sway * -dy + ox * r * sc * off;
+        const by = y + dy * sc + oy * r * sc * off;
+        p.moveTo(bx + r * sc * rs, by);
+        p.arc(bx, by, r * sc * rs, 0, Math.PI * 2);
+      }
+      return p;
+    };
+    const silhouette = blobPath(1, 0, false);
+    ctx.fillStyle = css(dark, 1); ctx.fill(silhouette);
+    ctx.save();
+    ctx.clip(silhouette);
+    ctx.fillStyle = css(mid, 1); ctx.fill(blobPath(0.92, 0.38, false));
+    ctx.fillStyle = css(lit, 1); ctx.fill(blobPath(0.62, 0.62, true));
+    ctx.restore();
+  }
+
+  // A line of wooden telegraph poles along the crest, wires sagging between them.
+  function drawPoles(x, pal) {
+    const col = mixArr(mixArr([0.25, 0.20, 0.18], pal.gBot, 0.5), pal.skyHor, 0.25 * (1 - pal.stars));
+    const n = 4, gap = H * 0.32, h = H * 0.16;
+    const tops = [];
+    ctx.fillStyle = css(col, 1);
+    for (let k = 0; k < n; k++) {
+      const px = x + k * gap, py = hillY(px) + 2 * DPR;
+      const hh = h * (1 - 0.04 * k);
+      ctx.fillRect(px - 1.6 * DPR, py - hh, 3.2 * DPR, hh);
+      ctx.fillRect(px - H * 0.024, py - hh + H * 0.012, H * 0.048, 2.2 * DPR);
+      tops.push([px, py - hh + H * 0.012]);
+    }
+    ctx.strokeStyle = css(col, 0.9);
+    ctx.lineWidth = 0.9 * DPR;
+    ctx.beginPath();
+    for (const o of [-0.02 * H, 0.02 * H]) {
+      for (let k = 0; k < n - 1; k++) {
+        const [ax, ay] = tops[k], [bx, by] = tops[k + 1];
+        ctx.moveTo(ax + o, ay);
+        ctx.quadraticCurveTo((ax + bx) / 2 + o, (ay + by) / 2 + H * 0.03, bx + o, by);
+      }
+    }
+    ctx.stroke();
+  }
+
+  // A small wayside shrine on a stone base.
+  function drawShrine(x, y, sc, pal) {
+    const night = pal.stars;
+    const tone = (c) => mixArr(c, pal.gBot, 0.2 + 0.45 * night);
+    const stone = tone([0.60, 0.60, 0.58]), wood = tone([0.56, 0.28, 0.20]), roof = tone([0.26, 0.24, 0.27]);
+    ctx.fillStyle = css(stone, 1);
+    ctx.fillRect(x - sc * 0.55, y - sc * 0.28, sc * 1.1, sc * 0.28);
+    ctx.fillStyle = css(wood, 1);
+    ctx.fillRect(x - sc * 0.38, y - sc * 0.95, sc * 0.76, sc * 0.67);
+    ctx.fillStyle = css(wood.map((v) => v * 0.45), 1);
+    ctx.fillRect(x - sc * 0.17, y - sc * 0.80, sc * 0.34, sc * 0.52);
+    ctx.fillStyle = css(roof, 1);
+    ctx.beginPath();
+    ctx.moveTo(x - sc * 0.72, y - sc * 0.88);
+    ctx.quadraticCurveTo(x - sc * 0.3, y - sc * 1.02, x, y - sc * 1.38);
+    ctx.quadraticCurveTo(x + sc * 0.3, y - sc * 1.02, x + sc * 0.72, y - sc * 0.88);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // A weathered standing stone, wider at the foot, lit on the sun side, with moss on top.
+  function drawStone(x, y, sc, pal, L) {
+    const night = pal.stars;
+    const base = mixArr([0.52, 0.53, 0.55], pal.gBot, 0.3 + 0.4 * night);
+    const shape = new Path2D();
+    shape.moveTo(x - sc * 0.48, y);
+    shape.quadraticCurveTo(x - sc * 0.55, y - sc * 0.6, x - sc * 0.26, y - sc * 1.0);
+    shape.quadraticCurveTo(x - sc * 0.02, y - sc * 1.16, x + sc * 0.22, y - sc * 0.98);
+    shape.quadraticCurveTo(x + sc * 0.5, y - sc * 0.56, x + sc * 0.44, y);
+    shape.closePath();
+    ctx.fillStyle = css(base, 1);
+    ctx.fill(shape);
+    ctx.save();
+    ctx.clip(shape);
+    const side = L[0] < 0 ? -1 : 1;
+    ctx.fillStyle = css(mixArr(base.map((v) => v * 1.22), pal.sun, 0.2 * (1 - night)), 1);
+    ctx.beginPath(); ctx.ellipse(x + side * sc * 0.28, y - sc * 0.72, sc * 0.42, sc * 0.6, side * 0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = css(mixArr(pal.gTop, pal.gBot, 0.35), 1);
+    ctx.beginPath(); ctx.ellipse(x - sc * 0.08, y - sc * 1.1, sc * 0.42, sc * 0.2, -0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // A patch of small wildflowers among the near grass.
+  const FLOWER_COLS = [[1, 1, 0.96], [1, 0.88, 0.45], [1, 0.78, 0.85]];
+  function drawFlowers(l, x0, pal) {
+    const amp = (0.18 + 0.42 * wind) * 4 * DPR;
+    for (let c = 0; c < 3; c++) {
+      ctx.fillStyle = css(mixArr(FLOWER_COLS[c], pal.gBot, 0.7 * pal.stars), 0.95);
+      ctx.beginPath();
+      for (const it of l.items) {
+        if (it.c !== c) continue;
+        const x = x0 + it.dx * H;
+        const y0 = hillY(x);
+        const s = it.s * (0.5 + it.frac) * DPR;
+        const fx = x - gustAt(crestX(x)) * amp * it.frac;
+        const fy = y0 + (H - y0) * it.frac - s * 2.5;
+        ctx.moveTo(fx + s, fy);
+        ctx.arc(fx, fy, s, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  }
+
+  // preview helper, only with ?brzo: fast-forward the simulation without rendering
+  if (/[?&]brzo/.test(location.search)) {
+    window.__nebo = {
+      advance(sec) { for (let k = 0; k < sec / 0.05; k++) { clock += 0.05; stepBreath(0.05); stepTime(0.05); } },
+      stop() { setRunning(false); walkV = 0; },
+      jump(d) { walkS += d; stepLandmarks(d * 0.55); },
+      get landmarks() { return landmarks.map((l) => ({ type: l.type, x: Math.round((l.wx - walkS * l.f) * H) })); },
+    };
+  }
+  function drawLandmarks(pal, t, L, front) {
+    if (walkAmt < 0.02) return;
+    ctx.globalAlpha = Math.min(1, walkAmt);
+    for (const l of landmarks) {
+      if ((l.type === "flowers") !== front) continue;
+      const x = (l.wx - walkS * l.f) * H;
+      const reach = l.type === "poles" ? 1.1 * H : 0.4 * H;
+      if (x < -reach || x > W + 0.4 * H) continue;
+      const y0 = hillY(x);
+      const y = l.d === 0 ? y0 + 3 * DPR : y0 + (H - y0) * l.d;
+      if (l.type === "tree") drawTree(x, y, H * (0.20 + 0.06 * l.seed), pal, gustAt(crestX(x)), L);
+      else if (l.type === "poles") drawPoles(x, pal);
+      else if (l.type === "shrine") drawShrine(x, y, H * 0.05, pal);
+      else if (l.type === "stone") drawStone(x, y, H * 0.045, pal, L);
+      else drawFlowers(l, x, pal);
+    }
+    ctx.globalAlpha = 1;
+  }
+
   function drawFireflies(pal, t) {
     const amt = pal.stars;
     if (amt < 0.05) return;
     ctx.globalCompositeOperation = "lighter";
     for (const f of flies) {
-      const x = (f.x * W + Math.sin(t * f.sp * 0.5 + f.ph) * 40 * DPR + t * 6 * DPR * f.sp) % (W + 60 * DPR) - 30 * DPR;
+      const fspan = W + 60 * DPR;
+      let x = (f.x * W + Math.sin(t * f.sp * 0.5 + f.ph) * 40 * DPR + t * 6 * DPR * f.sp - walkS * 0.8 * H) % fspan;
+      if (x < 0) x += fspan;
+      x -= 30 * DPR;
       const yTop = H * 0.58;
       const y = yTop + f.y * (H - yTop) * 0.9 + Math.cos(t * f.sp * 0.7 + f.ph * 1.3) * 22 * DPR;
       const blink = Math.pow(Math.max(0, Math.sin(t * 1.2 * f.sp + f.ph * 5)), 2);
@@ -823,10 +1062,12 @@ void main() {
     ctx.globalCompositeOperation = "source-over";
   }
 
-  function drawOverlay(pal, t, dt) {
+  function drawOverlay(pal, t, dt, L) {
     ctx.clearRect(0, 0, W, H);
     drawLeaves(pal, dt, t);
+    drawLandmarks(pal, t, L, false);
     drawMeadow(pal, t);
+    drawLandmarks(pal, t, L, true);
     drawFireflies(pal, t);
     drawCircle(pal, t, dt);
   }
@@ -857,7 +1098,7 @@ void main() {
       const loc = gl.getAttribLocation(prog, "a");
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-      for (const n of ["uRes", "uTime", "uDrift", "uMorph", "uWind", "uBreath", "uMotion", "uSkyTop", "uSkyMid", "uSkyHor",
+      for (const n of ["uRes", "uTime", "uDrift", "uMorph", "uWind", "uWalk", "uBreath", "uMotion", "uSkyTop", "uSkyMid", "uSkyHor",
         "uSh", "uMd", "uLt", "uRim", "uSunCol", "uGrassTop", "uGrassBot", "uSunPos", "uMoonPos", "uSunAmt", "uMoonAmt", "uStars", "uLight"]) {
         U[n] = gl.getUniformLocation(prog, n);
       }
@@ -907,6 +1148,7 @@ void main() {
       gl.uniform1f(U.uDrift, drift);
       gl.uniform1f(U.uMorph, morph);
       gl.uniform1f(U.uWind, windPhase);
+      gl.uniform1f(U.uWalk, walkS);
       gl.uniform1f(U.uBreath, breath);
       gl.uniform1f(U.uMotion, reduced ? 0.3 : 1);
       gl.uniform3fv(U.uSkyTop, pal.skyTop); gl.uniform3fv(U.uSkyMid, pal.skyMid); gl.uniform3fv(U.uSkyHor, pal.skyHor);
@@ -917,7 +1159,7 @@ void main() {
       gl.uniform3fv(U.uLight, L);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
-    drawOverlay(pal, clock, dt);
+    drawOverlay(pal, clock, dt, L);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
