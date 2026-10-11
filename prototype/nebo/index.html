@@ -1,0 +1,516 @@
+<meta charset="utf-8">
+<title>Nebo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600&family=Zen+Maru+Gothic:wght@400;500;700&display=swap">
+<style>
+/* Layout: full-bleed live sky; one phase word in the upper third; quiet glass controls at the bottom that fade when idle.
+   Deliberately single-look: the sky is the world, so colours are set explicitly rather than following light/dark. */
+:root {
+  --ink: #ffffff;
+  --ink-soft: rgba(255, 255, 255, 0.80);
+  --glass: rgba(255, 255, 255, 0.14);
+  --glass-strong: rgba(255, 255, 255, 0.32);
+  --glass-line: rgba(255, 255, 255, 0.40);
+  --shade: rgba(24, 52, 104, 0.40);
+  --sky-fallback: #5aa6e6;
+  --font-word: "Shippori Mincho", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-ui: "Zen Maru Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--sky-fallback);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+.stage {
+  position: fixed; inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(env(safe-area-inset-bottom, 0px) + 18px);
+  text-shadow: 0 1px 14px var(--shade);
+}
+
+.ui { transition: opacity 0.9s ease; }
+body.idle .ui { opacity: 0; pointer-events: none; }
+
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mark { font-family: var(--font-word); font-weight: 600; font-size: 1.15rem; letter-spacing: 0.06em; }
+.toggles { display: flex; gap: 8px; }
+
+.pill, .chip, .play {
+  font: inherit;
+  color: var(--ink);
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  text-shadow: inherit;
+}
+.pill { font-size: 0.82rem; padding: 6px 12px; border-radius: 999px; }
+.pill[aria-pressed="true"], .chip[aria-checked="true"] { background: var(--glass-strong); border-color: var(--ink); }
+.pill:focus-visible, .chip:focus-visible, .play:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.breath {
+  align-self: start;
+  margin-top: 12vh;
+  display: grid; justify-items: center; gap: 10px;
+  pointer-events: none;
+}
+.word {
+  margin: 0;
+  font-family: var(--font-word);
+  font-weight: 500;
+  font-size: clamp(2.6rem, 9vw, 4.4rem);
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+.track { width: min(46vw, 220px); height: 2px; border-radius: 2px; background: rgba(255, 255, 255, 0.28); overflow: hidden; }
+.track span { display: block; height: 100%; width: 0; background: var(--ink); }
+.count { margin: 0; font-size: 0.95rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+
+.bottom { display: grid; gap: 14px; justify-items: center; }
+.patterns { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.chip {
+  display: grid; gap: 1px; justify-items: center;
+  min-width: 76px; padding: 8px 12px; border-radius: 14px;
+}
+.chip b { font-weight: 500; font-size: 0.98rem; font-variant-numeric: tabular-nums; }
+.chip small { font-size: 0.72rem; color: var(--ink-soft); letter-spacing: 0.03em; }
+.row { display: flex; align-items: center; gap: 14px; }
+.play { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; }
+.play svg { width: 20px; height: 20px; fill: var(--ink); filter: drop-shadow(0 1px 6px var(--shade)); }
+.stats { font-size: 0.82rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; min-width: 9.5em; }
+
+.nogl-msg { display: none; }
+body.nogl .nogl-msg { display: block; position: fixed; left: 16px; right: 16px; bottom: 40%; text-align: center; }
+body.nogl { background: linear-gradient(#2f72c9, #9fd3f0); }
+
+@media (prefers-reduced-motion: reduce) { .ui { transition: none; } }
+</style>
+
+<canvas id="sky" aria-hidden="true"></canvas>
+<main class="stage" id="stage">
+  <header class="top ui">
+    <span class="mark">Nebo</span>
+    <div class="toggles">
+      <button id="tDusk" class="pill" type="button" aria-pressed="false">Zalazak</button>
+      <button id="tMeadow" class="pill" type="button" aria-pressed="true">Livada</button>
+    </div>
+  </header>
+
+  <section class="breath">
+    <p class="word" id="word" aria-live="polite">Udah</p>
+    <div class="track" aria-hidden="true"><span id="fill"></span></div>
+    <p class="count" id="count">4</p>
+  </section>
+
+  <footer class="bottom ui">
+    <div class="patterns" id="patterns" role="radiogroup" aria-label="Ritam disanja"></div>
+    <div class="row">
+      <button id="play" class="play" type="button" aria-label="Pauziraj">
+        <svg id="icoPause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+        <svg id="icoPlay" viewBox="0 0 24 24" hidden><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>
+      </button>
+      <span class="stats" id="stats">0:00 · 0 udaha</span>
+    </div>
+  </footer>
+</main>
+<p class="nogl-msg">Ovaj uređaj ne podržava WebGL, pa nebo ne može da se nacrta.</p>
+
+<script id="frag" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uDrift;   // integrated wind (slows during holds)
+uniform float uMorph;   // integrated shape evolution
+uniform float uBreath;  // 0 = empty lungs, 1 = full
+uniform float uDusk;    // 0 day, 1 sunset
+uniform float uMeadow;  // 0 none, 1 meadow
+uniform float uMotion;  // 1 normal, ~0.3 reduced motion
+
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+  for (int i = 0; i < 5; i++) {
+    v += a * noise(p);
+    p = m * p + vec2(3.1, 1.7);
+    a *= 0.5;
+  }
+  return v;
+}
+
+float smax(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (a - b) / k, 0.0, 1.0);
+  return mix(b, a, h) + k * h * (1.0 - h);
+}
+
+// Union of round puffs on a jittered grid: the hand-drawn "cauliflower" lobes.
+// x: field (> 0 inside a puff, cell units). y: sphere shading of the front-most puff (-1..1).
+const vec3 SUN = vec3(-0.55, 0.75, 0.30);
+vec2 puffs(vec2 q, float seed) {
+  vec2 i = floor(q);
+  vec2 f = fract(q);
+  float field = -1.0;
+  float wSum = 0.0;
+  float sSum = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 g = vec2(float(x), float(y));
+      vec2 id = i + g;
+      vec2 o = vec2(hash(id + seed), hash(id + seed + 17.0));
+      float r = 0.42 + 0.46 * hash(id + seed + 31.0);
+      vec2 off = f - g - o;
+      float dd = r - length(off);
+      field = smax(field, dd, 0.12);
+      // puffs that bulge further towards the viewer dominate the shading; soft weights avoid shard-like seams
+      float bulge = dd / r;
+      vec2 n2 = off / r;
+      vec3 n = vec3(n2, sqrt(max(0.0, 1.0 - dot(n2, n2))));
+      float w = exp(14.0 * bulge);
+      wSum += w;
+      sSum += w * dot(n, normalize(SUN));
+    }
+  }
+  return vec2(field, sSum / max(wSum, 1e-4));
+}
+
+// Signed density of one cumulus layer: > 0 inside the cloud.
+// An envelope gives towers with a flat base; puffs give the rounded lobes and their light;
+// smaller puffs add lobes on the lobes. Puffs drift upward slowly (convection).
+float cloud(vec2 p, float base, float height, float scale, float seed, float cover, out float mass, out float shade) {
+  float x = p.x * scale + seed * 13.7;
+  mass = noise(vec2(x * 0.9, seed)) * 0.65 + noise(vec2(x * 2.1, seed + 5.3)) * 0.35;
+  mass = smoothstep(0.40 - cover, 0.78 - cover * 0.5, mass);
+  float top = base + height * mass;
+  float env = (top - p.y) / height;
+  vec2 q = vec2(p.x * scale * 3.2 + uMorph * 0.25, (p.y - base) * scale * 3.2 - uMorph * 0.4) + seed * 11.0;
+  vec2 big = puffs(q, seed);
+  vec2 small = puffs(q * 2.3 + 5.0, seed + 3.0);
+  float d = env * 1.2 + big.x * 0.9 - 0.25 + small.x * 0.30 + (fbm(q * 4.0) - 0.5) * 0.08;
+  shade = mix(big.y, small.y, 0.22 * smoothstep(-0.05, 0.1, small.x));
+  float wob = (noise(vec2(p.x * scale * 5.0 + seed, seed)) - 0.5) * 0.022
+            + (noise(vec2(p.x * scale * 19.0 + seed, seed + 2.0)) - 0.5) * 0.008;
+  float bottom = (p.y - base + wob) / height * 9.0;
+  return min(d, bottom);
+}
+
+// Painterly three-tone shading with a warm rim on the sun side.
+vec4 layer(vec2 p, float base, float height, float scale, float seed, float cover,
+           float edge, float haze, vec3 skyC, vec3 sh, vec3 md, vec3 lt, vec3 rim) {
+  if (p.y < base - 0.03 || p.y > base + height * 1.6 + 0.08) return vec4(0.0);
+  float mass;
+  float shade;
+  float d = cloud(p, base, height, scale, seed, cover, mass, shade);
+  if (d < -0.02) return vec4(0.0);
+
+  float facing = shade;
+  float vf = clamp((p.y - base) / (height * max(mass, 0.25)), 0.0, 1.0);
+  float l = clamp(0.02 + 0.30 * vf + 0.62 * (shade * 0.5 + 0.5) + (uBreath - 0.4) * 0.18, 0.0, 1.0);
+
+  // three painted tones with narrow, slightly soft transitions
+  vec3 col = mix(sh, md, smoothstep(0.40, 0.43, l));
+  col = mix(col, lt, smoothstep(0.64, 0.67, l));
+  col *= 0.95 + 0.07 * l;
+
+  float rimMask = (1.0 - smoothstep(0.0, edge * 4.0, d)) * smoothstep(0.1, 0.5, facing);
+  col = mix(col, rim, rimMask * (0.7 + 0.3 * uBreath));
+
+  float baseShade = 1.0 - smoothstep(0.04, 0.16, (p.y - base) / height);
+  col = mix(col, sh * 0.97, baseShade * 0.55);
+
+  col = mix(col, skyC, haze);
+  return vec4(col, smoothstep(0.0, edge, d));
+}
+
+vec3 skyColor(float y) {
+  vec3 top = mix(vec3(0.13, 0.42, 0.82), vec3(0.17, 0.20, 0.46), uDusk);
+  vec3 mid = mix(vec3(0.36, 0.66, 0.93), vec3(0.62, 0.47, 0.66), uDusk);
+  vec3 hor = mix(vec3(0.80, 0.92, 0.97), vec3(1.00, 0.72, 0.52), uDusk);
+  vec3 c = mix(hor, mid, smoothstep(0.0, 0.45, y));
+  return mix(c, top, smoothstep(0.40, 1.0, y));
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y;
+  vec2 p = vec2(uv.x * asp, uv.y);
+  vec2 sunP = vec2(asp * 0.18 + 0.05, 0.98);
+  float b = uBreath;
+
+  vec3 skyC = skyColor(uv.y);
+  vec3 col = skyC;
+  vec3 sunCol = mix(vec3(1.0, 0.97, 0.88), vec3(1.0, 0.72, 0.42), uDusk);
+
+  vec2 dv = p - sunP;
+  float dist = length(dv);
+  float ang = atan(dv.y, dv.x);
+  float rays = noise(vec2(ang * 5.0, uTime * 0.03)) * noise(vec2(ang * 11.0, 2.0 + uTime * 0.02));
+  col += sunCol * rays * exp(-dist * 1.8) * (0.05 + 0.13 * b);
+
+  vec2 c = vec2(asp * 0.5, 0.42);
+  vec2 pc = c + (p - c) / (1.0 + 0.035 * b * uMotion);
+
+  vec3 sh  = mix(vec3(0.55, 0.62, 0.83), vec3(0.45, 0.38, 0.60), uDusk);
+  vec3 md  = mix(vec3(0.86, 0.90, 0.97), vec3(0.90, 0.66, 0.68), uDusk);
+  vec3 lt  = mix(vec3(1.00, 0.99, 0.96), vec3(1.00, 0.87, 0.70), uDusk);
+  vec3 rim = mix(vec3(1.00, 0.94, 0.82), vec3(1.00, 0.78, 0.50), uDusk);
+
+  // high cirrus streaks
+  float band = smoothstep(0.62, 0.76, pc.y) * (1.0 - smoothstep(0.86, 0.98, pc.y));
+  if (band > 0.0) {
+    float ci = fbm(vec2(pc.x * 1.4 + uDrift * 0.15 + pc.y * 0.8, pc.y * 16.0));
+    col = mix(col, mix(md, lt, 0.6), smoothstep(0.56, 0.74, ci) * band * 0.40);
+  }
+
+  vec4 L1 = layer(pc + vec2(uDrift * 0.35, 0.0), 0.36, 0.14, 3.0, 1.0, 0.06, 0.030, 0.42, skyC, sh, md, lt, rim);
+  col = mix(col, L1.rgb, L1.a);
+  vec4 L2 = layer(pc + vec2(uDrift * 0.60, 0.0), 0.25, 0.28, 1.9, 2.0, 0.08, 0.018, 0.16, skyC, sh, md, lt, rim);
+  col = mix(col, L2.rgb, L2.a);
+  vec4 L3 = layer(pc + vec2(uDrift, 0.0), 0.11, 0.50, 1.2, 3.0, 0.10, 0.012, 0.0, skyC, sh, md, lt, rim);
+  col = mix(col, L3.rgb, L3.a);
+
+  if (uMeadow > 0.001) {
+    float hx = p.x;
+    float hill = 0.115 + 0.03 * sin(hx * 1.6 + 0.8) + 0.018 * sin(hx * 3.7 + 2.0)
+               + (noise(vec2(hx * 60.0, 1.0)) - 0.5) * 0.006;
+    hill = mix(-0.06, hill, uMeadow);
+    float inG = 1.0 - smoothstep(hill - 0.002, hill + 0.002, p.y);
+    if (inG > 0.0) {
+      float depth = clamp((hill - p.y) / 0.15, 0.0, 1.0);
+      vec3 gTop = mix(vec3(0.47, 0.70, 0.33), vec3(0.66, 0.52, 0.34), uDusk);
+      vec3 gBot = mix(vec3(0.17, 0.40, 0.22), vec3(0.22, 0.20, 0.26), uDusk);
+      vec3 g = mix(gTop, gBot, depth);
+      float w = sin(p.x * 4.0 - uDrift * 55.0 + p.y * 25.0 + fbm(p * vec2(3.0, 12.0)) * 4.0);
+      g += vec3(0.10, 0.10, 0.04) * smoothstep(0.6, 1.0, w) * (1.0 - depth * 0.6);
+      g *= 0.94 + 0.08 * noise(vec2(p.x * 220.0, p.y * 18.0));
+      col = mix(col, g, inG);
+    }
+  }
+
+  float glow = exp(-dist * 2.6) * 0.35 + exp(-dist * 9.0) * 0.45;
+  col += sunCol * glow * (0.50 + 0.80 * b);
+
+  col *= 1.0 - 0.10 * pow(length(uv - 0.5) * 1.2, 2.0);
+  col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * 0.012;
+  gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(() => {
+  const PATTERNS = [
+    { id: "46",  ratio: "4–6",     name: "smirenje",   phases: [["in", 4], ["out", 6]] },
+    { id: "55",  ratio: "5,5–5,5", name: "koherentno", phases: [["in", 5.5], ["out", 5.5]] },
+    { id: "478", ratio: "4–7–8",   name: "za san",     phases: [["in", 4], ["hold", 7], ["out", 8]] },
+    { id: "box", ratio: "4–4–4–4", name: "kvadrat",    phases: [["in", 4], ["hold", 4], ["out", 4], ["rest", 4]] },
+  ];
+  const LABEL = { in: "Udah", hold: "Zadrži", out: "Izdah", rest: "Zadrži" };
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("nebo." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("nebo." + k, JSON.stringify(v)); } catch {} },
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const wordEl = $("word"), fillEl = $("fill"), countEl = $("count"), statsEl = $("stats");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let pattern = PATTERNS.find((p) => p.id === store.get("pattern", "46")) || PATTERNS[0];
+  let dusk = store.get("dusk", false), meadow = store.get("meadow", true);
+  let running = true, phaseIdx = 0, phaseT = 0, elapsed = 0, breaths = 1, touched = false;
+  let breath = 0, wind = 1, drift = 0, morph = 0, duskV = dusk ? 1 : 0, meadowV = meadow ? 1 : 0;
+
+  // ---------- controls ----------
+  const patternsEl = $("patterns");
+  for (const p of PATTERNS) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.id = "pat-" + p.id;
+    b.setAttribute("role", "radio");
+    b.innerHTML = `<b>${p.ratio}</b><small>${p.name}</small>`;
+    b.addEventListener("click", () => selectPattern(p));
+    patternsEl.appendChild(b);
+  }
+  function selectPattern(p) {
+    pattern = p; store.set("pattern", p.id);
+    phaseIdx = 0; phaseT = 0; breaths += 1;
+    for (const q of PATTERNS) $("pat-" + q.id).setAttribute("aria-checked", String(q === p));
+    announce();
+  }
+  selectPattern(pattern); breaths = 1;
+
+  const tDusk = $("tDusk"), tMeadow = $("tMeadow");
+  const syncToggles = () => { tDusk.setAttribute("aria-pressed", String(dusk)); tMeadow.setAttribute("aria-pressed", String(meadow)); };
+  tDusk.addEventListener("click", () => { dusk = !dusk; store.set("dusk", dusk); syncToggles(); });
+  tMeadow.addEventListener("click", () => { meadow = !meadow; store.set("meadow", meadow); syncToggles(); });
+  syncToggles();
+
+  const playBtn = $("play");
+  function setRunning(r) {
+    running = r;
+    $("icoPause").hidden = !r; $("icoPlay").hidden = r;
+    playBtn.setAttribute("aria-label", r ? "Pauziraj" : "Nastavi");
+    if (r) requestWake();
+  }
+  playBtn.addEventListener("click", () => setRunning(!running));
+  addEventListener("keydown", (e) => { if (e.code === "Space") { e.preventDefault(); setRunning(!running); } poke(); });
+
+  let lastPoke = performance.now();
+  function poke() { lastPoke = performance.now(); document.body.classList.remove("idle"); }
+  addEventListener("pointerdown", () => { touched = true; }, { once: true, passive: true });
+  addEventListener("pointerdown", poke, { passive: true });
+  addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") poke(); }, { passive: true });
+
+  let wakeLock = null;
+  async function requestWake() {
+    try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => (wakeLock = null)); } } catch {}
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && running) requestWake(); });
+  requestWake();
+
+  function announce() {
+    const [type] = pattern.phases[phaseIdx];
+    wordEl.textContent = LABEL[type];
+    if (touched) { try { navigator.vibrate && navigator.vibrate(type === "in" ? 18 : 10); } catch {} }
+  }
+
+  // ---------- breath engine ----------
+  const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(Math.max(x, 0), 1));
+  function stepBreath(dt) {
+    if (running) {
+      elapsed += dt;
+      phaseT += dt;
+      while (phaseT >= pattern.phases[phaseIdx][1]) {
+        phaseT -= pattern.phases[phaseIdx][1];
+        phaseIdx = (phaseIdx + 1) % pattern.phases.length;
+        if (pattern.phases[phaseIdx][0] === "in") breaths += 1;
+        announce();
+      }
+    }
+    const [type, dur] = pattern.phases[phaseIdx];
+    const x = phaseT / dur;
+    let target = type === "in" ? ease(x) : type === "out" ? 1 - ease(x) : type === "hold" ? 1 : 0;
+    if (!running) target = 0.35;
+    breath += (target - breath) * Math.min(1, dt * (running ? 20 : 1.5));
+
+    const still = running && (type === "hold" || type === "rest");
+    wind += ((still ? 0.22 : 1) - wind) * Math.min(1, dt * 1.6);
+    const m = reduced ? 0.4 : 1;
+    drift += 0.018 * wind * m * dt;
+    morph += 0.020 * wind * m * dt;
+
+    // overlay
+    const fade = running ? Math.max(0.2, Math.min(1, phaseT / 0.45, (dur - phaseT) / 0.45)) : 0.55;
+    wordEl.style.opacity = fade.toFixed(3);
+    fillEl.style.width = (running ? x * 100 : 0).toFixed(2) + "%";
+    countEl.textContent = running ? String(Math.ceil(dur - phaseT)) : "pauza";
+    const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
+    statsEl.textContent = `${mm}:${String(ss).padStart(2, "0")} · ${breaths} ${breaths % 10 === 1 && breaths % 100 !== 11 ? "udah" : "udaha"}`;
+
+    if (running && performance.now() - lastPoke > 5000) document.body.classList.add("idle");
+  }
+
+  // ---------- WebGL ----------
+  const canvas = $("sky");
+  const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
+  if (!gl) { document.body.classList.add("nogl"); fallbackLoop(); return; }
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
+    return s;
+  }
+  const vs = compile(gl.VERTEX_SHADER, "attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}");
+  const fs = compile(gl.FRAGMENT_SHADER, $("frag").textContent);
+  if (!vs || !fs) { document.body.classList.add("nogl"); fallbackLoop(); return; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(prog)); document.body.classList.add("nogl"); fallbackLoop(); return; }
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, "a");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  for (const n of ["uRes", "uTime", "uDrift", "uMorph", "uBreath", "uDusk", "uMeadow", "uMotion"]) U[n] = gl.getUniformLocation(prog, n);
+
+  // Adaptive resolution: clouds are soft, so rendering below native size is invisible but saves the battery.
+  let scale = 0.7, frames = 0, acc = 0;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.round(canvas.clientWidth * dpr * scale));
+    const h = Math.max(1, Math.round(canvas.clientHeight * dpr * scale));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  let last = performance.now(), t0 = last;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    stepBreath(dt);
+    duskV += ((dusk ? 1 : 0) - duskV) * Math.min(1, dt * 1.2);
+    meadowV += ((meadow ? 1 : 0) - meadowV) * Math.min(1, dt * 2.0);
+
+    acc += dt; frames++;
+    if (frames === 45) {
+      const avg = acc / frames;
+      if (avg > 0.024 && scale > 0.5) { scale = Math.max(0.5, scale * 0.85); resize(); }
+      else if (avg < 0.0145 && scale < 0.95) { scale = Math.min(0.95, scale * 1.08); resize(); }
+      frames = 0; acc = 0;
+    }
+
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform1f(U.uTime, (now - t0) / 1000);
+    gl.uniform1f(U.uDrift, drift);
+    gl.uniform1f(U.uMorph, morph);
+    gl.uniform1f(U.uBreath, breath);
+    gl.uniform1f(U.uDusk, duskV);
+    gl.uniform1f(U.uMeadow, meadowV);
+    gl.uniform1f(U.uMotion, reduced ? 0.3 : 1);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  function fallbackLoop() {
+    let l = performance.now();
+    const f = (n) => { stepBreath(Math.min(0.1, (n - l) / 1000)); l = n; requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+  }
+})();
+</script>
