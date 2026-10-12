@@ -117,6 +117,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var word by remember { mutableStateOf("") }
     var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
     var paused by remember { mutableStateOf(false) }
+    var ambienceOpen by remember { mutableStateOf(false) }
+    var soundOn by remember { mutableStateOf(cfg.ambient) }
     val planned = cfg.minutes * 60
 
     fun pause(on: Boolean) {
@@ -178,6 +180,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (!ended && !paused) {
                 elapsed += dt
                 lastTouch += dt
+                if (ambienceOpen) lastTouch = 0f
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
                 if (elapsed >= nextBell && (planned == 0 || elapsed < planned - 20)) {
                     nextBell += gap()
@@ -203,7 +206,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         val obs = LifecycleEventObserver { _, ev ->
             when (ev) {
                 Lifecycle.Event.ON_STOP -> host.ambience.stop()
-                Lifecycle.Event.ON_START -> if (cfg.ambient && !ended) host.ambience.start()
+                Lifecycle.Event.ON_START -> if (soundOn && !ended) host.ambience.start()
                 else -> {}
             }
         }
@@ -288,7 +291,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             }
         }
 
-        AnimatedVisibility(showUi || ended || paused, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(showUi || ended || paused || ambienceOpen, enter = fadeIn(), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().screenPadding().padding(vertical = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Column(Modifier.weight(1f)) {
@@ -302,6 +305,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                         }, style = SmallStyle)
                     }
                     if (!ended) {
+                        RoundControl(NeboIcon.Settings, "Ambijent") { ambienceOpen = true; host.dark = false }
                         RoundControl(if (paused) NeboIcon.Play else NeboIcon.Pause, if (paused) "Nastavi" else "Pauza") { pause(!paused) }
                         RoundControl(NeboIcon.Stop, "Završi") { finish() }
                     }
@@ -315,6 +319,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             Text("Vrijeme stoji. Kad budeš spreman, dah kreće ispočetka.", style = SmallStyle, textAlign = TextAlign.Center)
             GlassButton("Nastavi", { pause(false) }, strong = true, icon = NeboIcon.Play)
         }
+
+        if (ambienceOpen && !ended) AmbienceSheet(host, soundOn, { on ->
+            soundOn = on; app.settings.ambient = on
+            if (on) host.ambience.start() else host.ambience.stop()
+        }, onClose = { ambienceOpen = false; lastTouch = 0f; host.dark = cfg.eyesClosed && !paused })
 
         if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}, contentAlignment = Alignment.Center) {
             Text("Sesija je završena.", style = HeadStyle)

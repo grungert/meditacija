@@ -338,7 +338,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
                         ChipRow {
                             Chip("po satu", timeMode == "clock", { timeMode = "clock" })
                             Chip("ciklus", timeMode == "cycle", { timeMode = "cycle" })
-                            for ((label, h) in listOf("zora" to "6.2", "dan" to "12.5", "zalazak" to "18.9", "sumrak" to "20.3", "noć" to "23.5")) {
+                            for ((label, h) in TIME_OPTIONS) {
                                 Chip(label, timeMode == h, { timeMode = h })
                             }
                         }
