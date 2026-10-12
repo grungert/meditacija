@@ -44,7 +44,7 @@ data class Entry(
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
-class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 2) {
+class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
@@ -57,11 +57,32 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 2) {
             answered_entry_id INTEGER, dismissed INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE embeddings(item_id TEXT PRIMARY KEY, model TEXT NOT NULL, text_hash INTEGER NOT NULL, vec BLOB NOT NULL)""")
         db.execSQL("CREATE INDEX entries_created ON entries(created_at)")
+        createFeedback(db)
         db.execSQL("CREATE INDEX sessions_started ON sessions(started_at)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE entries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
+        if (oldVersion < 3) createFeedback(db)
+    }
+
+    /** +1 when a koan or message spoke to the person, -1 for "not now". */
+    private fun createFeedback(db: SQLiteDatabase) =
+        db.execSQL("CREATE TABLE IF NOT EXISTS koan_feedback(id INTEGER PRIMARY KEY AUTOINCREMENT, item_id TEXT NOT NULL, at INTEGER NOT NULL, value INTEGER NOT NULL)")
+
+    fun addFeedback(itemId: String, value: Int) {
+        writableDatabase.insert("koan_feedback", null, ContentValues().apply { put("item_id", itemId); put("at", System.currentTimeMillis()); put("value", value) })
+    }
+
+    /** item id to (likes, most recent "not now" time) */
+    fun feedback(): Map<String, Pair<Int, Long>> =
+        readableDatabase.rawQuery("SELECT item_id, SUM(CASE WHEN value > 0 THEN 1 ELSE 0 END), MAX(CASE WHEN value < 0 THEN at ELSE 0 END) FROM koan_feedback GROUP BY item_id", null).use { c ->
+            generateSequence { if (c.moveToNext()) c.getString(0) to (c.getInt(1) to c.getLong(2)) else null }.toMap()
+        }
+
+    fun deleteEntry(id: Long) {
+        writableDatabase.delete("entries", "id=?", arrayOf(id.toString()))
+        writableDatabase.delete("embeddings", "item_id=?", arrayOf("entry:$id"))
     }
 
     // ---------- sessions ----------

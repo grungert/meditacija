@@ -115,6 +115,11 @@ class Settings(context: Context) {
         get() = p.getInt("dailyHour", 8)
         set(v) = p.edit { putInt("dailyHour", v) }
 
+    /** Bumped when the way themes are found changes, so every note is tagged again once. */
+    var themesVersion: Int
+        get() = p.getInt("themesVersion", 0)
+        set(v) = p.edit { putInt("themesVersion", v) }
+
     // backups
     /** A folder (document tree) chosen for the weekly automatic copy, or null. */
     var backupTree: String?

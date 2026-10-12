@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
@@ -88,7 +90,7 @@ private fun dayLabel(t: Long): String {
 
 /** The journal: a quiet feed by day, searchable, filtered to insights, notes or sessions. */
 @Composable
-fun JournalScreen(go: (Screen) -> Unit) {
+fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
     val transcribed by app.transcriber.done.collectAsState()
@@ -99,6 +101,9 @@ fun JournalScreen(go: (Screen) -> Unit) {
     var reload by remember { mutableIntStateOf(0) }
     val player = remember { NotePlayer() }
     val scope = rememberCoroutineScope()
+    var editing by remember { mutableStateOf<Entry?>(null) }
+    LaunchedEffect(editing) { host.sheetOpen = editing != null }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
 
     LaunchedEffect(transcribed, filter, query, reload) {
         rows = withContext(Dispatchers.IO) {
@@ -152,9 +157,83 @@ fun JournalScreen(go: (Screen) -> Unit) {
                         is Session -> SessionRow(row, app.library.byId(row.koanId)?.title)
                         is Entry -> EntryCard(row, player, onStar = {
                             scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred)) }; reload++ }
-                        }, onSimilar = { go(Screen.Similar(row.id)) })
+                        }, onSimilar = { go(Screen.Similar(row.id)) }, onEdit = { player.stop(); editing = row })
                     }
                 }
+            }
+        }
+        editing?.let { e ->
+            EditEntry(e, onClose = { editing = null }, onSave = { changed ->
+                editing = null
+                scope.launch {
+                    withContext(Dispatchers.IO) { app.db.updateEntry(changed) }
+                    reload++
+                    app.recommender.tagNotes()
+                    reload++
+                }
+            }, onDelete = {
+                editing = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        app.db.deleteEntry(e.id)
+                        e.audioPath?.let { java.io.File(it).delete() }
+                    }
+                    reload++
+                }
+            })
+        }
+    }
+}
+
+/**
+ * Change a note's words and moods, or remove it together with its recording.
+ * New words clear the themes, so the note is read again for what it is about.
+ */
+@Composable
+private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, onDelete: () -> Unit) {
+    var text by remember { mutableStateOf(e.words) }
+    val moods = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(e.moods) } }
+    var confirmDelete by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(onBack = onClose)
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(interactionSource = null, indication = null, onClick = onClose)) {
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Color(0xFF0C1630))
+                .clickable(interactionSource = null, indication = null) {}.navigationBarsPadding().imePadding()
+                .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (confirmDelete) {
+                Text("Obrisati ovu bilješku?", style = HeadStyle.copy(shadow = null))
+                Text(if (e.audioPath != null) "Briše se i tekst i snimak. Ovo se ne može vratiti." else "Ovo se ne može vratiti.", style = BodyStyle.copy(color = Ink.soft, shadow = null))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GlassButton("Ne", { confirmDelete = false }, Modifier.weight(1f))
+                    GlassButton("Obriši", onDelete, Modifier.weight(1f), strong = true)
+                }
+                return@Column
+            }
+            Text("Uredi bilješku", style = HeadStyle.copy(shadow = null))
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.surface).padding(16.dp)) {
+                if (text.isEmpty()) Text("Šta je bilo u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
+                BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
+                    cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (m in MOODS.map { it.first }) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m])
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                SmallAction(NeboIcon.Trash, "Obriši") { confirmDelete = true }
+                Spacer(Modifier.weight(1f))
+                GlassButton("Otkaži", onClose)
+                GlassButton("Sačuvaj", {
+                    val words = text.trim()
+                    val changedWords = words != e.words.trim()
+                    onSave(when {
+                        !changedWords -> e.copy(moods = moods.toList(), themes = if (moods.toList() == e.moods) e.themes else emptyList())
+                        // corrected words of a recording become its transcript, as on the check-in screen
+                        e.audioPath != null -> e.copy(text = null, transcript = words, moods = moods.toList(), themes = emptyList())
+                        else -> e.copy(text = words.ifBlank { null }, moods = moods.toList(), themes = emptyList())
+                    })
+                }, strong = true)
             }
         }
     }
@@ -196,7 +275,7 @@ private fun SessionRow(row: Session, koanTitle: String?) {
 
 /** One note: a stripe in its mood's colour, the words large, small actions underneath. */
 @Composable
-internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null) {
+internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null, onEdit: (() -> Unit)? = null) {
     val stripe = row.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.hairline
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(24.dp)).background(Ink.surface)) {
         Box(Modifier.width(5.dp).fillMaxHeight().background(stripe))
@@ -215,9 +294,10 @@ internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSim
                 row.audioPath != null && row.transcript == null -> Text("Snimak čeka da postane tekst.", style = SmallStyle.copy(shadow = null))
             }
             if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accent, shadow = null))
-            if (row.audioPath != null || (onSimilar != null && words.isNotBlank())) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (row.audioPath != null || (onSimilar != null && words.isNotBlank()) || onEdit != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (row.audioPath != null) SmallAction(NeboIcon.Play, "Preslušaj") { player.play(row.audioPath) {} }
                 if (onSimilar != null && words.isNotBlank()) SmallAction(NeboIcon.Similar, "Slične") { onSimilar() }
+                if (onEdit != null) SmallAction(NeboIcon.Pen, "Uredi") { onEdit() }
             }
         }
     }
@@ -388,7 +468,7 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
     val types = sessions.groupingBy { it.type }.eachCount().toList().sortedByDescending { it.second }
     val themeCount = HashMap<String, Int>()
     for (e in entries) {
-        val ts = (e.themes + Lexicon.themes(e.words) + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
+        val ts = (e.themes.ifEmpty { Lexicon.themes(e.words) } + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
         ts.forEach { themeCount[it] = (themeCount[it] ?: 0) + 1 }
     }
     val shifts = HashMap<String, Int>()

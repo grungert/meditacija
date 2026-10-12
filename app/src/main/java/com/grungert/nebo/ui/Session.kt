@@ -4,6 +4,20 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -58,6 +72,13 @@ import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
 /** Haptics that carry the breath when the eyes are closed: a swell to breathe in, an ebb to breathe out. */
+/** A round glass control for the session's top bar. */
+@Composable
+private fun RoundControl(icon: NeboIcon, label: String, onClick: () -> Unit) {
+    Box(Modifier.size(52.dp).clip(CircleShape).background(Ink.surfaceHigh).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        contentAlignment = Alignment.Center) { Icon(icon, Ink.text, 20.dp) }
+}
+
 private fun breathHaptic(v: Vibrator, p: Phase, eyesClosed: Boolean) {
     if (!eyesClosed) {
         v.vibrate(VibrationEffect.createOneShot(if (p == Phase.IN) 22 else 12, if (p == Phase.IN) 90 else 50))
@@ -95,11 +116,26 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var thoughts by remember { mutableIntStateOf(0) }
     var word by remember { mutableStateOf("") }
     var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
+    var paused by remember { mutableStateOf(false) }
     val planned = cfg.minutes * 60
+
+    fun pause(on: Boolean) {
+        if (ended) return
+        paused = on
+        host.engine.running = !on
+        if (on) { word = ""; showUi = true; host.dark = false }
+        else {
+            // start again from a fresh inhale, and let the dark return for closed eyes
+            host.engine.setPatternAndRestart(patternById(cfg.pattern))
+            word = if (cfg.paced) host.engine.phase.label else ""
+            lastTouch = 0f; host.dark = cfg.eyesClosed
+        }
+    }
 
     fun finish() {
         if (ended) return
         ended = true
+        paused = false; host.engine.running = true
         host.showCircle = false; host.dark = false
         word = ""
         host.engine.paced = false
@@ -139,7 +175,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         fun gap(): Float = if (cfg.intervalMinutes < 0) 120f + kotlin.random.Random.nextFloat() * 240f else cfg.intervalMinutes * 60f
         var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
         host.onFrame = { dt ->
-            if (!ended) {
+            if (!ended && !paused) {
                 elapsed += dt
                 lastTouch += dt
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
@@ -152,8 +188,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
         host.onTap = { pos ->
             lastTouch = 0f; showUi = true
-            if (cfg.eyesClosed && !ended) { peek = true; host.dark = false }
-            if (cfg.type == "thoughts" && !ended) { scenery.addThought(pos.x, pos.y); thoughts = scenery.thoughtCount }
+            if (cfg.eyesClosed && !ended && !paused) { peek = true; host.dark = false }
+            if (cfg.type == "thoughts" && !ended && !paused) { scenery.addThought(pos.x, pos.y); thoughts = scenery.thoughtCount }
         }
         word = if (cfg.paced) e.phase.label else ""
         scope.launch {
@@ -178,13 +214,42 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             host.ambience.stop()
             host.onPhase = null; host.onFrame = null; host.onTap = null
             host.showCircle = false; host.dark = false
-            e.paced = false; e.walkOn = false
+            e.paced = false; e.walkOn = false; e.running = true
         }
     }
 
     Box(Modifier.fillMaxSize()) {
         // the phase word sits inside the breathing circle (the circle is centred 36% from the top)
-        if (cfg.paced && !ended) BoxWithConstraints(Modifier.fillMaxSize()) {
+        // time along the edge of the screen: a thin line that goes once around, clockwise from the top
+        if (planned > 0) {
+            val glow by animateFloatAsState(when { host.dark && !peek -> 0f; showUi || paused -> 0.75f; else -> 0.3f }, tween(600), label = "edge")
+            val density = LocalDensity.current
+            Box(Modifier.fillMaxSize().drawWithCache {
+                val i = with(density) { 3.dp.toPx() }
+                val r = with(density) { 30.dp.toPx() }
+                val w = size.width; val h = size.height
+                val edge = Path().apply {
+                    moveTo(w / 2, i)
+                    lineTo(w - i - r, i); arcTo(Rect(w - i - 2 * r, i, w - i, i + 2 * r), -90f, 90f, false)
+                    lineTo(w - i, h - i - r); arcTo(Rect(w - i - 2 * r, h - i - 2 * r, w - i, h - i), 0f, 90f, false)
+                    lineTo(i + r, h - i); arcTo(Rect(i, h - i - 2 * r, i + 2 * r, h - i), 90f, 90f, false)
+                    lineTo(i, i + r); arcTo(Rect(i, i, i + 2 * r, i + 2 * r), 180f, 90f, false)
+                    close()
+                }
+                val measure = PathMeasure().apply { setPath(edge, false) }
+                val done = Path()
+                val stroke = Stroke(with(density) { 2.dp.toPx() }, cap = StrokeCap.Round)
+                onDrawBehind {
+                    if (glow <= 0.01f) return@onDrawBehind
+                    drawPath(edge, Color.White.copy(alpha = 0.08f * glow), style = stroke)
+                    done.reset()
+                    measure.getSegment(0f, measure.length * (elapsed / planned).coerceIn(0f, 1f), done, true)
+                    drawPath(done, Ink.accent.copy(alpha = glow), style = stroke)
+                }
+            })
+        }
+
+        if (cfg.paced && !ended && !paused) BoxWithConstraints(Modifier.fillMaxSize()) {
             val e = host.engine
             val remaining = ceil(e.phaseDuration - e.phaseT).toInt()
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
@@ -217,16 +282,32 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             }
         }
 
-        AnimatedVisibility(showUi || ended, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(showUi || ended || paused, enter = fadeIn(), exit = fadeOut()) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().screenPadding().padding(vertical = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val shown = if (planned > 0) (planned - elapsed).coerceAtLeast(0f) else elapsed
-                    Text("%d:%02d".format(shown.toInt() / 60, shown.toInt() % 60), style = HeadStyle.copy(fontSize = 24.sp))
-                    if (cfg.type == "thoughts") Text("· oblaka: $thoughts", style = SmallStyle)
-                    Box(Modifier.weight(1f))
-                    GlassButton(if (ended) "Završeno" else "Završi", { finish() }, enabled = !ended)
+                    Column(Modifier.weight(1f)) {
+                        val shown = if (planned > 0) (planned - elapsed).coerceAtLeast(0f) else elapsed
+                        Text("%d:%02d".format(shown.toInt() / 60, shown.toInt() % 60),
+                            style = NumberStyle.copy(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp))
+                        Text(when {
+                            cfg.type == "thoughts" -> "oblaka: $thoughts"
+                            planned > 0 -> "preostalo od ${cfg.minutes} min"
+                            else -> "bez ograničenja"
+                        }, style = SmallStyle)
+                    }
+                    if (!ended) {
+                        RoundControl(if (paused) NeboIcon.Play else NeboIcon.Pause, if (paused) "Nastavi" else "Pauza") { pause(!paused) }
+                        RoundControl(NeboIcon.Stop, "Završi") { finish() }
+                    }
                 }
             }
+        }
+
+        if (paused) Column(Modifier.align(Alignment.Center).offset(y = 96.dp).screenPadding(), horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Pauzirano", style = TitleStyle.copy(fontWeight = FontWeight.Light))
+            Text("Vrijeme stoji. Kad budeš spreman, dah kreće ispočetka.", style = SmallStyle, textAlign = TextAlign.Center)
+            GlassButton("Nastavi", { pause(false) }, strong = true, icon = NeboIcon.Play)
         }
 
         if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}, contentAlignment = Alignment.Center) {

@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** A small hand-drawn line icon set, drawn on a 24-unit grid with round strokes. */
-enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share }
+enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share, Pause, Stop, Close, Trash }
 
 @Composable
 fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Modifier) {
@@ -91,6 +91,13 @@ fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Mo
                 line(4f, 10f, 20f, 10f); line(8.5f, 3.5f, 8.5f, 7f); line(15.5f, 3.5f, 15.5f, 7f)
             }
             NeboIcon.Pen -> { drawPath(path { m(5f, 19f); l(6f, 15f); l(16f, 5f); l(19f, 8f); l(9f, 18f); close() }, color, style = st) }
+            NeboIcon.Pause -> { drawRoundRect(color, p(7f, 5f), Size(3.5f * k, 14f * k), androidx.compose.ui.geometry.CornerRadius(1.5f * k)); drawRoundRect(color, p(13.5f, 5f), Size(3.5f * k, 14f * k), androidx.compose.ui.geometry.CornerRadius(1.5f * k)) }
+            NeboIcon.Stop -> drawRoundRect(color, p(6.5f, 6.5f), Size(11f * k, 11f * k), androidx.compose.ui.geometry.CornerRadius(2.5f * k))
+            NeboIcon.Close -> { line(6f, 6f, 18f, 18f); line(18f, 6f, 6f, 18f) }
+            NeboIcon.Trash -> {
+                line(4.5f, 7f, 19.5f, 7f); drawPath(path { m(9.5f, 7f); l(9.5f, 4.5f); l(14.5f, 4.5f); l(14.5f, 7f) }, color, style = st)
+                drawPath(path { m(6.5f, 7f); l(7.5f, 19.5f); l(16.5f, 19.5f); l(17.5f, 7f) }, color, style = st)
+            }
             NeboIcon.Check -> drawPath(path { m(5f, 12.5f); l(10f, 17.5f); l(19f, 7f) }, color, style = st)
             NeboIcon.Search -> { circle(10.5f, 10.5f, 6f); line(15f, 15f, 20f, 20f) }
             NeboIcon.Share -> {

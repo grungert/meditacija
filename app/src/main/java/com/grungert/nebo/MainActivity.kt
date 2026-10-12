@@ -58,6 +58,7 @@ sealed class Screen {
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
     var dark by mutableStateOf(false)
+    var sheetOpen by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
 
@@ -150,7 +151,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.CheckIn -> CheckInScreen(sc, host, go)
                     is Screen.Session -> SessionScreen(sc.config, host, scenery, go)
                     is Screen.Koan -> KoanScreen(sc, host, go)
-                    Screen.Journal -> JournalScreen(go)
+                    Screen.Journal -> JournalScreen(host, go)
                     Screen.Stats -> StatsScreen(go)
                     Screen.Settings -> SettingsScreen(go)
                     is Screen.Week -> com.grungert.nebo.ui.WeekScreen(sc, go)
@@ -166,7 +167,7 @@ class MainActivity : ComponentActivity() {
                 Screen.Settings -> com.grungert.nebo.ui.Tab.SETTINGS
                 else -> null
             }
-            androidx.compose.animation.AnimatedVisibility(tab != null, Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+            androidx.compose.animation.AnimatedVisibility(tab != null && !host.sheetOpen, Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
                 enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it },
                 exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it }) {
                 com.grungert.nebo.ui.BottomNav(tab ?: com.grungert.nebo.ui.Tab.TODAY, { t ->

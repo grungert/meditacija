@@ -59,7 +59,7 @@ private class WeekData(
     val nextKoan: com.grungert.nebo.koan.KoanItem?,
 )
 
-private fun themesOf(e: Entry) = (e.themes + Lexicon.themes(e.words) + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
+private fun themesOf(e: Entry) = (e.themes.ifEmpty { Lexicon.themes(e.words) } + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
 
 private fun partOf(t: Long): Int {
     val h = Calendar.getInstance().apply { timeInMillis = t }.get(Calendar.HOUR_OF_DAY)

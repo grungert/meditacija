@@ -59,6 +59,31 @@ val THEME_NAMES = mapOf(
     "svakodnevica" to "svakodnevica", "odluka" to "odluka", "odnosi" to "odnosi s drugima", "prisutnost" to "prisutnost",
 )
 
+/** What each theme sounds like in someone's own words; the meaning model compares notes with these. */
+private val THEME_DESCRIPTIONS = mapOf(
+    "nemir" to "Osjećam nemir, napetost i nervozu, ne mogu da se smirim, jurim i brinem.",
+    "tuga" to "Tužan sam, plače mi se, nešto mi nedostaje, osjećam gubitak i prazninu.",
+    "ljutnja" to "Ljut sam, iznerviran, bijesan na nekoga ili nešto, frustrira me.",
+    "umor" to "Umoran sam i iscrpljen, nemam snage, pospan sam, težak dan.",
+    "strah" to "Plašim se, osjećam strah i nesigurnost, uplašen sam od onoga što dolazi.",
+    "sumnja" to "Sumnjam, ne znam šta je ispravno, dvoumim se, pitam se ima li smisla.",
+    "zudnja" to "Žudim za nečim, stalno želim još, vezan sam za stvari, telefon i navike.",
+    "kontrola" to "Moram sve da kontrolišem i isplaniram, sve treba da bude savršeno.",
+    "samokritika" to "Kritikujem sebe, osjećam se krivim, nisam dovoljno dobar, stidim se.",
+    "usamljenost" to "Osjećam se usamljeno, sam sam, niko me ne razumije, odvojen od ljudi.",
+    "zahvalnost" to "Zahvalan sam za ono što imam, osjećam zahvalnost.",
+    "radost" to "Radostan sam i srećan, lijepo mi je, uživam, smijem se.",
+    "radoznalost" to "Radoznao sam, zanima me, istražujem, pitam se kako to funkcioniše.",
+    "zbunjenost" to "Zbunjen sam, sve mi je zbrkano u glavi, ne razumijem šta se dešava.",
+    "smirenost" to "Miran sam, spokojan i opušten, osjećam tišinu i lakoću.",
+    "ego" to "Brine me šta drugi misle o meni, slika o sebi, ponos i ugled, ko sam ja.",
+    "prolaznost" to "Sve prolazi, vrijeme ide, promjene, starenje, kraj i smrt.",
+    "svakodnevica" to "Obaveze, posao, kuća, rutina i sitnice svakodnevnog života.",
+    "odluka" to "Moram da donesem odluku, biram između dva puta, raskršće.",
+    "odnosi" to "Odnos s partnerom, porodicom, prijateljima ili kolegama, svađa ili bliskost.",
+    "prisutnost" to "Prisutan sam ovdje i sada, osjećam dah i tijelo, sadašnji trenutak.",
+)
+
 /** One-tap moods on the check-in screen, and the theme each one points to. */
 val MOODS = listOf(
     "mirno" to "smirenost", "nemirno" to "nemir", "umorno" to "umor", "tužno" to "tuga", "ljuto" to "ljutnja",
@@ -67,33 +92,45 @@ val MOODS = listOf(
 
 /** Word stems that point to a theme; used when the meaning model is not on the phone yet, and as a small bonus. */
 object Lexicon {
-    private val stems = mapOf(
-        "nemir" to listOf("nemir", "nervoz", "napet", "uznemir", "stres", "žurb", "jurim", "anksio", "brig", "brin"),
-        "tuga" to listOf("tug", "tužn", "plak", "suz", "žal", "nedostaj", "gubit", "izgubi", "praznin"),
-        "ljutnja" to listOf("ljut", "bijes", "iritir", "nervira", "smeta mi", "frustrir"),
-        "umor" to listOf("umor", "iscrp", "pospan", "nemam snage", "težak dan", "izmoren"),
-        "strah" to listOf("strah", "plaš", "bojim", "panik", "uplaš", "nesigur"),
-        "sumnja" to listOf("sumnj", "ne znam", "nisam siguran", "nisam sigurna", "dvoum", "smisao"),
-        "zudnja" to listOf("žudn", "želim", "hoću", "treba mi", "vezan", "privrž", "telefon", "još malo"),
-        "kontrola" to listOf("kontrol", "plan", "moram", "trebalo bi", "savrš", "perfekc"),
-        "samokritika" to listOf("kriv", "sram", "glup", "nisam dovolj", "ne valjam", "kritik", "osuđ", "loš sam", "loša sam"),
-        "usamljenost" to listOf("usamlj", "sam sam", "sama sam", "niko", "izolov", "odvojen"),
-        "zahvalnost" to listOf("zahval", "hvala", "srećom"),
-        "radost" to listOf("radost", "radujem", "srećn", "sretn", "vesel", "lijepo", "uživ", "smij"),
-        "radoznalost" to listOf("radoznal", "zanima", "pitam se", "zanimljiv", "istraž"),
-        "zbunjenost" to listOf("zbunj", "zbrk", "haos", "ne razumijem", "pomiješ", "pomješ"),
-        "smirenost" to listOf("miran", "mirno", "smiren", "spokoj", "tišin", "opušten", "lagan"),
-        "ego" to listOf("identitet", "ko sam", "ponos", "ego", "ugled", "šta će drugi", "šta drugi"),
-        "prolaznost" to listOf("prolaz", "smrt", "starenj", "vrijeme prolazi", "promjen", "kraj"),
-        "svakodnevica" to listOf("posao", "posl", "kuć", "sudov", "obavez", "svakodnev", "rutin"),
-        "odluka" to listOf("odluk", "odluč", "izbor", "biram", "raskršć"),
-        "odnosi" to listOf("partner", "prijatelj", "porodic", "majk", "mam", "otac", "tat", "brat", "sestr", "djec", "dijete", "odnos", "svađ", "ljubav", "kolega"),
-        "prisutnost" to listOf("sada", "ovdje", "dah", "disanj", "tijel", "prisut", "sadašnj"),
+    // A word ending in * matches any word starting with it; anything else must be the whole word.
+    // Several words are matched as a phrase. Matching whole words keeps "nego" from counting as ego,
+    // "imam" as mama or "poslije" as posao.
+    private val words = mapOf(
+        "nemir" to listOf("nemir*", "nervoz*", "napet*", "uznemir*", "stres*", "žurb*", "žurim", "jurim", "juri", "anksio*", "brig*", "brin*"),
+        "tuga" to listOf("tug*", "tužn*", "tužan", "plak*", "plač*", "suz*", "žal*", "nedostaj*", "gubit*", "izgubi*", "praznin*"),
+        "ljutnja" to listOf("ljut*", "bijes*", "iritir*", "nervira*", "smeta mi", "frustrir*"),
+        "umor" to listOf("umor*", "iscrp*", "pospan*", "nemam snage", "težak dan", "izmoren*", "premoren*"),
+        "strah" to listOf("strah*", "plaš*", "bojim", "boji", "panik*", "uplaš*", "nesigur*"),
+        "sumnja" to listOf("sumnj*", "ne znam", "nisam siguran", "nisam sigurna", "dvoum*", "smisao", "smisla"),
+        "zudnja" to listOf("žudn*", "žudim", "želim", "hoću", "treba mi", "vezan*", "privrž*", "telefon*", "još malo", "ne mogu bez"),
+        "kontrola" to listOf("kontrol*", "plan", "plana", "planu", "planov*", "planir*", "moram", "trebalo bi", "savrš*", "perfekc*"),
+        "samokritika" to listOf("kriv", "kriva", "krivic*", "sram*", "stid*", "glup*", "nisam dovolj*", "ne valjam", "kritikuj*", "osuđ*", "loš sam", "loša sam"),
+        "usamljenost" to listOf("usamlj*", "sam sam", "sama sam", "niko", "nikoga", "nikome", "izolov*", "odvojen*"),
+        "zahvalnost" to listOf("zahval*", "hvala", "srećom"),
+        "radost" to listOf("radost*", "radujem", "raduje", "srećn*", "srećan", "sretn*", "sretan", "vesel*", "lijepo", "uživ*", "smijeh*", "smijao", "smijala", "nasmij*"),
+        "radoznalost" to listOf("radoznal*", "zanima*", "pitam se", "zanimljiv*", "istraž*"),
+        "zbunjenost" to listOf("zbunj*", "zbrk*", "haos*", "ne razumijem", "pomiješ*", "pomješ*"),
+        "smirenost" to listOf("miran", "mirna", "mirno", "mirnije", "smiren*", "spokoj*", "tišin*", "opušten*", "lagan*", "lakoć*"),
+        "ego" to listOf("identitet*", "ko sam", "ponos*", "ego", "ega", "egu", "ugled*", "šta će drugi", "šta drugi"),
+        "prolaznost" to listOf("prolaz*", "smrt*", "starenj*", "vrijeme prolazi", "promjen*", "kraj", "kraja", "kraju"),
+        "svakodnevica" to listOf("posao", "posla", "poslu", "poslom", "poslov*", "kuć*", "sudov*", "obavez*", "svakodnev*", "rutin*"),
+        "odluka" to listOf("odluk*", "odluč*", "izbor*", "biram", "birati", "raskršć*"),
+        "odnosi" to listOf("partner*", "prijatelj*", "porodic*", "majk*", "mama", "mami", "mamu", "mamom", "otac", "oca", "ocu", "tata", "tati", "tatu",
+            "brat", "brata", "bratu", "bratom", "sestr*", "djec*", "dijete", "djetet*", "odnos*", "svađ*", "ljubav*", "kolega", "kolege", "kolegom", "kolegama", "muž*", "žen*", "djevojk*", "dečk*"),
+        "prisutnost" to listOf("sada", "ovdje", "dah", "daha", "dahom", "disanj*", "dišem", "tijel*", "prisut*", "sadašnj*"),
     )
+
+    private val patterns: Map<String, Regex> = words.mapValues { (_, list) ->
+        val alts = list.joinToString("|") { w ->
+            val parts = w.split(" ").map { part -> if (part.endsWith("*")) Regex.escape(part.dropLast(1)) + "\\p{L}*" else Regex.escape(part) }
+            parts.joinToString("\\s+")
+        }
+        Regex("(?<![\\p{L}])(?:$alts)(?![\\p{L}])")
+    }
 
     fun themes(text: String): List<String> {
         val t = text.lowercase()
-        return stems.filter { (_, words) -> words.any { t.contains(it) } }.keys.toList()
+        return patterns.filter { (_, re) -> re.containsMatchIn(t) }.keys.toList()
     }
 
     private val distress = listOf(
@@ -123,6 +160,46 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         return embedder
     }
 
+    private fun themeVectors(e: Embedder): Map<String, FloatArray> = THEME_DESCRIPTIONS.mapValues { (k, text) ->
+        db.embedding("theme:$k", Embedder.MODEL_ID, text.hashCode()) ?: e.embed(text).also { db.putEmbedding("theme:$k", Embedder.MODEL_ID, text.hashCode(), it) }
+    }
+
+    /**
+     * The theme a sentence clearly leans towards, or none. Calibrated on real sentences: the best theme must
+     * stand 0.038 above the median of all themes and 0.012 ahead of the runner-up, which kept every accepted
+     * theme correct while the keyword list covers the rest.
+     */
+    private fun semanticTheme(v: FloatArray, e: Embedder): String? {
+        val sims = themeVectors(e).map { (k, tv) -> k to Embedder.cosine(v, tv) }.sortedByDescending { it.second }
+        val median = sims[sims.size / 2].second
+        return if (sims[0].second - median >= 0.038f && sims[0].second - sims[1].second >= 0.012f) sims[0].first else null
+    }
+
+    private fun entryVector(x: com.grungert.nebo.data.Entry, e: Embedder): FloatArray {
+        val key = "entry:${x.id}"
+        val h = x.words.hashCode()
+        return db.embedding(key, Embedder.MODEL_ID, h) ?: e.embed(x.words).also { db.putEmbedding(key, Embedder.MODEL_ID, h, it) }
+    }
+
+    /** Keyword themes, the moods' themes and, with the meaning model, the theme the words lean towards. */
+    private fun themesFor(x: com.grungert.nebo.data.Entry, e: Embedder?): List<String> {
+        val moods = x.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }
+        val semantic = if (e != null && x.words.isNotBlank()) semanticTheme(entryVector(x, e), e) else null
+        return (Lexicon.themes(x.words) + moods + listOfNotNull(semantic)).distinct()
+    }
+
+    /** Gives every note its themes, once; run again for everything when the way of finding themes changes. */
+    suspend fun tagNotes(force: Boolean = false) = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val e = embedderOrNull()
+            for (x in db.entries()) {
+                if (!force && x.themes.isNotEmpty()) continue
+                if (x.words.isBlank() && x.moods.isEmpty()) continue
+                db.updateEntry(x.copy(themes = themesFor(x, e)))
+            }
+        }
+    }
+
     private fun itemText(it: KoanItem) = it.whenHelps + " " + it.themes.joinToString(" ") { t -> THEME_NAMES[t] ?: t }
 
     /** Embeds the whole library once and caches it, so the first pick after a session is quick. */
@@ -147,13 +224,8 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             if (target.words.isBlank() || pool.isEmpty()) return@withLock emptyList()
             val e = embedderOrNull()
             if (e != null) {
-                fun vec(x: com.grungert.nebo.data.Entry): FloatArray {
-                    val key = "entry:${x.id}"
-                    val h = x.words.hashCode()
-                    return db.embedding(key, Embedder.MODEL_ID, h) ?: e.embed(x.words).also { db.putEmbedding(key, Embedder.MODEL_ID, h, it) }
-                }
-                val tv = vec(target)
-                pool.map { it to Embedder.cosine(tv, vec(it)) }.sortedByDescending { it.second }.take(k)
+                val tv = entryVector(target, e)
+                pool.map { it to Embedder.cosine(tv, entryVector(it, e)) }.sortedByDescending { it.second }.take(k)
             } else {
                 fun tags(x: com.grungert.nebo.data.Entry) = (Lexicon.themes(x.words) + x.moods + x.themes).toSet()
                 val tt = tags(target)
@@ -178,8 +250,11 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         lock.withLock {
             if (Lexicon.soundsLikeDistress(words)) return@withLock Pick(null, "", distress = true)
             val moodThemes = moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }
-            val detected = (Lexicon.themes(words) + moodThemes).distinct()
-            val recent = db.recentKoanIds(12).toSet() + exclude
+            val feedback = db.feedback()
+            val now = System.currentTimeMillis()
+            // "not now" keeps an item away for two weeks
+            val resting = feedback.filter { now - it.value.second < 14 * 86_400_000L }.keys
+            val recent = db.recentKoanIds(12).toSet() + exclude + resting
             val pool = if (koansOnly) library.items.filter { it.isKoan } else library.items
             val candidates = pool.filter { it.id !in recent }.ifEmpty { pool }
             if (candidates.isEmpty()) return@withLock Pick(null, "Biblioteka koana još nije učitana.")
@@ -187,6 +262,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             val e = embedderOrNull()
             val query = listOf(words, moodThemes.joinToString(", ") { THEME_NAMES[it] ?: it }).filter { it.isNotBlank() }.joinToString(". ")
             val qv = if (e != null && query.isNotBlank()) e.embed(query) else null
+            val detected = (Lexicon.themes(words) + moodThemes + listOfNotNull(if (qv != null && words.isNotBlank()) semanticTheme(e!!.embed(words), e) else null)).distinct()
 
             val scored = candidates.map { item ->
                 val overlap = item.themes.count { it in detected }
@@ -197,6 +273,8 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                     Embedder.cosine(qv, iv) + 0.03f * overlap
                 } else overlap.toFloat() + Random.nextFloat() * 0.5f
                 if (afterSession && item.isKoan) s += if (qv != null) 0.01f else 0.3f
+                // koans that spoke before come round a little more often
+                s += (feedback[item.id]?.first ?: 0).coerceAtMost(3) * if (qv != null) 0.006f else 0.15f
                 item to s
             }.sortedByDescending { it.second }
 

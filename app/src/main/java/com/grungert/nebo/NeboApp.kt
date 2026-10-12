@@ -36,9 +36,17 @@ class NeboApp : Application() {
             Esm.refresh(this@NeboApp)
             transcriber.drain()
             recommender.warmUp()
+            val retag = settings.themesVersion < THEMES_VERSION
+            recommender.tagNotes(force = retag)
+            if (retag) settings.themesVersion = THEMES_VERSION
             com.grungert.nebo.data.Backup.autoIfDue(this@NeboApp)
         }
+        // a note that just became text gets its themes
+        scope.launch { transcriber.done.collect { if (it > 0) recommender.tagNotes() } }
     }
 }
+
+/** 2: whole-word keywords plus themes by meaning. */
+private const val THEMES_VERSION = 2
 
 val Context.app: NeboApp get() = applicationContext as NeboApp

@@ -1,6 +1,15 @@
 package com.grungert.nebo.ui
 
 import android.Manifest
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.geometry.CornerRadius
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,8 +75,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private const val MAX_SECONDS = 30
+private const val MAX_SECONDS = 120
 
+/**
+ * A note in your own words: speak (up to two minutes) or write, pick moods if you like, save.
+ * The recording becomes text right away, so it can be read and corrected before saving.
+ */
 @Composable
 fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
@@ -76,9 +89,10 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     val recorder = remember { Recorder() }
     val player = remember { NotePlayer() }
     var recording by remember { mutableStateOf(false) }
-    var level by remember { mutableFloatStateOf(0f) }
     var seconds by remember { mutableFloatStateOf(0f) }
+    val levels = remember { mutableStateListOf<Float>() }       // the live voice wave, newest last
     var audio by remember { mutableStateOf<File?>(null) }
+    var audioSeconds by remember { mutableFloatStateOf(0f) }
     var text by remember { mutableStateOf("") }
     val moods = remember { mutableStateListOf<String>() }
     var askedMic by remember { mutableStateOf(false) }
@@ -93,25 +107,26 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     val (title, prompt) = when (sc.kind) {
         "before" -> "Kako si sada?" to "Prije nego što počneš: šta je u tebi?"
         "after" -> "Šta primjećuješ?" to "Šta se pojavilo dok si sjedio? Riječ ili dvije su dovoljne."
-        "esm" -> "Kako si sada?" to "Pritisni i reci šta je u tebi. Nema pogrešnog odgovora."
+        "esm" -> "Kako si sada?" to "Šta je u tebi upravo sada? Nema pogrešnog odgovora."
         "week" -> "Tvoja sedmica" to "Prije nego što ti pokažem obrasce: šta ti primjećuješ u ovoj sedmici?"
         else -> "Zapažanje" to "Šta primjećuješ u sebi upravo sada?"
     }
 
     fun startRecording() {
         val f = File(context.filesDir, "audio/${System.currentTimeMillis()}.wav")
-        recording = true; seconds = 0f
+        recording = true; seconds = 0f; levels.clear()
         scope.launch {
-            val dur = recorder.record(f, MAX_SECONDS) { level = it }
+            val dur = recorder.record(f, MAX_SECONDS) { lv ->
+                scope.launch { levels.add(lv); if (levels.size > 56) levels.removeAt(0) }
+            }
             recording = false
             silent = recorder.peak < Recorder.SILENCE
             if (dur > 0.6f && !silent) {
-                audio?.delete(); audio = f
+                audio?.delete(); audio = f; audioSeconds = dur
                 if (fieldFromVoice) { text = ""; fieldFromVoice = false }
                 heard = null
                 model = app.transcriber.readyModel()
                 if (model != null) {
-                    // turn the note into text right away, so it can be read and corrected before saving
                     transcribing = true
                     val t = app.transcriber.transcribeNow(f)
                     transcribing = false
@@ -157,88 +172,100 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 id
             }
             if (audio != null) app.transcriber.drain()
+            app.scope.launch { app.recommender.tagNotes() }
             next(id)
         }
     }
+
+    fun clock(s: Float) = "%d:%02d".format(s.toInt() / 60, s.toInt() % 60)
 
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState())
-                .screenPadding().padding(vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .screenPadding().padding(top = 8.dp, bottom = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week") BackButton { player.stop(); recorder.stop(); go(Screen.Home) }
-            }
-            Text(title, style = TitleStyle, textAlign = TextAlign.Center)
-            Text(prompt, style = BodyStyle.copy(color = Ink.soft), textAlign = TextAlign.Center)
-            Spacer(Modifier.height(8.dp))
+            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
+            Text(prompt, style = BodyStyle.copy(color = Ink.soft))
 
-            // the record button: tap to start, tap again to stop; the ring shows level and time left
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(150.dp)) {
-                Canvas(Modifier.size(150.dp)) {
-                    val r = size.minDimension / 2
-                    drawCircle(Color.White.copy(alpha = 0.10f + 0.25f * level), radius = r * (0.78f + 0.2f * level))
-                    if (recording) drawArc(Color.White, -90f, 360f * (seconds / MAX_SECONDS).coerceAtMost(1f), false,
-                        style = Stroke(width = 4.dp.toPx()), topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
-                        size = Size(size.width - 8.dp.toPx(), size.height - 8.dp.toPx()))
+            // speaking: one big button, the live wave of the voice, the time
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(Ink.surface).padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                val pulse by rememberInfiniteTransition(label = "rec").animateFloat(0f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulse")
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
+                    if (recording) Box(Modifier.size((104 + 26 * pulse).dp).clip(CircleShape).background(Ink.seal.copy(alpha = 0.22f)))
+                    Box(
+                        Modifier.size(96.dp).clip(CircleShape).background(if (recording) Ink.seal else Ink.paper)
+                            .clickable(role = Role.Button, onClickLabel = if (recording) "Zaustavi snimanje" else "Snimi") {
+                                when {
+                                    recording -> recorder.stop()
+                                    micAllowed -> { player.stop(); startRecording() }
+                                    else -> permission.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (recording) Box(Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
+                        else Icon(NeboIcon.Mic, Ink.inkOnPaper, 34.dp)
+                    }
                 }
-                Box(
-                    Modifier.size(104.dp).clip(CircleShape).background(if (recording) Color(0xFFE8F0FF) else Ink.glassStrong)
-                        .border(BorderStroke(1.5.dp, Color.White), CircleShape)
-                        .clickable(role = Role.Button, onClickLabel = if (recording) "Zaustavi snimanje" else "Snimi") {
-                            when {
-                                recording -> recorder.stop()
-                                micAllowed -> startRecording()
-                                else -> permission.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(if (recording) "Stop" else if (audio != null) "Ponovo" else "Govori",
-                        style = BodyStyle.copy(color = if (recording) Color(0xFF1F3B6E) else Color.White, fontSize = 17.sp))
+                // the wave: one bar per tenth of a second, louder is taller
+                Canvas(Modifier.fillMaxWidth().height(40.dp)) {
+                    val n = 56
+                    val w = size.width / n
+                    for (i in 0 until n) {
+                        val lv = levels.getOrNull(levels.size - n + i) ?: 0f
+                        val h = (size.height * (0.08f + 0.92f * kotlin.math.sqrt(lv.coerceIn(0f, 1f)))).coerceAtMost(size.height)
+                        drawRoundRect(if (recording) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.25f),
+                            topLeft = Offset(i * w + w * 0.2f, (size.height - h) / 2), size = Size(w * 0.6f, h), cornerRadius = CornerRadius(w * 0.3f))
+                    }
                 }
-            }
-            Text(
-                when {
-                    recording -> "Snimam… %d s".format(seconds.toInt())
-                    silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
-                    transcribing -> "Pretvaram u tekst…"
-                    audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
-                    audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti prije čuvanja."
-                    audio != null -> "Snimljeno."
-                    askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
-                    else -> "Najviše $MAX_SECONDS sekundi"
-                }, style = SmallStyle,
-            )
-            if (audio != null && !recording) GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} })
-            if (audio != null && app.models.readyWhisper() == null) {
-                Text("Za pretvaranje glasa u tekst preuzmi Whisper model u Postavkama. Snimak se čuva i pretvoriće se kad model stigne.",
-                    style = SmallStyle, textAlign = TextAlign.Center)
-                GlassButton("Otvori Postavke", { player.stop(); go(Screen.Settings) })
-            }
-
-            Panel {
-                SectionLabel("Kako je u tebi (po želji)")
-                ChipRow { for ((m, _) in MOODS) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m]) }
-                SectionLabel(if (fieldFromVoice) "Tvoje riječi (možeš ispraviti)" else "Ili napiši")
-                BasicTextField(
-                    text, { text = it },
-                    textStyle = BodyStyle,
-                    cursorBrush = SolidColor(Color.White),
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ink.glass).padding(12.dp).height(80.dp),
+                Text(
+                    when {
+                        recording -> clock(seconds) + " / " + clock(MAX_SECONDS.toFloat())
+                        silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
+                        transcribing -> "Pretvaram u tekst…"
+                        audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
+                        audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti."
+                        audio != null -> "Snimljeno · " + clock(audioSeconds)
+                        askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
+                        else -> "Dodirni i govori, do dva minuta"
+                    }, style = SmallStyle.copy(shadow = null, textAlign = TextAlign.Center),
                 )
+                if (audio != null && !recording) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} }, icon = NeboIcon.Play)
+                    if (app.models.readyWhisper() == null) GlassButton("Preuzmi Whisper", { player.stop(); go(Screen.Settings) })
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GlassButton("Preskoči", {
-                    player.stop(); recorder.stop(); audio?.delete()
-                    next(null)
-                })
-                GlassButton("Sačuvaj", { save() }, strong = true, enabled = !recording)
+
+            // writing: the words (or the transcript to correct)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.surface).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionLabel(if (fieldFromVoice) "Tvoje riječi, možeš ispraviti" else "Ili napiši")
+                Box {
+                    if (text.isEmpty()) Text("Šta je u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
+                    BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
+                        cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp))
+                }
             }
-            Spacer(Modifier.height(24.dp))
+
+            // moods: one scrolling row
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionLabel("Kako je u tebi (po želji)")
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(MOODS.map { it.first }) { m -> Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m]) }
+                }
+            }
+        }
+        // the actions stay within reach at the bottom
+        Row(
+            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().screenPadding().padding(bottom = 16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            GlassButton("Preskoči", { player.stop(); recorder.stop(); audio?.delete(); next(null) }, Modifier.weight(1f))
+            GlassButton("Sačuvaj", { save() }, Modifier.weight(2f), strong = true, enabled = !recording)
         }
     }
 }
@@ -264,6 +291,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
     // a koan carried through the week comes back after each session instead of a new one
     val weekKoan = remember { app.library.byId(app.settings.activeWeekKoan()) }
     var carrying by remember { mutableStateOf(false) }
+    var liked by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false; host.engine.walkOn = false }
 
@@ -370,10 +398,22 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                         Modifier.fillMaxWidth(), icon = NeboIcon.Week, enabled = !carrying,
                         sub = if (carrying) null else "Vraćaće se poslije svake sesije, sedam dana",
                     )
+                    // a word back: what landed is offered more often, "not now" rests for two weeks
+                    if (item != null && !isWeek) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        GlassButton("Pogodio je", {
+                            if (liked != item.id) { liked = item.id; scope.launch(Dispatchers.IO) { app.db.addFeedback(item.id, 1) } }
+                        }, Modifier.weight(1f), icon = if (liked == item.id) NeboIcon.Check else NeboIcon.Star, enabled = liked != item.id)
+                        GlassButton("Ne sada", {
+                            scope.launch(Dispatchers.IO) { app.db.addFeedback(item.id, -1) }
+                            pick = null; round++
+                        }, Modifier.weight(1f))
+                    }
+                    if (liked == item?.id && item != null) Text("Zapamtio sam. Ovakvi će dolaziti češće.", style = SmallStyle)
+                    // "Ne sada" already brings another one, so a plain "Drugi" is only needed without an item
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (isWeek) GlassButton("Bilješke uz koan", { keep(Screen.KoanNotes(item!!.id)) })
-                        else GlassButton("Drugi", { pick = null; round++ })
-                        GlassButton("Sačuvaj i završi", { keep() }, strong = true)
+                        else if (item == null) GlassButton("Drugi", { pick = null; round++ })
+                        GlassButton("Sačuvaj i završi", { keep() }, Modifier.weight(1f), strong = true)
                     }
                 }
             }
