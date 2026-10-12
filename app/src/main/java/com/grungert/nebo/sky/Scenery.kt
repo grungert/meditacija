@@ -3,6 +3,7 @@ package com.grungert.nebo.sky
 import android.graphics.Bitmap
 import android.graphics.BlendMode
 import android.graphics.Canvas
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
@@ -24,6 +25,7 @@ class SceneFlags(
     val showLandmarks: Boolean,
     val season: Season = Season.SUMMER,
     val weather: Weather = Weather.CLEAR,
+    val foreground: Boolean = true,
 )
 
 /**
@@ -37,8 +39,9 @@ class Scenery(private val u: Float) {
     private val rand = Mulberry(7)
 
     private class Blade(val x: Float, val off: Float, val frac: Float, val h: Float, val w: Float, val lean: Float,
-                        val flex: Float, val ph: Float, val d: Float, val lit: Boolean)
+                        val flex: Float, val ph: Float, val d: Float, val tone: Float)
     private class Plume(val x: Float, val frac: Float, val h: Float, val flex: Float, val ph: Float)
+    private class Front(val x: Float, val h: Float, val w: Float, val lean: Float, val ph: Float)
     private class Leaf(var x: Float = -1f, var y: Float = 0f, var s: Float = 0f, var rot: Float = 0f, var vr: Float = 0f,
                        var bob: Float = 0f, var delay: Float = 0f, var hue: Float = 0f)
     private class Fly(val x: Float, val y: Float, val ph: Float, val sp: Float, val s: Float)
@@ -50,6 +53,12 @@ class Scenery(private val u: Float) {
 
     private var blades = emptyList<Blade>()
     private var plumes = emptyList<Plume>()
+    private var front = emptyList<Front>()
+    // per depth band: where its tips and its roots lie on screen, for the root-to-tip colour ramp
+    private val bandTop = FloatArray(6)
+    private val bandBottom = FloatArray(6)
+    private val stemX = FloatArray(13)
+    private val stemY = FloatArray(13)
     private val leaves = List(12) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
     private var season = Season.SUMMER
     private var weather = Weather.CLEAR
@@ -77,7 +86,7 @@ class Scenery(private val u: Float) {
     // -------- world geometry shared with the shader --------
     private var walk = 0f
     private var windPhase = 0f
-    private fun hillFn(xw: Float) = 0.115f + 0.03f * sin(xw * 1.6f + 0.8f) + 0.018f * sin(xw * 3.7f + 2.0f)
+    private fun hillFn(xw: Float) = 0.115f + 0.006f * sin(xw * 1.6f + 0.8f) + 0.003f * sin(xw * 3.7f + 2.0f)
     private fun crestX(sx: Float) = sx / H + walk * 0.55f
     private fun hillY(sx: Float) = H * (1 - hillFn(crestX(sx)))
     private fun gustAt(xw: Float): Float {
@@ -92,7 +101,7 @@ class Scenery(private val u: Float) {
         val b = ArrayList<Blade>()
         var x = -12 * u
         while (x < W + 12 * u) {
-            b += Blade(x, r() * 5 * u, 0f, (7 + r() * 13) * u, (1.6f + r()) * u, -0.08f + r() * 0.1f, 0.5f + r() * 0.5f, r() * 6.28f, 0f, r() < 0.45f)
+            b += Blade(x, r() * 5 * u, 0f, (7 + r() * 13) * u, (1.6f + r()) * u, -0.08f + r() * 0.1f, 0.5f + r() * 0.5f, r() * 6.28f, 0f, r())
             x += (2.2f + r() * 2.2f) * u
         }
         val rows = 7
@@ -102,13 +111,23 @@ class Scenery(private val u: Float) {
             x = -30 * u
             while (x < W + 30 * u) {
                 b += Blade(x, 0f, d * 0.92f + r() * 0.1f, (14 + 95 * d.pow(1.35f) * (0.6f + r() * 0.7f)) * u,
-                    (2 + 5 * d) * u * (0.7f + r() * 0.6f), -0.12f + r() * 0.16f, 0.6f + r() * 0.6f, r() * 6.28f, d, r() < 0.4f)
+                    (2 + 5 * d) * u * (0.7f + r() * 0.6f), -0.12f + r() * 0.16f, 0.6f + r() * 0.6f, r() * 6.28f, d, r())
                 x += step * (0.6f + r() * 0.8f)
             }
         }
         blades = b.sortedBy { it.frac }
         val heightScale = min(1f, H / (800 * u) + 0.4f)
-        plumes = List(7) { Plume(W * (0.06f + 0.88f * r()), 0.35f + 0.6f * r(), (120 + 120 * r()) * u * heightScale, 0.9f + r() * 0.4f, r() * 6.28f) }
+        plumes = List(5) { Plume(W * (0.08f + 0.84f * r()), 0.35f + 0.55f * r(), (140 + 110 * r()) * u * heightScale, 0.9f + r() * 0.4f, r() * 6.28f) }
+        front = List(9) { Front(W * r(), H * (0.09f + 0.10f * r()), (5 + 4 * r()) * u, -0.3f + 0.6f * r(), r() * 6.28f) }
+        // the meadow is nearly level, so each depth band's tips and roots sit at about the same height across the screen
+        bandTop.fill(H); bandBottom.fill(0f)
+        val y0 = H * (1 - 0.115f)
+        for (bl in blades) {
+            val i = min(5, floor(bl.d * 6).toInt())
+            val root = if (bl.d == 0f) y0 + bl.off else y0 + (H - y0) * bl.frac
+            bandTop[i] = min(bandTop[i], root - bl.h * 0.8f)
+            bandBottom[i] = max(bandBottom[i], root)
+        }
     }
 
     fun ripple(t: Float, strong: Boolean) { ripples += Ripple(t, strong) }
@@ -150,6 +169,7 @@ class Scenery(private val u: Float) {
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
         drawMeadow(c, pal, t, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
+        if (flags.foreground) drawForeground(c, pal, t, e.wind, e.reducedMotion)
         if (season != Season.WINTER && weather != Weather.RAIN) drawFireflies(c, pal, t)
         when (weather) {
             Weather.RAIN -> drawRain(c, dt, e.wind)
@@ -177,61 +197,125 @@ class Scenery(private val u: Float) {
             val y0 = hillY(bx)
             val by = if (b.d == 0f) y0 + b.off else y0 + (H - y0) * b.frac
             val g = gustAt(crestX(bx))
-            val ang = b.lean - amp * g * b.flex + sin(t * 2.3f + b.ph) * 0.05f * b.flex
+            val ang = b.lean - amp * g * b.flex * 1.1f + sin(t * 2.3f + b.ph) * 0.05f * b.flex
             val bh = if (winter) b.h * 0.5f else b.h
             val tx = bx + sin(ang) * bh
             val ty = by - cos(ang) * bh
-            val cx = bx + sin(ang * 0.45f) * bh * 0.55f
-            val cy = by - cos(ang * 0.45f) * bh * 0.55f
+            // the blade stays fairly upright low down and bends towards its tip
+            val cx = bx + sin(ang * 0.25f) * bh * 0.55f
+            val cy = by - cos(ang * 0.25f) * bh * 0.55f
             if (blossoms != null && index % 7 == 0 && b.d >= 0.28f) blossoms += floatArrayOf(tx, ty, b.d, (index / 7 % 3).toFloat())
-            val p = bladePaths[min(buckets - 1, floor(b.d * buckets).toInt()) * 2 + if (b.lit) 1 else 0]
-            p.moveTo(bx - b.w / 2, by)
+            // where a gust bends the grass, its tips turn to the light: the wind shows as waves of brightness
+            val shine = g > 0.55f && b.tone > 0.3f
+            val p = bladePaths[min(buckets - 1, floor(b.d * buckets).toInt()) * 2 + if (shine) 1 else 0]
+            // the nearest blades run on past the bottom edge, so no flat blade base shows against the ground
+            val foot = if (b.d > 0.6f) max(by, H + 2 * u) else by
+            p.moveTo(bx - b.w / 2, foot)
+            p.lineTo(bx - b.w / 2, by)
             p.quadTo(cx - b.w * 0.25f, cy, tx, ty)
             p.quadTo(cx + b.w * 0.25f, cy, bx + b.w / 2, by)
+            p.lineTo(bx + b.w / 2, foot)
             p.close()
         }
         paint.style = Paint.Style.FILL
+        val white = floatArrayOf(1f, 1f, 1f)
+        val glint = mix(mix(pal.sun, white, 0.6f), pal.gTop, night * 0.7f)
         for (i in 0 until buckets) {
             val d = i / (buckets - 1f)
             val base = mix(pal.gTop, pal.gBot, min(1f, d * 1.15f))
-            val shade = scale(base, 0.80f)
-            val lit = mix(scale(base, 1.12f), pal.sun, 0.10f * (1 - night))
-            paint.color = argb(shade, 1f); c.drawPath(bladePaths[i * 2], paint)
-            paint.color = argb(lit, 1f); c.drawPath(bladePaths[i * 2 + 1], paint)
+            val root = scale(base, 0.50f)
+            val tip = mix(scale(base, 1.22f), pal.sun, 0.12f * (1 - night))
+            val top = bandTop[i]; val bottom = max(bandBottom[i], top + 1f)
+            paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(tip, 1f), argb(base, 1f), argb(root, 1f)),
+                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            c.drawPath(bladePaths[i * 2], paint)
+            paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(mix(tip, glint, 0.55f), 1f), argb(scale(base, 1.1f), 1f), argb(root, 1f)),
+                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+            c.drawPath(bladePaths[i * 2 + 1], paint)
         }
+        paint.shader = null
         if (blossoms != null) for (bl in blossoms) {
             paint.color = argb(mix(SPRING_COLS[bl[3].toInt()], pal.gBot, 0.6f * night), 0.95f)
             c.drawCircle(bl[0], bl[1], (1.8f + 2.6f * bl[2]) * u, paint)
         }
         if (winter) return
-        // silver-grass plumes
-        val plumeCol = mix(mix(pal.sun, floatArrayOf(1f, 1f, 1f), 0.45f), pal.gBot, night * 0.6f)
+        drawPlumes(c, pal, t, amp, margin, span)
+    }
+
+    /**
+     * Silver grass: a slender stem that bends more towards the top, and a plume of fine warm strands
+     * that hang from it on the lee side and tremble in the wind.
+     */
+    private fun drawPlumes(c: Canvas, pal: Palette, t: Float, amp: Float, margin: Float, span: Float) {
+        val night = pal.stars
+        val stemCol = scale(mix(pal.gTop, pal.gBot, 0.5f), 0.8f)
+        val plumeCol = mix(mix(pal.sun, floatArrayOf(1f, 0.95f, 0.82f), 0.55f), pal.gBot, night * 0.6f)
         for (s in plumes) {
             val sx = wrapX(s.x, 0.55f + 0.45f * s.frac, margin, span)
             val sy0 = hillY(sx)
             val sy = sy0 + (H - sy0) * s.frac
             val g = gustAt(crestX(sx))
-            val ang = -0.05f - amp * 0.75f * g * s.flex + sin(t * 1.7f + s.ph) * 0.05f
-            val tx = sx + sin(ang) * s.h
-            val ty = sy - cos(ang) * s.h
-            val cx = sx + sin(ang * 0.4f) * s.h * 0.5f
-            val cy = sy - cos(ang * 0.4f) * s.h * 0.5f
-            stroke.color = argb(mix(pal.gTop, pal.gBot, 0.5f), 1f)
-            stroke.strokeWidth = 1.6f * u
-            tmp.rewind(); tmp.moveTo(sx, sy); tmp.quadTo(cx, cy, tx, ty)
-            c.drawPath(tmp, stroke)
-            paint.color = argb(plumeCol, 0.38f * (1 - 0.7f * night))
-            for (k in 0 until 5) {
-                val f = k / 4f
-                val bx = cx + (tx - cx) * (0.45f + 0.55f * f)
-                val by = cy + (ty - cy) * (0.45f + 0.55f * f)
-                val a2 = ang - 0.3f - amp * g * 0.4f + (if (k % 2 == 1) 0.18f else -0.18f) + sin(t * 2.6f + k + s.ph) * 0.05f
-                c.save()
-                c.rotate(Math.toDegrees(a2.toDouble()).toFloat(), bx, by)
-                c.drawOval(bx - 3.2f * u, by - (17 - 5 * f) * u, bx + 3.2f * u, by + (17 - 5 * f) * u, paint)
-                c.restore()
+            val bend = -0.08f - amp * 0.75f * g * s.flex + sin(t * 1.7f + s.ph) * 0.05f
+            for (i in 0..12) {
+                val q = i / 12f
+                val a = bend * q * q
+                stemX[i] = sx + sin(a) * s.h * q
+                stemY[i] = sy - cos(a * 0.6f) * s.h * q
             }
+            tmp.rewind(); tmp.moveTo(stemX[0], stemY[0])
+            for (i in 1..12) tmp.lineTo(stemX[i], stemY[i])
+            stroke.color = argb(stemCol, 0.95f); stroke.strokeWidth = 1.5f * u
+            c.drawPath(tmp, stroke)
+            // the plume: fine strands swept downwind from the top third of the stem, longest in its middle,
+            // each sagging a little under its own weight
+            tmp.rewind()
+            val size = (s.h / (200 * u)).coerceIn(0.7f, 1.3f)
+            for (j in 0 until 36) {
+                val q = 0.66f + 0.34f * j / 35f
+                val f = q * 12
+                val i = min(11, floor(f).toInt())
+                val k = f - i
+                val px = stemX[i] + (stemX[i + 1] - stemX[i]) * k
+                val py = stemY[i] + (stemY[i + 1] - stemY[i]) * k
+                val spread = ((j * 37) % 11) / 10f - 0.5f
+                val a = bend * q * 1.6f - 0.25f - 0.35f * (1 - q) + spread * 0.35f + sin(t * 3.1f + j * 0.7f + s.ph) * 0.06f
+                val len = (10 + 22 * sin(PI.toFloat() * (q - 0.66f) / 0.36f)) * u * size
+                val ex = px + sin(a) * len
+                val ey = py - cos(a) * len
+                tmp.moveTo(px, py)
+                tmp.quadTo((px + ex) / 2, (py + ey) / 2 + len * 0.18f, ex, ey + len * 0.12f)
+            }
+            stroke.color = argb(plumeCol, 0.62f * (1 - 0.5f * night)); stroke.strokeWidth = 1.1f * u
+            c.drawPath(tmp, stroke)
         }
+    }
+
+    /** A few large, dark blades right in front of the viewer frame the meadow and give it depth. */
+    private fun drawForeground(c: Canvas, pal: Palette, t: Float, wind: Float, reduced: Boolean) {
+        if (season == Season.WINTER) return
+        val amp = (0.18f + 0.42f * wind) * if (reduced) 0.4f else 1f
+        tmp.rewind()
+        for (f in front) {
+            val g = gustAt(crestX(f.x))
+            val ang = f.lean - amp * 0.7f * g + sin(t * 1.3f + f.ph) * 0.05f
+            val by = H + 20 * u
+            val tx = f.x + sin(ang) * f.h
+            val ty = by - cos(ang) * f.h
+            val cx = f.x + sin(ang * 0.25f) * f.h * 0.55f
+            val cy = by - cos(ang * 0.25f) * f.h * 0.55f
+            tmp.moveTo(f.x - f.w / 2, by)
+            tmp.quadTo(cx - f.w * 0.25f, cy, tx, ty)
+            tmp.quadTo(cx + f.w * 0.25f, cy, f.x + f.w / 2, by)
+            tmp.close()
+        }
+        val dark = scale(pal.gBot, 0.42f)
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(0f, H * 0.72f, 0f, H, intArrayOf(argb(scale(pal.gBot, 0.62f), 1f), argb(dark, 1f)), null, Shader.TileMode.CLAMP)
+        c.drawPath(tmp, paint)
+        // and the very bottom of the picture settles into shade
+        paint.shader = LinearGradient(0f, H * 0.8f, 0f, H, intArrayOf(argb(dark, 0f), argb(dark, 0.35f)), null, Shader.TileMode.CLAMP)
+        c.drawRect(0f, H * 0.8f, W, H, paint)
+        paint.shader = null
     }
 
     private fun wrapX(x0: Float, f: Float, margin: Float, span: Float): Float {

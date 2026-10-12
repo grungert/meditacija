@@ -130,8 +130,9 @@ vec3 skyColor(float y) {
   return mix(c, uSkyTop, smoothstep(0.40, 1.0, y));
 }
 
+// the meadow is nearly level: a calm line under the distant ridges, no bumps of its own
 float hill(float x) {
-  return 0.115 + 0.03 * sin(x * 1.6 + 0.8) + 0.018 * sin(x * 3.7 + 2.0);
+  return 0.115 + 0.006 * sin(x * 1.6 + 0.8) + 0.003 * sin(x * 3.7 + 2.0);
 }
 
 // Gust strength along the meadow; the same formula bends the blades drawn on top.
@@ -222,7 +223,7 @@ vec3 scene(vec2 p) {
 
   // meadow: painted mass with rolling gust highlights; blades are drawn on top
   float cx0 = p.x + uWalk * 0.55;
-  float hl = hill(cx0) + (noise(vec2(cx0 * 60.0, 1.0)) - 0.5) * 0.006;
+  float hl = hill(cx0);
   float inG = 1.0 - smoothstep(hl - 0.002, hl + 0.002, p.y);
   if (inG > 0.0) {
     float depth = clamp((hl - p.y) / 0.15, 0.0, 1.0);
@@ -230,7 +231,10 @@ vec3 scene(vec2 p) {
     vec3 g = mix(uGrassTop, uGrassBot, depth);
     float w = gust(cx0 + (hl - p.y) * 0.8);
     g += uSunCol * 0.13 * smoothstep(0.35, 0.95, w) * (1.0 - depth * 0.6) * (0.25 + 0.75 * uSunAmt);
-    g *= 0.94 + 0.08 * noise(vec2(wx * 220.0, p.y * 18.0));
+    // soft, large patches only: fine noise turns into blocks when the sky is scaled up to the screen
+    g *= 0.95 + 0.07 * noise(vec2(wx * 9.0, p.y * 5.0));
+    // the ground darkens towards the viewer, where the roots of the near grass are
+    g = mix(g, uGrassBot * 0.45, smoothstep(0.02, hl, hl - p.y) * 0.75);
     col = mix(col, g, inG);
   }
 

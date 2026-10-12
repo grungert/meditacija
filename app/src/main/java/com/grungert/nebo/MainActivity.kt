@@ -58,7 +58,8 @@ sealed class Screen {
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
     var dark by mutableStateOf(false)
-    var sheetOpen by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
+    var sheetOpen by mutableStateOf(false)
+    var foreground by mutableStateOf(true)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
 
@@ -118,7 +119,7 @@ class MainActivity : ComponentActivity() {
         val host = remember {
             val reduced = SysSettings.Global.getFloat(contentResolver, SysSettings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
             SkyHost(BreathEngine(patternById(s.pattern)).apply { paced = false; reducedMotion = reduced }, DayClock(s.timeMode))
-                .also { it.applyWeatherSettings(s.seasonMode, s.weatherMode) }
+                .also { it.applyWeatherSettings(s.seasonMode, s.weatherMode); it.foreground = s.meadowFront }
         }
         val scenery = rememberScenery()
         val go: (Screen) -> Unit = { screen = it }
@@ -143,6 +144,7 @@ class MainActivity : ComponentActivity() {
                 dark = host.dark,
                 season = host.season,
                 weather = host.weather,
+                foreground = host.foreground,
             )
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
                 when (sc) {

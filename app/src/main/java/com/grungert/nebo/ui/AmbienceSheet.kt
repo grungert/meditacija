@@ -48,6 +48,7 @@ fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, o
     var timeMode by remember { mutableStateOf(s.timeMode) }
     var seasonMode by remember { mutableStateOf(s.seasonMode) }
     var weatherMode by remember { mutableStateOf(s.weatherMode) }
+    var front by remember { mutableStateOf(s.meadowFront) }
 
     fun time(v: String) { timeMode = v; s.timeMode = v; host.day.mode = v }
     fun season(v: String) { seasonMode = v; s.seasonMode = v; host.applyWeatherSettings(v, weatherMode) }
@@ -93,6 +94,9 @@ fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, o
                 Chip("kako dođe", weatherMode == "auto", { weather("auto") })
                 for (w in Weather.entries) Chip(w.label, weatherMode == w.name, { weather(w.name) })
             }
+
+            SectionLabel("Livada")
+            SwitchRow("Prednji plan", front, { front = it; s.meadowFront = it; host.foreground = it }, sub = "Nekoliko krupnih tamnih vlati uz donju ivicu, za dubinu.")
 
             SectionLabel("Godišnje doba")
             ChipRow {

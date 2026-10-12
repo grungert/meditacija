@@ -57,6 +57,10 @@ class Settings(context: Context) {
     var checkInAfter: Boolean
         get() = p.getBoolean("checkInAfter", true)
         set(v) = p.edit { putBoolean("checkInAfter", v) }
+    /** A few large dark blades along the bottom edge of the meadow. */
+    var meadowFront: Boolean
+        get() = p.getBoolean("meadowFront", true)
+        set(v) = p.edit { putBoolean("meadowFront", v) }
     var ambient: Boolean
         get() = p.getBoolean("ambient", true)
         set(v) = p.edit { putBoolean("ambient", v) }

@@ -58,6 +58,7 @@ fun SkyScene(
     dark: Boolean = false,
     season: Season = Season.SUMMER,
     weather: Weather = Weather.CLEAR,
+    foreground: Boolean = true,
     scenery: Scenery = rememberScenery(),
 ) {
     val context = LocalContext.current
@@ -133,7 +134,7 @@ fun SkyScene(
             scenery.resize(size.width, size.height)
             drawIntoCanvas { c ->
                 scenery.draw(c.nativeCanvas, engine, state.pal, state.light, state.time, state.dt,
-                    SceneFlags(showCircle = showCircle, showLandmarks = true, season = state.season, weather = state.weather), state.walkAmt)
+                    SceneFlags(showCircle = showCircle, showLandmarks = true, season = state.season, weather = state.weather, foreground = foreground), state.walkAmt)
                 if (state.dim > 0.01f) c.nativeCanvas.drawColor(android.graphics.Color.argb((state.dim * 255).toInt(), 0, 0, 0))
             }
         }
