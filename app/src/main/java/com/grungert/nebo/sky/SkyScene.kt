@@ -67,6 +67,7 @@ fun SkyScene(
     val frameCb by rememberUpdatedState(onFrame)
     val lightCb by rememberUpdatedState(onLight)
     val isDark by rememberUpdatedState(dark)
+    val dropShown by rememberUpdatedState(showCircle)
     val seasonNow by rememberUpdatedState(season)
     val weatherNow by rememberUpdatedState(weather)
     var tick by remember { mutableLongStateOf(0L) }
@@ -105,6 +106,7 @@ fun SkyScene(
                 state.walkAmt += ((if (engine.walkOn) 1f else 0f) - state.walkAmt) * minOf(1f, dt * 1.5f)
                 // eyes closed: the whole scene fades to black inside GL and the overlay, never under an opaque layer
                 state.dim += ((if (isDark) 1f else 0f) - state.dim) * minOf(1f, dt * 1.8f)
+                state.drop += ((if (dropShown) 1f else 0f) - state.drop) * minOf(1f, dt * 2.5f)
                 val h = day.hour
                 state.pal = Seasons.apply(DayCycle.paletteAt(h), seasonNow, weatherNow)
                 state.season = seasonNow; state.weather = weatherNow
@@ -114,7 +116,7 @@ fun SkyScene(
                 skyView.renderer.frame = SkyFrame(
                     state.time, engine.drift, engine.morph, engine.windPhase, engine.walk, engine.breath,
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h),
-                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h) * through, state.light, state.dim, Seasons.cover(weatherNow),
+                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h) * through, state.light, state.dim, Seasons.cover(weatherNow), state.drop,
                 )
                 lightCb(state.pal, DayCycle.sunAmount(h) * through)
                 frameCb(dt)
@@ -143,6 +145,7 @@ private class FrameState {
     var dt = 0f
     var walkAmt = 0f
     var dim = 0f
+    var drop = 0f
     var season = Season.SUMMER
     var weather = Weather.CLEAR
     var pal: Palette = DayCycle.paletteAt(12f)

@@ -15,6 +15,7 @@ uniform float uSunAmt, uMoonAmt, uStars;
 uniform float uCover;             // extra cloud cover for rain, snow and fog
 uniform float uDim;               // 0 normal, 1 fully dark (eyes closed)
 uniform vec3 uLight;              // normalised direction towards the sun or moon
+uniform float uDrop;              // 0..1: the breathing drop of water is shown
 
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -139,10 +140,10 @@ float gust(float x) {
   return g * g;
 }
 
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
+// Everything behind the drop, at a point p (x scaled by the aspect ratio, y from 0 at the bottom to 1 at the top).
+vec3 scene(vec2 p) {
   float asp = uRes.x / uRes.y;
-  vec2 p = vec2(uv.x * asp, uv.y);
+  vec2 uv = vec2(p.x / asp, p.y);
   vec2 sunP = vec2(uSunPos.x * asp, uSunPos.y);
   vec2 moonP = vec2(uMoonPos.x * asp, uMoonPos.y);
   float b = uBreath;
@@ -235,6 +236,48 @@ void main() {
 
   float glow = exp(-dist * 2.6) * 0.35 + exp(-dist * 9.0) * 0.45;
   col += uSunCol * glow * (0.50 + 0.80 * b) * uSunAmt;
+
+  return col;
+}
+
+// The breath as a drop of water hanging in the sky: it bends what lies behind it,
+// catches the light on the side facing the sun and gathers a warm glow on the far side.
+vec3 drop(vec2 p, vec2 dc, float dr, float d) {
+  vec2 q = p - dc;
+  float z = sqrt(max(0.0, 1.0 - d * d));
+  // like a real drop it acts as a lens: the world below shows upside down, gathered into it
+  vec3 col = scene(dc - q * (1.4 + 1.6 * (1.0 - z)) - vec2(0.0, 0.9 * dr));
+  col = col * vec3(1.03, 1.02, 1.0) + 0.04;
+  vec3 lightCol = mix(vec3(1.0, 0.98, 0.95), uRim, 0.25);
+  col = mix(col, lightCol, pow(1.0 - z, 2.5) * 0.55);
+  vec2 ld = normalize(uLight.xy + vec2(-0.35, 0.6));
+  vec2 hq = q / dr - ld * 0.42;
+  vec2 hr = vec2(dot(hq, ld), dot(hq, vec2(-ld.y, ld.x)));
+  col += lightCol * 0.70 * smoothstep(0.20, 0.0, length(hr * vec2(1.7, 1.0)));
+  col += lightCol * 0.12 * smoothstep(0.12, 0.0, length(q / dr + ld * 0.55));
+  col += mix(uSunCol, vec3(1.0, 0.88, 0.66), 0.5) * 0.35 * smoothstep(0.70, 0.97, d) * smoothstep(-0.1, -0.9, dot(q / dr, ld));
+  return mix(col, uSh * 0.55, smoothstep(0.96, 1.0, d) * 0.35);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float asp = uRes.x / uRes.y;
+  vec2 p = vec2(uv.x * asp, uv.y);
+
+  // same place and size as the breathing circle used to have: centred 36% from the top
+  vec2 dc = vec2(asp * 0.5, 0.64);
+  float dr = min(asp * 0.5, 0.32) * (0.30 + 0.22 * uBreath);
+  float d = length(p - dc) / dr;
+  float aa = 1.5 / (uRes.y * dr);
+  float inside = uDrop * (1.0 - smoothstep(1.0 - aa, 1.0, d));
+
+  vec3 col = vec3(0.0);
+  if (inside < 0.999) {
+    col = scene(p);
+    // a soft shadow around the drop keeps it legible over a white cloud
+    col *= 1.0 - uDrop * (0.10 * smoothstep(1.35, 1.0, d) + 0.06 * smoothstep(1.08, 1.0, d));
+  }
+  if (inside > 0.001) col = mix(col, drop(p, dc, dr, min(d, 1.0)), inside);
 
   col *= 1.0 - (0.10 + 0.14 * uStars) * pow(length(uv - 0.5) * 1.2, 2.0);
   col += (hash(gl_FragCoord.xy + fract(uTime) * 100.0) - 0.5) * 0.012;

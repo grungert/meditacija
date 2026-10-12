@@ -365,72 +365,28 @@ class Scenery(private val u: Float) {
         }
     }
 
-    // -------- the breathing circle --------
+    // -------- the breathing drop --------
+    // The drop itself is painted in the sky shader, where it can bend the real sky behind it.
+    // Here only its crisp edge (the shader runs below screen resolution) and the rings it sends out on each turn of the breath.
     private fun drawCircle(c: Canvas, e: BreathEngine, pal: Palette, t: Float, dt: Float) {
         val cx = W / 2
         val cy = H * 0.36f
         val base = min(W * 0.5f, H * 0.32f)
-        val breath = e.breath
-        val r = base * (0.30f + 0.22f * breath)
-        val warm = mix(floatArrayOf(1f, 1f, 1f), pal.sun, 0.35f)
-
-        paint.shader = RadialGradient(cx, cy, r * 2.0f,
-            intArrayOf(argb(warm, 0f), argb(warm, 0.14f + 0.16f * breath), argb(warm, 0.05f + 0.07f * breath), argb(warm, 0f)),
-            floatArrayOf(0f, 0.25f, 0.6f, 1f), Shader.TileMode.CLAMP)
-        c.drawCircle(cx, cy, r * 2.0f, paint)
-
-        val dim = 1 - 0.55f * pal.stars
-        paint.shader = RadialGradient(cx - r * 0.3f, cy - r * 0.35f, r * 1.3f,
-            intArrayOf(argb(floatArrayOf(1f, 1f, 1f), (0.14f + 0.08f * breath) * dim), argb(warm, 0.05f * dim),
-                argb(warm, 0.10f * dim), argb(floatArrayOf(1f, 1f, 1f), 0.22f * dim)),
-            floatArrayOf(0f, 0.45f, 0.72f, 0.78f), Shader.TileMode.CLAMP)
-        c.drawCircle(cx, cy, r, paint)
-        paint.shader = null
-
-        stroke.setShadowLayer(10 * u, 0f, 0f, android.graphics.Color.argb(90, 16, 36, 86))
-        stroke.color = argb(floatArrayOf(1f, 1f, 1f), 0.6f); stroke.strokeWidth = 1.5f * u
+        val r = base * (0.30f + 0.22f * e.breath)
+        val white = floatArrayOf(1f, 1f, 1f)
+        stroke.color = argb(white, 0.30f * (1 - 0.5f * pal.stars)); stroke.strokeWidth = 1.2f * u
         c.drawCircle(cx, cy, r, stroke)
-        val sweep = if (e.running && e.paced) 360f * e.progress else 0f
-        stroke.color = argb(floatArrayOf(1f, 1f, 1f), 0.97f); stroke.strokeWidth = 3.2f * u
-        c.drawArc(cx - r, cy - r, cx + r, cy + r, -90f, sweep, false, stroke)
-        stroke.clearShadowLayer()
-
-        paint.blendMode = BlendMode.PLUS
-        if (e.running && e.paced) {
-            val a1 = (-PI / 2 + 2 * PI * e.progress).toFloat()
-            val s = 26 * u
-            spriteRect.set(cx + cos(a1) * r - s / 2, cy + sin(a1) * r - s / 2, cx + cos(a1) * r + s / 2, cy + sin(a1) * r + s / 2)
-            c.drawBitmap(moteSprite, null, spriteRect, paint)
-        }
-        paint.blendMode = null
 
         val it = ripples.iterator()
         while (it.hasNext()) {
             val rp = it.next()
-            val k = (t - rp.t0) / 2.2f
+            val k = (t - rp.t0) / 2.6f
             if (k >= 1) { it.remove(); continue }
             val eK = 1 - (1 - k).pow(3)
-            stroke.color = argb(floatArrayOf(1f, 1f, 1f), (if (rp.strong) 0.5f else 0.3f) * (1 - k))
-            stroke.strokeWidth = (2.2f - 1.6f * k) * u
-            c.drawCircle(cx, cy, r * (1 + 0.75f * eK), stroke)
+            stroke.color = argb(white, (if (rp.strong) 0.30f else 0.18f) * (1 - k))
+            stroke.strokeWidth = (1.6f - 1.2f * k) * u
+            c.drawCircle(cx, cy, r * (1 + 0.6f * eK), stroke)
         }
-
-        // motes of light: gathered onto the circle when the lungs are full, released on the out-breath
-        paint.blendMode = BlendMode.PLUS
-        for (m in motes) {
-            m.a += m.spd * dt * (0.35f + 0.65f * e.wind) * if (e.reducedMotion) 0.3f else 1f
-            val spread = (1 - breath) * 0.6f * m.loose
-            val rr = r * (1 + m.off * 0.05f + spread + 0.015f * sin(t * 1.3f + m.tw))
-            val x = cx + cos(m.a) * rr
-            val y = cy + sin(m.a) * rr
-            val tw = 0.5f + 0.5f * sin(t * 2.1f + m.tw)
-            val s = (7 + 9 * m.s) * u * (0.8f + 0.4f * breath)
-            paint.alpha = (255 * (0.25f + 0.75f * tw) * (1 - spread * 0.8f) * (0.6f + 0.4f * breath)).toInt().coerceIn(0, 255)
-            spriteRect.set(x - s / 2, y - s / 2, x + s / 2, y + s / 2)
-            c.drawBitmap(moteSprite, null, spriteRect, paint)
-        }
-        paint.blendMode = null
-        paint.alpha = 255
     }
 
     // -------- things met along the walk --------

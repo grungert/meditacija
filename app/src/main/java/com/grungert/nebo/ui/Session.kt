@@ -219,7 +219,6 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     }
 
     Box(Modifier.fillMaxSize()) {
-        // the phase word sits inside the breathing circle (the circle is centred 36% from the top)
         // time along the edge of the screen: a thin line that goes once around, clockwise from the top
         if (planned > 0) {
             val glow by animateFloatAsState(when { host.dark && !peek -> 0f; showUi || paused -> 0.75f; else -> 0.3f }, tween(600), label = "edge")
@@ -249,14 +248,21 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             })
         }
 
+        // the phase word sits under the drop (centred 36% from the top, at most 0.52 of its base size across),
+        // with one dot per second of the phase instead of a number
         if (cfg.paced && !ended && !paused) BoxWithConstraints(Modifier.fillMaxSize()) {
             val e = host.engine
-            val remaining = ceil(e.phaseDuration - e.phaseT).toInt()
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
-            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f - 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (elapsed < 0f) return@Column // reading elapsed refreshes the countdown every frame
-                Text(word, style = TitleStyle.copy(fontSize = 38.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Light, letterSpacing = 1.sp), modifier = Modifier.alpha(fade))
-                Text("$remaining", style = SmallStyle)
+            val base = minOf(maxWidth * 0.5f, maxHeight * 0.32f)
+            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f + base * 0.52f + 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (elapsed < 0f) return@Column // reading elapsed refreshes the dots every frame
+                Text(word, style = TitleStyle.copy(fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp), modifier = Modifier.alpha(fade))
+                val n = ceil(e.phaseDuration - 0.01f).toInt().coerceIn(1, 12)
+                val done = e.phaseT.toInt()
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (i in 0 until n) Box(Modifier.size(6.dp).clip(CircleShape).background(Color.White.copy(alpha = if (i <= done) 0.95f else 0.32f)))
+                }
             }
         }
 
