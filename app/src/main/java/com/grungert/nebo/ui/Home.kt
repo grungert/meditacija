@@ -57,7 +57,7 @@ data class SessionConfig(
     val type: String,          // breath | walk | thoughts | silence
     val minutes: Int,          // 0 = open-ended
     val pattern: String,
-    val intervalBell: Boolean,
+    val intervalMinutes: Int,  // 0 none, -1 random
     val checkInBefore: Boolean,
     val checkInAfter: Boolean,
     val eyesClosed: Boolean = false,
@@ -90,7 +90,7 @@ fun weekStart(): Long = Calendar.getInstance().apply {
 
 fun android.content.Context.lastConfig(): SessionConfig {
     val s = app.settings
-    return SessionConfig(s.sessionType, s.minutes, s.pattern, s.intervalBell, s.checkInBefore, s.checkInAfter, s.eyesClosed, s.ambient)
+    return SessionConfig(s.sessionType, s.minutes, s.pattern, s.intervalMinutes, s.checkInBefore, s.checkInAfter, s.eyesClosed, s.ambient)
 }
 
 @Composable
@@ -208,7 +208,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     var minutes by remember { mutableIntStateOf(s.minutes) }
     var pattern by remember { mutableStateOf(s.pattern) }
     var timeMode by remember { mutableStateOf(s.timeMode) }
-    var intervalBell by remember { mutableStateOf(s.intervalBell) }
+    var interval by remember { mutableIntStateOf(s.intervalMinutes) }
     var before by remember { mutableStateOf(s.checkInBefore) }
     var after by remember { mutableStateOf(s.checkInAfter) }
     var eyes by remember { mutableStateOf(s.eyesClosed) }
@@ -245,7 +245,13 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
             Panel {
                 SectionLabel("Trajanje")
                 ChipRow { for (m in listOf(3, 5, 10, 15, 20, 0)) Chip(if (m == 0) "slobodno" else "$m min", minutes == m, { minutes = m }) }
-                SwitchRow("Tiho zvono svakih 5 minuta", intervalBell, { intervalBell = it })
+                Text("Tiho zvono tokom sesije", style = SmallStyle)
+                ChipRow {
+                    for ((label, v) in listOf("bez" to 0, "1 min" to 1, "2 min" to 2, "3 min" to 3, "5 min" to 5, "10 min" to 10, "15 min" to 15, "nasumično" to -1)) {
+                        Chip(label, interval == v, { interval = v })
+                    }
+                }
+                if (interval == -1) Text("Zvono svjesnosti: oglasi se kad ga ne očekuješ, otprilike svakih 2–6 minuta, i vrati te ovdje.", style = SmallStyle)
             }
             if (paced) Panel {
                 SectionLabel("Ritam disanja")
@@ -285,10 +291,10 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
             }
             GlassButton("Počni", {
                 s.sessionType = type; s.minutes = minutes; s.pattern = pattern; s.timeMode = timeMode
-                s.intervalBell = intervalBell; s.checkInBefore = before; s.checkInAfter = after
+                s.intervalMinutes = interval; s.checkInBefore = before; s.checkInAfter = after
                 s.eyesClosed = eyes; s.ambient = ambient; s.ambientVolume = volume
                 s.seasonMode = seasonMode; s.weatherMode = weatherMode
-                val cfg = SessionConfig(type, minutes, pattern, intervalBell, before, after, eyes && paced, ambient)
+                val cfg = SessionConfig(type, minutes, pattern, interval, before, after, eyes && paced, ambient)
                 go(if (before) Screen.CheckIn("before", config = cfg) else Screen.Session(cfg))
             }, Modifier.fillMaxWidth(), strong = true)
             Spacer(Modifier.height(24.dp))

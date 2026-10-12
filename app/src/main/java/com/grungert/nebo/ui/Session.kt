@@ -135,14 +135,16 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 if (cfg.eyesClosed) Cue.play(when (p) { Phase.IN -> "in"; Phase.OUT -> "out"; else -> "hold" })
             }
         }
-        var nextBell = 300f
+        // soft bells at the chosen interval, or at unexpected moments for a mindfulness bell
+        fun gap(): Float = if (cfg.intervalMinutes < 0) 120f + kotlin.random.Random.nextFloat() * 240f else cfg.intervalMinutes * 60f
+        var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
         host.onFrame = { dt ->
             if (!ended) {
                 elapsed += dt
                 lastTouch += dt
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
-                if (cfg.intervalBell && elapsed >= nextBell && (planned == 0 || elapsed < planned - 30)) {
-                    nextBell += 300f
+                if (elapsed >= nextBell && (planned == 0 || elapsed < planned - 20)) {
+                    nextBell += gap()
                     scope.launch { Bell.ring(soft = true) }
                 }
                 if (planned > 0 && elapsed >= planned) finish()

@@ -8,6 +8,8 @@ Android aplikacija za meditaciju i razumijevanje vlastitih uvida. Nebo s oblacim
 - **Nebo:** oblaci, trava, stvari koje se sreću usput i doba dana (po satu, ciklus dana ili ručno). Shader je isti kao u prototipu (`prototype/nebo/`).
 - **Bilješke glasom:** snimak se uvijek čuva, a Whisper ga na telefonu pretvara u tekst. Može se i pisati i izabrati raspoloženje.
 - **Koan ili poruka:** 49 koana iz *Bezvratne kapije* (javno vlasništvo, prepričano na naš jezik) i 42 originalne poruke. Bira ih model za značenje (multilingual-e5-small), a bez njega ključne riječi.
+- **Podsjetnik za meditaciju:** u izabrano vrijeme i dane, tačno u minut kad dozvoliš tačne alarme; ćuti ako si taj dan već meditirao. Iz notifikacije „Započni" ili „Za 15 min".
+- **Zvono tokom sesije:** svakih 1–15 minuta ili nasumično (zvono svjesnosti).
 - **Zapažanja tokom dana:** 2–5 notifikacija u nasumično vrijeme, u prozoru koji izabereš, uz mogućnost da utišaš dan.
 - **Uvidi:** zvjezdicom označiš bilješku kao uvid; „Slične" pokaže ranije bilješke najbliže po značenju („kad sam se ovako osjećao").
 - **Sedmični pregled:** prvo tvoje zapažanje, pa šta se vraćalo u odnosu na prošlu sedmicu, kada, tvojim riječima i ranija slična stanja. Podsjetnik nedjeljom u 19 h.

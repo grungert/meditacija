@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -81,6 +82,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ScreenHeader("Postavke", { go(Screen.Home) })
+
+            ReminderPanel()
 
             BackupPanel()
 
@@ -261,6 +264,61 @@ private fun BackupPanel() {
                 })
                 GlassButton("Odustani", { pending = null; pendingSummary = null })
             }
+        }
+    }
+}
+
+/** A daily nudge to sit, at a chosen time and on chosen days; quiet on days that already had a session. */
+@Composable
+private fun ReminderPanel() {
+    val context = LocalContext.current
+    val app = context.app
+    val s = app.settings
+    var on by remember { mutableStateOf(s.reminderOn) }
+    var hour by remember { mutableIntStateOf(s.reminderHour) }
+    var minute by remember { mutableIntStateOf(s.reminderMinute) }
+    var days by remember { mutableStateOf(s.reminderDays) }
+    var skip by remember { mutableStateOf(s.reminderSkipIfDone) }
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun apply() {
+        s.reminderOn = on; s.reminderHour = hour; s.reminderMinute = minute; s.reminderDays = days; s.reminderSkipIfDone = skip
+        app.scope.launch { Esm.refresh(context) }
+    }
+
+    Panel {
+        SectionLabel("Podsjetnik za meditaciju")
+        SwitchRow("Podsjeti me da sjednem", on, {
+            on = it
+            if (it && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            apply()
+        }, sub = if (on) "Svaki put u %02d:%02d.".format(hour, minute) else "Jedna tiha notifikacija u vrijeme koje izabereš.")
+        if (on) {
+            Text("Sat", style = SmallStyle)
+            // opens scrolled to the chosen hour
+            val hours = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = (hour - 5 - 2).coerceAtLeast(0))
+            androidx.compose.foundation.lazy.LazyRow(state = hours, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items((5..23).toList()) { h -> Chip("$h", hour == h, { hour = h; apply() }) }
+            }
+            Text("Minute", style = SmallStyle)
+            ChipRow { for (m in listOf(0, 15, 30, 45)) Chip(":%02d".format(m), minute == m, { minute = m; apply() }) }
+            Text("Dani", style = SmallStyle)
+            ChipRow {
+                for ((label, v) in listOf("svaki dan" to "all", "radni dani" to "weekdays", "vikend" to "weekend")) Chip(label, days == v, { days = v; apply() })
+            }
+            SwitchRow("Ne podsjećaj ako sam već meditirao tog dana", skip, { skip = it; apply() })
+            // without exact alarms Android may deliver the reminder up to ten minutes late
+            val am = context.getSystemService(android.app.AlarmManager::class.java)
+            var exact by remember { mutableStateOf(am.canScheduleExactAlarms()) }
+            androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { exact = am.canScheduleExactAlarms(); onPauseOrDispose {} }
+            if (!exact) {
+                Text("Android trenutno smije poslati podsjetnik i do 10 minuta kasnije. Za tačno vrijeme dozvoli Nebu tačne alarme.", style = SmallStyle)
+                GlassButton("Dozvoli tačno vrijeme", {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        android.net.Uri.parse("package:" + context.packageName)))
+                })
+            } else Text("Podsjetnik stiže u minut tačno.", style = SmallStyle.copy(color = Ink.accent))
         }
     }
 }

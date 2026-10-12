@@ -35,6 +35,7 @@ import com.grungert.nebo.ui.SessionScreen
 import com.grungert.nebo.ui.SettingsScreen
 import com.grungert.nebo.ui.SetupScreen
 import com.grungert.nebo.ui.StatsScreen
+import com.grungert.nebo.ui.lastConfig
 
 sealed class Screen {
     data object Home : Screen()
@@ -103,6 +104,8 @@ class MainActivity : ComponentActivity() {
         val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
+        // "Započni" on the daily reminder goes straight into a session set up like the last one
+        if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
     }
 
     @Composable

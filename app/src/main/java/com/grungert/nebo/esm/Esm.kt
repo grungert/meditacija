@@ -16,7 +16,8 @@ import kotlin.random.Random
 
 /**
  * Experience sampling: a few prompts a day at random moments inside a chosen window.
- * Uses inexact-but-Doze-friendly alarms (minutes of slack, never hours) and needs no special permission.
+ * Alarms fire at the chosen minute when exact alarms are allowed, otherwise within a ten-minute window
+ * (a plain inexact alarm may drift by most of the time left until it, which can be hours).
  * A missed prompt is simply missed.
  */
 object Esm {
@@ -28,6 +29,9 @@ object Esm {
     private const val ACTION_REPLY = "com.grungert.nebo.ESM_REPLY"
     private const val ACTION_WEEK = "com.grungert.nebo.WEEK"
     private const val ACTION_DAILY = "com.grungert.nebo.DAILY"
+    private const val ACTION_REMIND = "com.grungert.nebo.REMIND"
+    private const val ACTION_SNOOZE = "com.grungert.nebo.SNOOZE"
+    const val EXTRA_START = "start_session"
     private const val ACTION_FIRE = "com.grungert.nebo.ESM_FIRE"
     private const val ACTION_PLAN = "com.grungert.nebo.ESM_PLAN"
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
@@ -48,6 +52,7 @@ object Esm {
         val am = ctx.getSystemService(AlarmManager::class.java)
         scheduleWeek(ctx, am)
         scheduleDaily(ctx, am)
+        scheduleReminder(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
         val now = System.currentTimeMillis()
         val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
@@ -60,10 +65,16 @@ object Esm {
         }
         val next = db.prompts(now).firstOrNull { it.firedAt == null }
         if (next != null) {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.scheduledAt, pending(ctx, ACTION_FIRE, next.id))
+            arm(am, next.scheduledAt, pending(ctx, ACTION_FIRE, next.id))
         }
         // plan tomorrow a few minutes after midnight
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dayStart.timeInMillis + 86_400_000L + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
+    }
+
+    /** Fires at the time asked: exactly when the person allowed exact alarms, otherwise within ten minutes. */
+    private fun arm(am: AlarmManager, at: Long, pi: PendingIntent) {
+        if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        else am.setWindow(AlarmManager.RTC_WAKEUP, at, 10 * 60_000L, pi)
     }
 
     /** Sunday at 19:00: the week is ready to be looked at. */
@@ -74,7 +85,7 @@ object Esm {
             set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY); set(Calendar.HOUR_OF_DAY, 19); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
         }
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.WEEK_OF_YEAR, 1)
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, c.timeInMillis, pi)
+        arm(am, c.timeInMillis, pi)
     }
 
     /** Each morning at the chosen hour: one question to carry into the day. */
@@ -84,7 +95,24 @@ object Esm {
         if (!s.dailyQuestion) { am.cancel(pi); return }
         val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.dailyHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, c.timeInMillis, pi)
+        arm(am, c.timeInMillis, pi)
+    }
+
+    private fun reminderDay(days: String, c: Calendar): Boolean {
+        val d = c.get(Calendar.DAY_OF_WEEK)
+        val weekend = d == Calendar.SATURDAY || d == Calendar.SUNDAY
+        return when (days) { "weekdays" -> !weekend; "weekend" -> weekend; else -> true }
+    }
+
+    /** The next chosen time on a chosen day. */
+    private fun scheduleReminder(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_REMIND, 0)
+        val s = ctx.app.settings
+        if (!s.reminderOn) { am.cancel(pi); return }
+        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.reminderHour); set(Calendar.MINUTE, s.reminderMinute); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
+        repeat(7) { if (!reminderDay(s.reminderDays, c)) c.add(Calendar.DAY_OF_YEAR, 1) }
+        arm(am, c.timeInMillis, pi)
     }
 
     fun weekKey(c: Calendar = Calendar.getInstance()): Int {
@@ -131,6 +159,30 @@ object Esm {
                     .setContentTitle("Zapisano").setContentText("Hvala. Vrati se onome što si radio.").setTimeoutAfter(2500).build())
                 return
             }
+            ACTION_REMIND, ACTION_SNOOZE -> {
+                val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+                val doneToday = ctx.app.db.sessions(dayStart.timeInMillis).isNotEmpty()
+                ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
+                if (s.reminderOn && !(s.reminderSkipIfDone && doneToday)) {
+                    val open = PendingIntent.getActivity(ctx, 4, Intent(ctx, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    val start = PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_START, true)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
+                        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Vrijeme za tišinu")
+                        .setContentText("Nekoliko minuta disanja ispod neba?").setContentIntent(open).setAutoCancel(true)
+                        .setTimeoutAfter(3 * 60 * 60_000L)
+                        .addAction(Notification.Action.Builder(null, "Započni", start).build())
+                        .addAction(Notification.Action.Builder(null, "Za 15 min", pending(ctx, ACTION_SNOOZE + ".req", 0)).build())
+                        .build())
+                }
+            }
+            ACTION_SNOOZE + ".req" -> {
+                // later, once: a one-off reminder in a quarter of an hour
+                ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
+                arm(ctx.getSystemService(AlarmManager::class.java), System.currentTimeMillis() + 15 * 60_000L, pending(ctx, ACTION_SNOOZE, 0))
+                return
+            }
             ACTION_DAILY -> {
                 val lib = ctx.app.library
                 // the week's koan question when one is being carried, otherwise a question from the library
@@ -165,6 +217,7 @@ object Esm {
     private const val NOTIFICATION_ID = 7
     private const val WEEK_NOTIFICATION_ID = 8
     private const val DAILY_NOTIFICATION_ID = 9
+    private const val REMIND_NOTIFICATION_ID = 10
 
     private fun notify(ctx: Context, promptId: Long) {
         val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)
@@ -191,6 +244,7 @@ class EsmReceiver : BroadcastReceiver() {
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED) Esm.refresh(context)
+        // after a reboot, or when exact alarms are allowed or taken away, everything is armed again
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) Esm.refresh(context)
     }
 }

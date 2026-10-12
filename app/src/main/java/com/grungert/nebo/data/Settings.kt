@@ -28,9 +28,29 @@ class Settings(context: Context) {
     var weatherMode: String
         get() = p.getString("weatherMode", "auto")!!
         set(v) = p.edit { putString("weatherMode", v) }
-    var intervalBell: Boolean
-        get() = p.getBoolean("intervalBell", false)
-        set(v) = p.edit { putBoolean("intervalBell", v) }
+    /** Minutes between soft bells during a session: 0 none, -1 at random moments (every 2–6 minutes). */
+    var intervalMinutes: Int
+        get() = if (p.contains("intervalMinutes")) p.getInt("intervalMinutes", 0) else if (p.getBoolean("intervalBell", false)) 5 else 0
+        set(v) = p.edit { putInt("intervalMinutes", v) }
+
+    // a daily reminder to sit
+    var reminderOn: Boolean
+        get() = p.getBoolean("reminderOn", false)
+        set(v) = p.edit { putBoolean("reminderOn", v) }
+    var reminderHour: Int
+        get() = p.getInt("reminderHour", 19)
+        set(v) = p.edit { putInt("reminderHour", v) }
+    var reminderMinute: Int
+        get() = p.getInt("reminderMinute", 0)
+        set(v) = p.edit { putInt("reminderMinute", v) }
+    /** "all", "weekdays" or "weekend". */
+    var reminderDays: String
+        get() = p.getString("reminderDays", "all")!!
+        set(v) = p.edit { putString("reminderDays", v) }
+    /** Stay quiet on days that already had a session. */
+    var reminderSkipIfDone: Boolean
+        get() = p.getBoolean("reminderSkipIfDone", true)
+        set(v) = p.edit { putBoolean("reminderSkipIfDone", v) }
     var checkInBefore: Boolean
         get() = p.getBoolean("checkInBefore", false)
         set(v) = p.edit { putBoolean("checkInBefore", v) }
