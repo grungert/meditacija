@@ -13,6 +13,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -154,6 +157,26 @@ class MainActivity : ComponentActivity() {
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
                 }
+            }
+            // the four main places share a bottom bar; sessions and notes take the whole screen
+            val tab = when (screen) {
+                Screen.Home -> com.grungert.nebo.ui.Tab.TODAY
+                Screen.Journal -> com.grungert.nebo.ui.Tab.JOURNAL
+                Screen.Stats -> com.grungert.nebo.ui.Tab.OVERVIEW
+                Screen.Settings -> com.grungert.nebo.ui.Tab.SETTINGS
+                else -> null
+            }
+            androidx.compose.animation.AnimatedVisibility(tab != null, Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it },
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it }) {
+                com.grungert.nebo.ui.BottomNav(tab ?: com.grungert.nebo.ui.Tab.TODAY, { t ->
+                    screen = when (t) {
+                        com.grungert.nebo.ui.Tab.TODAY -> Screen.Home
+                        com.grungert.nebo.ui.Tab.JOURNAL -> Screen.Journal
+                        com.grungert.nebo.ui.Tab.OVERVIEW -> Screen.Stats
+                        com.grungert.nebo.ui.Tab.SETTINGS -> Screen.Settings
+                    }
+                }, Modifier.navigationBarsPadding().padding(bottom = 10.dp))
             }
         }
     }

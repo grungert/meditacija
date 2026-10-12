@@ -190,7 +190,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
             Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f - 34.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (elapsed < 0f) return@Column // reading elapsed refreshes the countdown every frame
-                Text(word, style = TitleStyle.copy(fontSize = 38.sp), modifier = Modifier.alpha(fade))
+                Text(word, style = TitleStyle.copy(fontSize = 38.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Light, letterSpacing = 1.sp), modifier = Modifier.alpha(fade))
                 Text("$remaining", style = SmallStyle)
             }
         }

@@ -77,11 +77,11 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
-                .screenPadding().padding(vertical = 16.dp),
+            Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())
+                .screenPadding().padding(top = 8.dp, bottom = 130.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            ScreenHeader("Postavke", { go(Screen.Home) })
+            ScreenHeader("Postavke", null)
 
             ReminderPanel()
 

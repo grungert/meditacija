@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** A small hand-drawn line icon set, drawn on a 24-unit grid with round strokes. */
-enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check }
+enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share }
 
 @Composable
 fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Modifier) {
@@ -92,6 +92,11 @@ fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Mo
             }
             NeboIcon.Pen -> { drawPath(path { m(5f, 19f); l(6f, 15f); l(16f, 5f); l(19f, 8f); l(9f, 18f); close() }, color, style = st) }
             NeboIcon.Check -> drawPath(path { m(5f, 12.5f); l(10f, 17.5f); l(19f, 7f) }, color, style = st)
+            NeboIcon.Search -> { circle(10.5f, 10.5f, 6f); line(15f, 15f, 20f, 20f) }
+            NeboIcon.Share -> {
+                drawPath(path { m(8f, 9f); l(5.5f, 9f); l(5.5f, 20f); l(18.5f, 20f); l(18.5f, 9f); l(16f, 9f) }, color, style = st)
+                line(12f, 3.5f, 12f, 14f); drawPath(path { m(8.5f, 7f); l(12f, 3.5f); l(15.5f, 7f) }, color, style = st)
+            }
         }
     }
 }
