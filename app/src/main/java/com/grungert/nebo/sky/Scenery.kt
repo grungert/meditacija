@@ -59,6 +59,10 @@ class Scenery(private val u: Float) {
     private val bandBottom = FloatArray(6)
     private val stemX = FloatArray(13)
     private val stemY = FloatArray(13)
+    private val strand = FloatArray(6)
+    private val lensP = FloatArray(4)
+    private val flyP = FloatArray(4)
+    private val dropClip = Path()
     private val leaves = List(12) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
     private var season = Season.SUMMER
     private var weather = Weather.CLEAR
@@ -248,46 +252,64 @@ class Scenery(private val u: Float) {
      */
     private fun drawPlumes(c: Canvas, pal: Palette, t: Float, amp: Float, margin: Float, span: Float) {
         val night = pal.stars
-        val stemCol = scale(mix(pal.gTop, pal.gBot, 0.5f), 0.8f)
-        val plumeCol = mix(mix(pal.sun, floatArrayOf(1f, 0.95f, 0.82f), 0.55f), pal.gBot, night * 0.6f)
         for (s in plumes) {
-            val sx = wrapX(s.x, 0.55f + 0.45f * s.frac, margin, span)
-            val sy0 = hillY(sx)
-            val sy = sy0 + (H - sy0) * s.frac
-            val g = gustAt(crestX(sx))
-            val bend = -0.08f - amp * 0.75f * g * s.flex + sin(t * 1.7f + s.ph) * 0.05f
-            for (i in 0..12) {
-                val q = i / 12f
-                val a = bend * q * q
-                stemX[i] = sx + sin(a) * s.h * q
-                stemY[i] = sy - cos(a * 0.6f) * s.h * q
-            }
+            val bend = plumeStem(s, t, amp, margin, span)
             tmp.rewind(); tmp.moveTo(stemX[0], stemY[0])
             for (i in 1..12) tmp.lineTo(stemX[i], stemY[i])
-            stroke.color = argb(stemCol, 0.95f); stroke.strokeWidth = 1.5f * u
+            stroke.color = argb(plumeStemCol(pal), 0.95f); stroke.strokeWidth = 1.5f * u
             c.drawPath(tmp, stroke)
-            // the plume: fine strands swept downwind from the top third of the stem, longest in its middle,
-            // each sagging a little under its own weight
             tmp.rewind()
-            val size = (s.h / (200 * u)).coerceIn(0.7f, 1.3f)
             for (j in 0 until 36) {
-                val q = 0.66f + 0.34f * j / 35f
-                val f = q * 12
-                val i = min(11, floor(f).toInt())
-                val k = f - i
-                val px = stemX[i] + (stemX[i + 1] - stemX[i]) * k
-                val py = stemY[i] + (stemY[i + 1] - stemY[i]) * k
-                val spread = ((j * 37) % 11) / 10f - 0.5f
-                val a = bend * q * 1.6f - 0.25f - 0.35f * (1 - q) + spread * 0.35f + sin(t * 3.1f + j * 0.7f + s.ph) * 0.06f
-                val len = (10 + 22 * sin(PI.toFloat() * (q - 0.66f) / 0.36f)) * u * size
-                val ex = px + sin(a) * len
-                val ey = py - cos(a) * len
-                tmp.moveTo(px, py)
-                tmp.quadTo((px + ex) / 2, (py + ey) / 2 + len * 0.18f, ex, ey + len * 0.12f)
+                plumeStrand(s, bend, j, t)
+                tmp.moveTo(strand[0], strand[1]); tmp.quadTo(strand[2], strand[3], strand[4], strand[5])
             }
-            stroke.color = argb(plumeCol, 0.62f * (1 - 0.5f * night)); stroke.strokeWidth = 1.1f * u
+            stroke.color = argb(plumeCol(pal), 0.62f * (1 - 0.5f * night)); stroke.strokeWidth = 1.1f * u
             c.drawPath(tmp, stroke)
         }
+    }
+
+    private fun plumeStemCol(pal: Palette) = scale(mix(pal.gTop, pal.gBot, 0.5f), 0.8f)
+    private fun plumeCol(pal: Palette) = mix(mix(pal.sun, floatArrayOf(1f, 0.95f, 0.82f), 0.55f), pal.gBot, pal.stars * 0.6f)
+
+    /**
+     * Silver grass: a slender stem that bends more towards the top (into [stemX], [stemY]);
+     * returns how far it bends.
+     */
+    private fun plumeStem(s: Plume, t: Float, amp: Float, margin: Float, span: Float): Float {
+        val sx = wrapX(s.x, 0.55f + 0.45f * s.frac, margin, span)
+        val sy0 = hillY(sx)
+        val sy = sy0 + (H - sy0) * s.frac
+        val g = gustAt(crestX(sx))
+        val bend = -0.08f - amp * 0.75f * g * s.flex + sin(t * 1.7f + s.ph) * 0.05f
+        for (i in 0..12) {
+            val q = i / 12f
+            val a = bend * q * q
+            stemX[i] = sx + sin(a) * s.h * q
+            stemY[i] = sy - cos(a * 0.6f) * s.h * q
+        }
+        return bend
+    }
+
+    /**
+     * One of the fine strands of the plume, swept downwind from the top third of the stem,
+     * longest in the plume's middle and sagging a little: start, control and end point into [strand].
+     */
+    private fun plumeStrand(s: Plume, bend: Float, j: Int, t: Float) {
+        val size = (s.h / (200 * u)).coerceIn(0.7f, 1.3f)
+        val q = 0.66f + 0.34f * j / 35f
+        val f = q * 12
+        val i = min(11, floor(f).toInt())
+        val k = f - i
+        val px = stemX[i] + (stemX[i + 1] - stemX[i]) * k
+        val py = stemY[i] + (stemY[i + 1] - stemY[i]) * k
+        val spread = ((j * 37) % 11) / 10f - 0.5f
+        val a = bend * q * 1.6f - 0.25f - 0.35f * (1 - q) + spread * 0.35f + sin(t * 3.1f + j * 0.7f + s.ph) * 0.06f
+        val len = (10 + 22 * sin(PI.toFloat() * (q - 0.66f) / 0.36f)) * u * size
+        val ex = px + sin(a) * len
+        val ey = py - cos(a) * len
+        strand[0] = px; strand[1] = py
+        strand[2] = (px + ex) / 2; strand[3] = (py + ey) / 2 + len * 0.18f
+        strand[4] = ex; strand[5] = ey + len * 0.12f
     }
 
     /** A few large, dark blades right in front of the viewer frame the meadow and give it depth. */
@@ -344,20 +366,40 @@ class Scenery(private val u: Float) {
             l.bob += dt * 1.6f
             l.y += sin(l.bob) * 18 * u * dt
             l.rot += l.vr * dt * (0.4f + 0.6f * wind)
-            val col = mix(when (season) {
-                Season.SPRING -> mix(floatArrayOf(1f, 0.86f, 0.90f), floatArrayOf(1f, 0.97f, 0.97f), l.hue)        // blossom petals
-                Season.AUTUMN -> mix(floatArrayOf(0.92f, 0.42f, 0.16f), floatArrayOf(0.98f, 0.78f, 0.25f), l.hue)  // red to gold
-                else -> mix(floatArrayOf(0.55f, 0.75f, 0.35f), floatArrayOf(0.95f, 0.78f, 0.35f), l.hue * 0.7f)
-            }, pal.sun, 0.2f)
-            c.save()
-            c.translate(l.x, l.y); c.rotate(Math.toDegrees(l.rot.toDouble()).toFloat())
-            c.scale(1f, 0.35f + 0.65f * abs(sin(l.rot * 0.7f + l.bob)))
-            paint.color = argb(col, 0.9f * amt)
-            c.drawOval(-l.s, -l.s * 0.42f, l.s, l.s * 0.42f, paint)
-            stroke.color = argb(scale(col, 0.7f), 0.9f * amt); stroke.strokeWidth = 0.8f * u
-            c.drawLine(-l.s, 0f, l.s * 1.25f, 0f, stroke)
-            c.restore()
+            paintLeaf(c, l, leafColor(l, pal), l.x, l.y, 1f, 0f, 0.9f * amt)
         }
+    }
+
+    private fun leafColor(l: Leaf, pal: Palette) = mix(when (season) {
+        Season.SPRING -> mix(floatArrayOf(1f, 0.86f, 0.90f), floatArrayOf(1f, 0.97f, 0.97f), l.hue)        // blossom petals
+        Season.AUTUMN -> mix(floatArrayOf(0.92f, 0.42f, 0.16f), floatArrayOf(0.98f, 0.78f, 0.25f), l.hue)  // red to gold
+        else -> mix(floatArrayOf(0.55f, 0.75f, 0.35f), floatArrayOf(0.95f, 0.78f, 0.35f), l.hue * 0.7f)
+    }, pal.sun, 0.2f)
+
+    private fun paintLeaf(c: Canvas, l: Leaf, col: FloatArray, x: Float, y: Float, k: Float, turn: Float, alpha: Float) {
+        c.save()
+        c.translate(x, y); c.rotate(Math.toDegrees((l.rot + turn).toDouble()).toFloat())
+        c.scale(k, k * (0.35f + 0.65f * abs(sin(l.rot * 0.7f + l.bob))))
+        paint.color = argb(col, alpha)
+        c.drawOval(-l.s, -l.s * 0.42f, l.s, l.s * 0.42f, paint)
+        stroke.color = argb(scale(col, 0.7f), alpha); stroke.strokeWidth = 0.8f * u / k
+        c.drawLine(-l.s, 0f, l.s * 1.25f, 0f, stroke)
+        c.restore()
+    }
+
+    /** Where a firefly is (x, y), how bright it blinks and its size, into [flyP]. */
+    private fun flyAt(f: Fly, t: Float, fspan: Float) {
+        var x = (f.x * W + sin(t * f.sp * 0.5f + f.ph) * 40 * u + t * 6 * u * f.sp - walk * 0.8f * H) % fspan
+        if (x < 0) x += fspan
+        x -= 30 * u
+        // about a third of them rise higher, up around the drop, where it can catch them too
+        val high = f.ph < 2.1f
+        val yTop = H * if (high) 0.30f else 0.58f
+        val depth = (H * if (high) 0.62f else 1f) - yTop
+        flyP[0] = x
+        flyP[1] = yTop + f.y * depth * 0.9f + cos(t * f.sp * 0.7f + f.ph * 1.3f) * 22 * u
+        flyP[2] = max(0f, sin(t * 1.2f * f.sp + f.ph * 5)).pow(2)
+        flyP[3] = (10 + 10 * f.s) * u
     }
 
     private fun drawFireflies(c: Canvas, pal: Palette, t: Float) {
@@ -366,13 +408,8 @@ class Scenery(private val u: Float) {
         paint.blendMode = BlendMode.PLUS
         val fspan = W + 60 * u
         for (f in flies) {
-            var x = (f.x * W + sin(t * f.sp * 0.5f + f.ph) * 40 * u + t * 6 * u * f.sp - walk * 0.8f * H) % fspan
-            if (x < 0) x += fspan
-            x -= 30 * u
-            val yTop = H * 0.58f
-            val y = yTop + f.y * (H - yTop) * 0.9f + cos(t * f.sp * 0.7f + f.ph * 1.3f) * 22 * u
-            val blink = max(0f, sin(t * 1.2f * f.sp + f.ph * 5)).pow(2)
-            val s = (10 + 10 * f.s) * u
+            flyAt(f, t, fspan)
+            val x = flyP[0]; val y = flyP[1]; val blink = flyP[2]; val s = flyP[3]
             paint.alpha = (255 * amt * (0.15f + 0.85f * blink)).toInt().coerceIn(0, 255)
             spriteRect.set(x - s / 2, y - s / 2, x + s / 2, y + s / 2)
             c.drawBitmap(flySprite, null, spriteRect, paint)
@@ -458,6 +495,7 @@ class Scenery(private val u: Float) {
         val base = min(W * 0.5f, H * 0.32f)
         val r = base * (0.30f + 0.22f * e.breath)
         val white = floatArrayOf(1f, 1f, 1f)
+        drawInDrop(c, e, pal, t, cx, cy, r)
         stroke.color = argb(white, 0.30f * (1 - 0.5f * pal.stars)); stroke.strokeWidth = 1.2f * u
         c.drawCircle(cx, cy, r, stroke)
 
@@ -471,6 +509,121 @@ class Scenery(private val u: Float) {
             stroke.strokeWidth = (1.6f - 1.2f * k) * u
             c.drawCircle(cx, cy, r * (1 + 0.6f * eK), stroke)
         }
+    }
+
+    /** How much the drop shrinks what it sees, at a distance d (0 centre, 1 rim) from its middle. Same lens as the sky shader. */
+    private fun lensK(d: Float) = 1.4f + 1.6f * (1 - kotlin.math.sqrt(max(0f, 1 - d * d)))
+
+    /**
+     * Where a point of the scene shows inside the drop, into [lensP]: x, y, how much smaller, and how clearly
+     * (fading towards the rim, where the drop mostly reflects the light). False when the drop does not see that point.
+     * The sky shader samples the scene at centre - q * lensK(|q|/r) + 0.9 r down for a point q of the drop;
+     * this solves that backwards.
+     */
+    private fun lens(x: Float, y: Float, cx: Float, cy: Float, r: Float): Boolean {
+        val vx = cx - x
+        val vy = cy + 0.9f * r - y
+        val l = hypot(vx, vy)
+        if (l >= 2.97f * r) return false
+        var lo = 0f; var hi = r
+        repeat(16) {
+            val m = (lo + hi) / 2
+            if (m * lensK(m / r) < l) lo = m else hi = m
+        }
+        val m = (lo + hi) / 2
+        val f = if (l > 1e-3f) m / l else 0f
+        lensP[0] = cx + vx * f
+        lensP[1] = cy + vy * f
+        lensP[2] = 1f / lensK(m / r)
+        lensP[3] = kotlin.math.sqrt(max(0f, 1 - (m / r) * (m / r)))
+        return true
+    }
+
+    /**
+     * The drop sees the things that move through the meadow as well as the sky:
+     * leaves and petals, fireflies, silver grass, rain and snow, upside down and small, through the same lens.
+     */
+    private fun drawInDrop(c: Canvas, e: BreathEngine, pal: Palette, t: Float, cx: Float, cy: Float, r: Float) {
+        c.save()
+        dropClip.rewind(); dropClip.addCircle(cx, cy, r, Path.Direction.CW)
+        c.clipPath(dropClip)
+        val clear = 0.85f
+        // leaves (already moved this frame)
+        val amtL = (1 - pal.stars) * if (e.reducedMotion) 0f else 1f
+        if (amtL > 0.02f && season != Season.WINTER && weather != Weather.RAIN) {
+            val active = when (season) { Season.AUTUMN -> 12; Season.SPRING -> 9; else -> 5 }
+            for ((li, l) in leaves.withIndex()) {
+                if (li >= active || l.delay > 0 || l.x < -40 * u) continue
+                if (!lens(l.x, l.y, cx, cy, r)) continue
+                // a little larger than the lens alone would make them, so they read in the drop
+                paintLeaf(c, l, leafColor(l, pal), lensP[0], lensP[1], max(0.5f, lensP[2] * 1.6f), PI.toFloat(), 0.95f * amtL * (0.4f + 0.6f * lensP[3]))
+            }
+        }
+        // fireflies
+        if (pal.stars > 0.05f) {
+            paint.blendMode = BlendMode.PLUS
+            val fspan = W + 60 * u
+            for (f in flies) {
+                flyAt(f, t, fspan)
+                if (!lens(flyP[0], flyP[1], cx, cy, r)) continue
+                val s = flyP[3] * max(0.45f, lensP[2])
+                paint.alpha = (255 * pal.stars * (0.15f + 0.85f * flyP[2]) * clear * (0.4f + 0.6f * lensP[3])).toInt().coerceIn(0, 255)
+                spriteRect.set(lensP[0] - s / 2, lensP[1] - s / 2, lensP[0] + s / 2, lensP[1] + s / 2)
+                c.drawBitmap(flySprite, null, spriteRect, paint)
+            }
+            paint.blendMode = null
+            paint.alpha = 255
+        }
+        // silver grass: the parts of stems and plumes the drop sees
+        if (season != Season.WINTER) {
+            val amp = (0.18f + 0.42f * e.wind) * if (e.reducedMotion) 0.4f else 1f
+            val margin = 30 * u
+            val span = W + 2 * margin
+            for (s in plumes) {
+                val bend = plumeStem(s, t, amp, margin, span)
+                tmp.rewind()
+                var prev = false
+                for (i in 0..12) {
+                    if (lens(stemX[i], stemY[i], cx, cy, r)) {
+                        if (prev) tmp.lineTo(lensP[0], lensP[1]) else tmp.moveTo(lensP[0], lensP[1])
+                        prev = true
+                    } else prev = false
+                }
+                stroke.color = argb(plumeStemCol(pal), 0.7f * clear); stroke.strokeWidth = 1.0f * u
+                c.drawPath(tmp, stroke)
+                tmp.rewind()
+                for (j in 0 until 36) {
+                    plumeStrand(s, bend, j, t)
+                    if (!lens(strand[0], strand[1], cx, cy, r)) continue
+                    val sx = lensP[0]; val sy = lensP[1]
+                    if (!lens(strand[2], strand[3], cx, cy, r)) continue
+                    val qx = lensP[0]; val qy = lensP[1]
+                    if (!lens(strand[4], strand[5], cx, cy, r)) continue
+                    tmp.moveTo(sx, sy); tmp.quadTo(qx, qy, lensP[0], lensP[1])
+                }
+                stroke.color = argb(plumeCol(pal), 0.55f * clear * (1 - 0.5f * pal.stars)); stroke.strokeWidth = 0.8f * u
+                c.drawPath(tmp, stroke)
+            }
+        }
+        // rain and snow (already moved this frame)
+        if (weather == Weather.RAIN) {
+            stroke.color = android.graphics.Color.argb(90, 220, 230, 245); stroke.strokeWidth = 0.9f * u
+            val slant = -0.18f - 0.12f * e.wind
+            for (d in drops) {
+                val x = d[0] * W; val y = d[1] * H; val len = (14 + 10 * d[2]) * u
+                if (!lens(x, y, cx, cy, r)) continue
+                val ax = lensP[0]; val ay = lensP[1]
+                if (!lens(x - slant * len, y - len, cx, cy, r)) continue
+                c.drawLine(ax, ay, lensP[0], lensP[1], stroke)
+            }
+        } else if (weather == Weather.SNOW) {
+            paint.color = android.graphics.Color.argb(200, 255, 255, 255)
+            for (f in flakes) {
+                if (!lens(f[0] * W, f[1] * H, cx, cy, r)) continue
+                c.drawCircle(lensP[0], lensP[1], (1.2f + 2.2f * f[2]) * u * max(0.5f, lensP[2]), paint)
+            }
+        }
+        c.restore()
     }
 
     // -------- things met along the walk --------
