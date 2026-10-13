@@ -132,7 +132,9 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
         Column(Modifier.fillMaxSize().statusBarsPadding().screenPadding().padding(top = 8.dp)) {
             ScreenHeader("Dnevnik", null) {
                 RoundAction(NeboIcon.Search, if (searching) "Zatvori pretragu" else "Traži") { searching = !searching; if (!searching) query = "" }
-                RoundAction(NeboIcon.Share, "Izvezi") { Export.share(context, app.db, app.library) }
+                RoundAction(NeboIcon.Share, "Izvezi") {
+                    scope.launch { Export.share(context, app.db, app.library, app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() })) }
+                }
             }
             AnimatedVisibility(searching) {
                 Row(
