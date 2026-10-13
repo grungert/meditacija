@@ -112,6 +112,10 @@ object Bell {
         return out
     }
 
+    // A playing track must stay referenced: once nothing holds it, garbage collection releases it mid-ring.
+    private val playing = java.util.Collections.synchronizedSet(HashSet<AudioTrack>())
+
+    /** Rings once and returns as soon as the bell has started; it always sounds to its end. */
     suspend fun ring(soft: Boolean = false) = withContext(Dispatchers.Default) {
         val pcm = render(if (soft) 392f else 262f, if (soft) 5f else 9f, if (soft) 0.5f else 0.9f)
         val track = AudioTrack.Builder()
@@ -125,9 +129,10 @@ object Bell {
         track.write(pcm, 0, pcm.size)
         track.setNotificationMarkerPosition(pcm.size - 1)
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
-            override fun onMarkerReached(t: AudioTrack) { t.release() }
+            override fun onMarkerReached(t: AudioTrack) { playing.remove(t); t.release() }
             override fun onPeriodicNotification(t: AudioTrack) {}
-        })
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
+        playing += track
         track.play()
     }
 }

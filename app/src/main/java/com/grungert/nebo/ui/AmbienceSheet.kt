@@ -42,7 +42,7 @@ val TIME_OPTIONS = listOf("zora" to "6.2", "dan" to "12.5", "zalazak" to "18.9",
  * the time of day, the season and the weather. Choices are kept for the next session too.
  */
 @Composable
-fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, onClose: () -> Unit) {
+fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, breathOn: Boolean? = null, onBreath: (Boolean) -> Unit = {}, onClose: () -> Unit) {
     val s = LocalContext.current.app.settings
     var volume by remember { mutableStateOf(s.ambientVolume) }
     var timeMode by remember { mutableStateOf(s.timeMode) }
@@ -75,12 +75,14 @@ fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, o
             if (soundOn) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("tiho", style = SmallStyle.copy(shadow = null))
                 Slider(
-                    volume, { volume = it; host.ambience.volume = it }, Modifier.weight(1f), valueRange = 0.1f..1f,
+                    volume, { volume = it; host.ambience.volume = it; host.breath.volume = it * 0.8f }, Modifier.weight(1f), valueRange = 0.1f..1f,
                     onValueChangeFinished = { s.ambientVolume = volume },
                     colors = SliderDefaults.colors(thumbColor = Ink.paper, activeTrackColor = Ink.accent, inactiveTrackColor = Ink.surfaceHigh),
                 )
                 Text("jače", style = SmallStyle.copy(shadow = null))
             }
+
+            if (breathOn != null) SwitchRow("Zvuk daha", breathOn, onBreath, sub = "Tihi šum vazduha: raste na udahu, spušta se na izdahu.")
 
             SectionLabel("Doba dana")
             ChipRow {

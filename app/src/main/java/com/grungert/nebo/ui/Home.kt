@@ -258,6 +258,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     var eyes by remember { mutableStateOf(s.eyesClosed) }
     var ambient by remember { mutableStateOf(s.ambient) }
     var volume by remember { mutableStateOf(s.ambientVolume) }
+    var breathSnd by remember { mutableStateOf(s.breathSound) }
     var seasonMode by remember { mutableStateOf(s.seasonMode) }
     var weatherMode by remember { mutableStateOf(s.weatherMode) }
     var more by remember { mutableStateOf(false) }
@@ -275,7 +276,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     fun start() {
         s.sessionType = type; s.minutes = minutes; s.pattern = pattern; s.timeMode = timeMode
         s.intervalMinutes = interval; s.checkInBefore = before; s.checkInAfter = after
-        s.eyesClosed = eyes; s.ambient = ambient; s.ambientVolume = volume
+        s.eyesClosed = eyes; s.ambient = ambient; s.ambientVolume = volume; s.breathSound = breathSnd
         s.seasonMode = seasonMode; s.weatherMode = weatherMode
         val cfg = SessionConfig(type, minutes, pattern, interval, before, after, eyes && paced, ambient)
         go(if (before) Screen.CheckIn("before", config = cfg) else Screen.Session(cfg))
@@ -327,6 +328,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
                     Panel {
                         SectionLabel("Zvuk")
                         SwitchRow("Zvuk prirode", ambient, { ambient = it }, sub = "Vjetar, ptice danju, cvrčci noću, kiša.")
+                        if (paced) SwitchRow("Zvuk daha", breathSnd, { breathSnd = it }, sub = "Tihi šum vazduha: raste na udahu, spušta se na izdahu.")
                         if (ambient) {
                             val levels = listOf(0.35f, 0.6f, 0.9f)
                             Segmented(listOf("tiho", "srednje", "jače"), levels.indexOfFirst { kotlin.math.abs(volume - it) < 0.05f }, { volume = levels[it] })

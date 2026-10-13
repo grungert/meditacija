@@ -68,6 +68,7 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
         weather = com.grungert.nebo.sky.Seasons.weather(weatherMode, season)
     }
     val ambience = com.grungert.nebo.audio.Ambience()
+    val breath = com.grungert.nebo.audio.BreathSound()
 
     /** Keeps the meadow's sound in step with the sky: wind and breath, birds by day, crickets by night. */
     fun tuneAmbience(pal: com.grungert.nebo.sky.Palette, sunAmount: Float) {

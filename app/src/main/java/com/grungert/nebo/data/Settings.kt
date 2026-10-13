@@ -61,6 +61,10 @@ class Settings(context: Context) {
     var meadowFront: Boolean
         get() = p.getBoolean("meadowFront", true)
         set(v) = p.edit { putBoolean("meadowFront", v) }
+    /** A soft rush of air that follows the breath in paced sessions. */
+    var breathSound: Boolean
+        get() = p.getBoolean("breathSound", true)
+        set(v) = p.edit { putBoolean("breathSound", v) }
     var ambient: Boolean
         get() = p.getBoolean("ambient", true)
         set(v) = p.edit { putBoolean("ambient", v) }

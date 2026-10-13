@@ -20,21 +20,28 @@ class Ambience {
     @Volatile var night = 0f       // crickets
     @Volatile var rain = 0f        // hiss of rain and single drops
     @Volatile private var running = false
+    @Volatile private var generation = 0
+    @Volatile private var fadeRate = FADE_QUICK
     private var thread: Thread? = null
 
     fun start() {
         if (running) return
         running = true
-        thread = Thread({ loop() }, "nebo-ambience").apply { priority = Thread.MAX_PRIORITY; start() }
+        fadeRate = FADE_QUICK
+        val gen = ++generation
+        thread = Thread({ loop(gen) }, "nebo-ambience").apply { priority = Thread.MAX_PRIORITY; start() }
     }
 
-    fun stop() {
+    /** Stops the meadow; [slowly] lets it fade out over a few seconds instead of a moment. */
+    fun stop(slowly: Boolean = false) {
+        if (!running) return
         running = false
+        if (slowly) { fadeRate = FADE_SLOW; thread = null; return }
         thread?.join(300)
         thread = null
     }
 
-    private fun loop() {
+    private fun loop(gen: Int) {
         val sr = 22_050
         val minBuf = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val track = AudioTrack.Builder()
@@ -59,10 +66,12 @@ class Ambience {
         val cricketPhase = doubleArrayOf(0.0, 0.31)
         val cricketOsc = doubleArrayOf(0.0, 0.0)
 
-        while (running || fade > 0.001f) {
-            val target = if (running) volume else 0f
+        // a newer start() takes over; this one then fades out and ends
+        fun alive() = running && gen == generation
+        while (alive() || fade > 0.001f) {
+            val target = if (alive()) volume else 0f
             for (i in buf.indices) {
-                fade += (target - fade) * 0.0005f
+                fade += (target - fade) * fadeRate
                 t += 1.0 / sr
                 // wind: noise through two one-pole filters, opening with gusts and the out-breath
                 val gust = 0.5f + 0.3f * sin(t * 0.21).toFloat() + 0.2f * sin(t * 0.077 + 1.3).toFloat()
@@ -116,6 +125,12 @@ class Ambience {
             track.write(buf, 0, buf.size)
         }
         track.stop(); track.release()
+    }
+
+    companion object {
+        // per-sample smoothing towards the target volume: a moment, or a fade of a few seconds
+        private const val FADE_QUICK = 0.0005f
+        private const val FADE_SLOW = 0.00004f
     }
 }
 

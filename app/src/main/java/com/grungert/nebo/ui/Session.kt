@@ -78,6 +78,19 @@ import kotlinx.coroutines.withContext
 import kotlin.math.ceil
 
 /** Haptics that carry the breath when the eyes are closed: a swell to breathe in, an ebb to breathe out. */
+private val SHADE = Color(0xFF14223F)
+
+/**
+ * White on a white cloud disappears, so a soft shade sits behind text drawn straight on the sky:
+ * a wide oval that fades out, with no edge of its own.
+ */
+private fun Modifier.softShade() = drawBehind {
+    val r = size.width * 0.30f
+    scale(1f, 0.42f, pivot = center) {
+        drawCircle(Brush.radialGradient(listOf(SHADE.copy(alpha = 0.30f), SHADE.copy(alpha = 0.12f), Color.Transparent), center, r), r, center)
+    }
+}
+
 /** A round glass control for the session's top bar. */
 @Composable
 private fun RoundControl(icon: NeboIcon, label: String, onClick: () -> Unit) {
@@ -124,14 +137,17 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
     var paused by remember { mutableStateOf(false) }
     var ambienceOpen by remember { mutableStateOf(false) }
+    var endReady by remember { mutableStateOf(false) }   // the ending can be touched away
+    var left by remember { mutableStateOf(false) }
     var soundOn by remember { mutableStateOf(cfg.ambient) }
+    var breathOn by remember { mutableStateOf(cfg.paced && app.settings.breathSound) }
     val planned = cfg.minutes * 60
 
     fun pause(on: Boolean) {
         if (ended) return
         paused = on
         host.engine.running = !on
-        if (on) { word = ""; showUi = true; host.dark = false }
+        if (on) { word = ""; showUi = true; host.dark = false; host.breath.phase = 0 }
         else {
             // start again from a fresh inhale, and let the dark return for closed eyes
             host.engine.setPatternAndRestart(patternById(cfg.pattern))
@@ -140,6 +156,18 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
     }
 
+    fun proceed() {
+        if (left) return
+        left = true
+        val id = sessionId
+        go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
+    }
+
+    /**
+     * The ending is unhurried: the bell rings out in full (it plays on the app's scope, so leaving the screen
+     * never cuts it), the light returns, the meadow's sound fades over a few seconds, and only when the bell has
+     * died away does the note come. A touch moves on sooner.
+     */
     fun finish() {
         if (ended) return
         ended = true
@@ -147,15 +175,18 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         host.showCircle = false; host.dark = false
         word = ""
         host.engine.paced = false
+        host.ambience.stop(slowly = true)
+        host.breath.stop(slowly = true)
+        app.scope.launch { Bell.ring() }
         scope.launch {
-            launch { Bell.ring() }
             val id = sessionId
             if (id != null) withContext(Dispatchers.IO) {
                 app.db.finishSession(id, System.currentTimeMillis(), elapsed.toInt(), scenery.thoughtCount)
             }
-            delay(2500)
-            host.ambience.stop()
-            go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
+            delay(1500)
+            endReady = true
+            delay(7000)
+            proceed()
         }
     }
 
@@ -172,6 +203,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (cfg.type == "walk") scenery.resetWalkSpawns()
         host.ambience.volume = app.settings.ambientVolume
         if (cfg.ambient) host.ambience.start()
+        host.breath.volume = app.settings.ambientVolume * 0.8f
+        if (breathOn) host.breath.start()
         host.onPhase = { p ->
             if (cfg.paced && !ended) {
                 word = p.label
@@ -186,6 +219,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (!ended && !paused) {
                 elapsed += dt
                 lastTouch += dt
+                host.breath.phase = when (e.phase) { Phase.IN -> 1; Phase.OUT -> 2; else -> 0 }
+                host.breath.progress = if (e.phaseDuration > 0f) e.phaseT / e.phaseDuration else 0f
                 if (ambienceOpen) lastTouch = 0f
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
                 if (elapsed >= nextBell && (planned == 0 || elapsed < planned - 20)) {
@@ -211,8 +246,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // the meadow falls silent while the app is in the background
         val obs = LifecycleEventObserver { _, ev ->
             when (ev) {
-                Lifecycle.Event.ON_STOP -> host.ambience.stop()
-                Lifecycle.Event.ON_START -> if (soundOn && !ended) host.ambience.start()
+                Lifecycle.Event.ON_STOP -> { host.ambience.stop(); host.breath.stop() }
+                Lifecycle.Event.ON_START -> {
+                    if (soundOn && !ended) host.ambience.start()
+                    if (breathOn && !ended) host.breath.start()
+                }
                 else -> {}
             }
         }
@@ -221,6 +259,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             lifecycle.removeObserver(obs)
             view.keepScreenOn = false
             host.ambience.stop()
+            host.breath.stop()
             host.onPhase = null; host.onFrame = null; host.onTap = null
             host.showCircle = false; host.dark = false
             e.paced = false; e.walkOn = false; e.running = true
@@ -263,20 +302,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             val e = host.engine
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
             val base = minOf(maxWidth * 0.5f, maxHeight * 0.32f)
-            // white on a white cloud disappears, so a soft shade sits behind the word and the dots:
-            // a wide oval that fades out, with no edge of its own
-            val shade = Color(0xFF14223F)
-            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f + base * 0.52f + 22.dp)
-                .drawBehind {
-                    val r = size.width * 0.30f
-                    scale(1f, 0.42f, pivot = center) {
-                        drawCircle(Brush.radialGradient(listOf(shade.copy(alpha = 0.30f), shade.copy(alpha = 0.12f), Color.Transparent), center, r), r, center)
-                    }
-                },
+            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f + base * 0.52f + 22.dp).softShade(),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (elapsed < 0f) return@Column // reading elapsed refreshes the dots every frame
                 Text(word, style = TitleStyle.copy(fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp,
-                    shadow = Shadow(shade.copy(alpha = 0.55f), Offset(0f, 1f), 12f)), modifier = Modifier.alpha(fade))
+                    shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)), modifier = Modifier.alpha(fade))
                 val n = ceil(e.phaseDuration - 0.01f).toInt().coerceIn(1, 12)
                 val done = e.phaseT.toInt()
                 // each dot has a dark ring under it; the ones still to come are dark with a light rim, so both read on cloud and sky
@@ -285,10 +315,10 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     val r = 3.4.dp.toPx()
                     for (i in 0 until n) {
                         val c = Offset(step * (i + 0.5f), size.height / 2)
-                        drawCircle(shade.copy(alpha = 0.30f), r + 1.6.dp.toPx(), c)
+                        drawCircle(SHADE.copy(alpha = 0.30f), r + 1.6.dp.toPx(), c)
                         if (i <= done) drawCircle(Color.White, r, c)
                         else {
-                            drawCircle(shade.copy(alpha = 0.40f), r, c)
+                            drawCircle(SHADE.copy(alpha = 0.40f), r, c)
                             drawCircle(Color.White.copy(alpha = 0.70f), r, c, style = Stroke(1.dp.toPx()))
                         }
                     }
@@ -310,7 +340,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
 
         // drawn above the eyes-closed darkness, so the question is there for the first breaths
         val weekQuestion = remember { app.library.byId(app.settings.activeWeekKoan())?.question }
-        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type != "thoughts", enter = fadeIn(), exit = fadeOut(),
+        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type != "thoughts" && !ended, enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.screenPadding()) {
                 Text("PITANJE SEDMICE", style = LabelStyle)
@@ -350,10 +380,21 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (ambienceOpen && !ended) AmbienceSheet(host, soundOn, { on ->
             soundOn = on; app.settings.ambient = on
             if (on) host.ambience.start() else host.ambience.stop()
+        }, breathOn = if (cfg.paced) breathOn else null, onBreath = { on ->
+            breathOn = on; app.settings.breathSound = on
+            if (on) host.breath.start() else host.breath.stop()
         }, onClose = { ambienceOpen = false; lastTouch = 0f; host.dark = cfg.eyesClosed && !paused })
 
-        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) {}, contentAlignment = Alignment.Center) {
-            Text("Sesija je završena.", style = HeadStyle)
+        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (endReady) proceed() },
+            contentAlignment = Alignment.Center) {
+            val shown by animateFloatAsState(if (endReady) 1f else 0f, tween(1800), label = "end")
+            Column(Modifier.alpha(shown).fillMaxWidth().softShade().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Sesija je završena.", style = TitleStyle.copy(fontWeight = FontWeight.Light, shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)))
+                val min = (elapsed / 60f).let { if (it < 1f) null else kotlin.math.ceil(it).toInt() }
+                Text(if (min == null) "Neka zvono utihne." else "$min min tišine. Neka zvono utihne.", style = SmallStyle, textAlign = TextAlign.Center)
+                Text("Dodirni za nastavak", style = SmallStyle)
+            }
         }
     }
 }
