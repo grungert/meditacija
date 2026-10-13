@@ -4,6 +4,12 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
@@ -257,14 +263,35 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             val e = host.engine
             val fade = minOf(1f, e.phaseT / 0.45f, (e.phaseDuration - e.phaseT) / 0.45f).coerceAtLeast(0.25f)
             val base = minOf(maxWidth * 0.5f, maxHeight * 0.32f)
-            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f + base * 0.52f + 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // white on a white cloud disappears, so a soft shade sits behind the word and the dots:
+            // a wide oval that fades out, with no edge of its own
+            val shade = Color(0xFF14223F)
+            Column(Modifier.fillMaxWidth().offset(y = maxHeight * 0.36f + base * 0.52f + 22.dp)
+                .drawBehind {
+                    val r = size.width * 0.30f
+                    scale(1f, 0.42f, pivot = center) {
+                        drawCircle(Brush.radialGradient(listOf(shade.copy(alpha = 0.30f), shade.copy(alpha = 0.12f), Color.Transparent), center, r), r, center)
+                    }
+                },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (elapsed < 0f) return@Column // reading elapsed refreshes the dots every frame
-                Text(word, style = TitleStyle.copy(fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp), modifier = Modifier.alpha(fade))
+                Text(word, style = TitleStyle.copy(fontSize = 32.sp, fontWeight = FontWeight.Light, letterSpacing = 1.5.sp,
+                    shadow = Shadow(shade.copy(alpha = 0.55f), Offset(0f, 1f), 12f)), modifier = Modifier.alpha(fade))
                 val n = ceil(e.phaseDuration - 0.01f).toInt().coerceIn(1, 12)
                 val done = e.phaseT.toInt()
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (i in 0 until n) Box(Modifier.size(6.dp).clip(CircleShape).background(Color.White.copy(alpha = if (i <= done) 0.95f else 0.32f)))
+                // each dot has a dark ring under it; the ones still to come are dark with a light rim, so both read on cloud and sky
+                Canvas(Modifier.size(width = (14 * n).dp, height = 12.dp)) {
+                    val step = size.width / n
+                    val r = 3.4.dp.toPx()
+                    for (i in 0 until n) {
+                        val c = Offset(step * (i + 0.5f), size.height / 2)
+                        drawCircle(shade.copy(alpha = 0.30f), r + 1.6.dp.toPx(), c)
+                        if (i <= done) drawCircle(Color.White, r, c)
+                        else {
+                            drawCircle(shade.copy(alpha = 0.40f), r, c)
+                            drawCircle(Color.White.copy(alpha = 0.70f), r, c, style = Stroke(1.dp.toPx()))
+                        }
+                    }
                 }
             }
         }
