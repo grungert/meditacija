@@ -78,7 +78,7 @@ private val dayFmt = SimpleDateFormat("EEEE, d. MMMM", Locale.forLanguageTag("sr
 private val timeFmt = SimpleDateFormat("HH:mm", Locale.ROOT)
 
 /** "Danas", "Juče", or the weekday and date. */
-private fun dayLabel(t: Long): String {
+internal fun dayLabel(t: Long): String {
     val c = Calendar.getInstance().apply { timeInMillis = t }
     val today = Calendar.getInstance()
     fun same(a: Calendar, b: Calendar) = a.get(Calendar.YEAR) == b.get(Calendar.YEAR) && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
@@ -88,6 +88,9 @@ private fun dayLabel(t: Long): String {
     return dayFmt.format(Date(t)).replaceFirstChar { it.uppercase() }
 }
 
+/** The filter last used, so coming back from a thread or a note returns to the same view. */
+private var lastFilter = 0
+
 /** The journal: a quiet feed by day, searchable, filtered to insights, notes or sessions. */
 @Composable
 fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
@@ -95,7 +98,8 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val app = context.app
     val transcribed by app.transcriber.done.collectAsState()
     var rows by remember { mutableStateOf<List<Any>?>(null) }
-    var filter by remember { mutableIntStateOf(0) }       // 0 all, 1 insights, 2 notes, 3 sessions
+    var filter by remember { mutableIntStateOf(lastFilter) }   // 0 all, 1 insights, 2 notes, 3 sessions, 4 threads
+    LaunchedEffect(filter) { lastFilter = filter }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var reload by remember { mutableIntStateOf(0) }
@@ -143,7 +147,8 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Segmented(listOf("Sve", "Uvidi", "Bilješke", "Sesije"), filter, { filter = it })
+            Segmented(listOf("Sve", "Uvidi", "Bilješke", "Sesije", "Niti"), filter, { filter = it })
+            if (filter == 4) { ThreadsList(go); return@Column }
             val r = rows
             if (r != null && r.isEmpty()) Text(when {
                 query.isNotBlank() -> "Ništa ne odgovara pretrazi."

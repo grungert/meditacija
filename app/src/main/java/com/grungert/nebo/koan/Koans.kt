@@ -146,6 +146,9 @@ object Lexicon {
 data class Pick(val item: KoanItem?, val reason: String, val distress: Boolean = false, val themes: List<String> = emptyList())
 
 /** Picks the koan or message whose "when it helps" description is closest in meaning to what was said. */
+/** Notes that keep returning to the same thing, oldest first. */
+data class InsightThread(val entries: List<com.grungert.nebo.data.Entry>, val theme: String?, val title: String)
+
 class Recommender(private val db: Db, private val models: ModelStore, private val library: KoanLibrary) {
     private val lock = Mutex()
     private var embedder: Embedder? = null
@@ -235,6 +238,64 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 }.filter { it.second > 0f }.sortedByDescending { it.second }.take(k)
             }
         }
+    }
+
+    /**
+     * Threads of insight: notes that keep returning to the same thing, across days.
+     * With the meaning model, notes are joined by average-linkage clustering on what they say: the two closest
+     * groups merge while their average similarity stays above a bar set from this person's own notes
+     * (e5 scores sit high and close together, so a fixed number would join everything or nothing).
+     * On a test set of eleven notes on four topics this found the family, work and sleep threads.
+     * Without it, notes are grouped by their main theme. A thread needs two notes on different days.
+     */
+    suspend fun threads(all: List<com.grungert.nebo.data.Entry>): List<InsightThread> = withContext(Dispatchers.Default) {
+        val notes = all.filter { it.words.isNotBlank() }.sortedByDescending { it.createdAt }.take(300)
+        if (notes.size < 2) return@withContext emptyList()
+        val groups: List<List<com.grungert.nebo.data.Entry>> = lock.withLock {
+            val e = embedderOrNull()
+            if (e == null || notes.size < 4) notes.groupBy { it.themes.firstOrNull() }.filterKeys { it != null }.values.toList()
+            else {
+                val v = notes.map { entryVector(it, e) }
+                val n = notes.size
+                val sim = Array(n) { i -> FloatArray(n) { j -> if (i == j) 1f else Embedder.cosine(v[i], v[j]) } }
+                // e5 rates every pair of notes in our language high, and some notes are close to everything;
+                // so each pair is measured against how close those two notes usually are to all the others,
+                // plus a little when they share a theme
+                val usual = FloatArray(n) { i -> (0 until n).filter { it != i }.map { sim[i][it] }.average().toFloat() }
+                for (i in 0 until n) for (j in 0 until n) if (i != j) {
+                    val a = notes[i].themes.toSet(); val b = notes[j].themes.toSet()
+                    val shared = if (a.isEmpty() || b.isEmpty()) 0f else (a intersect b).size.toFloat() / (a union b).size
+                    sim[i][j] = sim[i][j] - (usual[i] + usual[j]) / 2 + 0.03f * shared
+                }
+                val pairs = ArrayList<Float>(n * (n - 1) / 2)
+                for (i in 0 until n) for (j in i + 1 until n) pairs += sim[i][j]
+                val mean = pairs.average().toFloat()
+                val sd = kotlin.math.sqrt(pairs.sumOf { ((it - mean) * (it - mean)).toDouble() } / pairs.size).toFloat()
+                val bar = maxOf(0.012f, mean + 0.8f * sd)
+                val clusters = MutableList(n) { mutableListOf(it) }
+                while (true) {
+                    var best = -1f; var bi = -1; var bj = -1
+                    for (i in clusters.indices) for (j in i + 1 until clusters.size) {
+                        var sum = 0f
+                        for (a in clusters[i]) for (b in clusters[j]) sum += sim[a][b]
+                        val avg = sum / (clusters[i].size * clusters[j].size)
+                        if (avg > best) { best = avg; bi = i; bj = j }
+                    }
+                    if (bi < 0 || best < bar) break
+                    clusters[bi].addAll(clusters[bj]); clusters.removeAt(bj)
+                }
+                clusters.map { c -> c.map { notes[it] } }
+            }
+        }
+        fun day(t: Long) = t / 86_400_000L
+        groups.filter { g -> g.size >= 2 && g.map { day(it.createdAt) }.toSet().size >= 2 }
+            .map { g ->
+                val chrono = g.sortedBy { it.createdAt }
+                val theme = g.flatMap { it.themes }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+                InsightThread(chrono, theme, THEME_NAMES[theme]?.replaceFirstChar { it.uppercase() }
+                    ?: chrono.last().words.split(Regex("\\s+")).take(5).joinToString(" ") + "…")
+            }
+            .sortedWith(compareByDescending<InsightThread> { it.entries.last().createdAt / 86_400_000L }.thenByDescending { it.entries.size })
     }
 
     /** Plain words for how close two notes are. */
