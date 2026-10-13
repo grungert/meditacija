@@ -8,3 +8,5 @@ app/.cxx/
 .kotlin/
 *.iml
 .idea/
+app/libs/*.aar
+app/libs/*.part

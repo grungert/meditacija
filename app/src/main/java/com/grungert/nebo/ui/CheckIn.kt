@@ -98,7 +98,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var askedMic by remember { mutableStateOf(false) }
     var silent by remember { mutableStateOf(false) }
     var transcribing by remember { mutableStateOf(false) }
-    var heard by remember { mutableStateOf<String?>(null) }      // what Whisper heard in the current recording
+    var heard by remember { mutableStateOf<String?>(null) }      // what the speech model heard in the current recording
     var fieldFromVoice by remember { mutableStateOf(false) }     // the text field holds that transcript, maybe corrected
     var model by remember { mutableStateOf<String?>(null) }
 
@@ -115,6 +115,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     fun startRecording() {
         val f = File(context.filesDir, "audio/${System.currentTimeMillis()}.wav")
         recording = true; seconds = 0f; levels.clear()
+        app.transcriber.prepare()
         scope.launch {
             val dur = recorder.record(f, MAX_SECONDS) { lv ->
                 scope.launch { levels.add(lv); if (levels.size > 56) levels.removeAt(0) }
@@ -237,7 +238,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 )
                 if (audio != null && !recording) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} }, icon = NeboIcon.Play)
-                    if (app.models.readyWhisper() == null) GlassButton("Preuzmi Whisper", { player.stop(); go(Screen.Settings) })
+                    if (app.models.readyWhisper() == null) GlassButton("Preuzmi model za govor", { player.stop(); go(Screen.Settings) })
                 }
             }
 

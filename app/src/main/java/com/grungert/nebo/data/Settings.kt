@@ -135,7 +135,7 @@ class Settings(context: Context) {
 
     // models
     var whisperModel: String
-        get() = p.getString("whisperModel", "small")!!
+        get() = p.getString("whisperModel", "parakeet")!!
         set(v) = p.edit { putString("whisperModel", v) }
     /** Whisper language code; Croatian gives Latin-script ijekavian text closest to Montenegrin. */
     var whisperLang: String

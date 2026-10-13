@@ -1,10 +1,17 @@
 package com.grungert.nebo.ml
 
 import android.util.Log
+import com.k2fsa.sherpa.onnx.FeatureConfig
+import com.k2fsa.sherpa.onnx.OfflineModelConfig
+import com.k2fsa.sherpa.onnx.OfflineRecognizer
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.grungert.nebo.audio.Recorder
 import com.grungert.nebo.data.Db
 import com.grungert.nebo.data.Settings
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +29,48 @@ object WhisperNative {
     external fun transcribe(ptr: Long, samples: FloatArray, language: String, prompt: String): ByteArray
 }
 
+/** One loaded speech model: turns 16 kHz mono samples into text. Close it to free the memory. */
+private interface SpeechEngine : AutoCloseable {
+    fun transcribe(pcm: FloatArray): String
+}
+
+private class WhisperEngine(path: String, private val language: String) : SpeechEngine {
+    private val ptr = WhisperNative.initContext(path)
+    val ok get() = ptr != 0L
+    override fun transcribe(pcm: FloatArray) =
+        Transcriber.clean(String(WhisperNative.transcribe(ptr, pcm, language, Transcriber.PROMPT), Charsets.UTF_8))
+    override fun close() { if (ptr != 0L) WhisperNative.freeContext(ptr) }
+}
+
+/** NVIDIA Parakeet TDT through sherpa-onnx: reads the whole recording at once, and finds the language itself. */
+private class ParakeetEngine(models: ModelStore, choice: ModelChoice) : SpeechEngine {
+    private val recognizer = OfflineRecognizer(null, OfflineRecognizerConfig(
+        featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+        modelConfig = OfflineModelConfig(
+            transducer = OfflineTransducerModelConfig(
+                encoder = models.file(choice.files[0].name).absolutePath,
+                decoder = models.file(choice.files[1].name).absolutePath,
+                joiner = models.file(choice.files[2].name).absolutePath,
+            ),
+            tokens = models.file(choice.files[3].name).absolutePath,
+            // phones pair a few fast cores with many slow ones; more threads than fast cores only waits on the slow ones
+            numThreads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+            modelType = "nemo_transducer",
+        ),
+    ))
+    override fun transcribe(pcm: FloatArray): String {
+        val stream = recognizer.createStream()
+        try {
+            stream.acceptWaveform(pcm, 16000)
+            recognizer.decode(stream)
+            return recognizer.getResult(stream).text.replace(Regex("\\s+"), " ").trim()
+        } finally {
+            stream.release()
+        }
+    }
+    override fun close() = recognizer.release()
+}
+
 /**
  * Turns recorded notes into text in the background. The audio is always kept, so a note can be
  * transcribed again later with a better model; entries without a transcript are picked up on every start.
@@ -33,8 +82,52 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     /** Bumps with the id of each entry that just got its transcript. */
     val done: StateFlow<Long> = _done
 
-    /** The model id that would transcribe right now, or null when no Whisper model is on the phone. */
+    /** The model id that would transcribe right now, or null when no speech model is on the phone. */
     fun readyModel(): String? = models.readyWhisper()?.id
+
+    // Loading a model takes seconds, so the loaded one is kept for a minute after its last use
+    // (and loading starts as soon as the person begins to speak). Only touched under [lock].
+    private var loaded: SpeechEngine? = null
+    private var loadedKey: String? = null
+    private var release: Job? = null
+
+    private fun open(choice: ModelChoice): SpeechEngine? {
+        val key = choice.id + "/" + settings.whisperLang
+        if (loadedKey == key) loaded?.let { return it }
+        loaded?.close(); loaded = null; loadedKey = null
+        return try {
+            val t0 = System.nanoTime()
+            (if (choice.engine == "parakeet") ParakeetEngine(models, choice)
+            else WhisperEngine(models.file(choice.files[0].name).absolutePath, settings.whisperLang).takeIf { it.ok })
+                ?.also { loaded = it; loadedKey = key; Log.i(TAG, "loaded ${choice.id} in %.1f s".format((System.nanoTime() - t0) / 1e9)) }
+        } catch (t: Throwable) {
+            Log.e(TAG, "could not load ${choice.id}", t); null
+        }
+    }
+
+    /** Lets the loaded model go a minute after the last use; it holds hundreds of megabytes. */
+    private fun releaseLater() {
+        release?.cancel()
+        release = scope.launch {
+            delay(60_000)
+            lock.withLock { loaded?.close(); loaded = null; loadedKey = null }
+        }
+    }
+
+    /** Starts loading the speech model while the person is still talking, so the text comes quickly after. */
+    fun prepare() {
+        scope.launch {
+            lock.withLock { models.readyWhisper()?.let { open(it) } }
+            releaseLater()
+        }
+    }
+
+    /** Silence makes speech models invent words, so they never get to hear it. */
+    private fun heard(engine: SpeechEngine, pcm: FloatArray): String =
+        if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) "" else {
+            val t0 = System.nanoTime()
+            engine.transcribe(pcm).also { Log.i(TAG, "%.1f s of audio in %.2f s".format(pcm.size / 16000f, (System.nanoTime() - t0) / 1e9)) }
+        }
 
     /** Transcribes one recording straight away, for showing the text while the person is still on the screen. */
     suspend fun transcribeNow(file: File): String? = withContext(Dispatchers.Default) {
@@ -42,14 +135,8 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
             val choice = models.readyWhisper() ?: return@withLock null
             val pcm = Recorder.readWav(file)
             if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) return@withLock ""
-            val ptr = WhisperNative.initContext(models.file(choice.files[0].name).absolutePath)
-            if (ptr == 0L) { Log.e(TAG, "could not load ${choice.id}"); return@withLock null }
-            try {
-                clean(String(WhisperNative.transcribe(ptr, pcm, settings.whisperLang, PROMPT), Charsets.UTF_8))
-            } finally {
-                WhisperNative.freeContext(ptr)
-            }
-        }
+            open(choice)?.let { heard(it, pcm) }
+        }.also { releaseLater() }
     }
 
     fun drain() {
@@ -58,22 +145,15 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
                 val choice = models.readyWhisper() ?: return@withLock
                 val pending = db.pendingTranscriptions()
                 if (pending.isEmpty()) return@withLock
-                val ptr = WhisperNative.initContext(models.file(choice.files[0].name).absolutePath)
-                if (ptr == 0L) { Log.e(TAG, "could not load ${choice.id}"); return@withLock }
-                try {
-                    for (e in pending) {
-                        val f = File(e.audioPath ?: continue)
-                        val pcm = if (f.exists()) Recorder.readWav(f) else FloatArray(0)
-                        // silence makes Whisper invent words, so it never gets to hear it
-                        val text = if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) "" else
-                            clean(String(WhisperNative.transcribe(ptr, pcm, settings.whisperLang, PROMPT), Charsets.UTF_8))
-                        db.updateEntry(e.copy(transcript = text, transcriptModel = choice.id))
-                        _done.value = e.id
-                    }
-                } finally {
-                    WhisperNative.freeContext(ptr)
+                val engine = open(choice) ?: return@withLock
+                for (e in pending) {
+                    val f = File(e.audioPath ?: continue)
+                    val text = heard(engine, if (f.exists()) Recorder.readWav(f) else FloatArray(0))
+                    db.updateEntry(e.copy(transcript = text, transcriptModel = choice.id))
+                    _done.value = e.id
                 }
             }
+            releaseLater()
         }
     }
 
@@ -83,6 +163,6 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
 
         private const val TAG = "NeboTranscriber"
         /** Nudges Whisper towards Latin-script ijekavian and everyday words about inner life. */
-        private const val PROMPT = "Ovo je kratka bilješka poslije meditacije, na crnogorskom, latinicom. Osjećam se mirnije, ali i umorno."
+        const val PROMPT = "Ovo je kratka bilješka poslije meditacije, na crnogorskom, latinicom. Osjećam se mirnije, ali i umorno."
     }
 }

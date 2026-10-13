@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -63,10 +65,31 @@ android {
 
     androidResources { noCompress += listOf("onnx", "bin", "model") }
 
-    packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+            // only arm64 phones are built for; the other ABIs would also bring a second libonnxruntime.so
+            excludes += listOf("lib/x86/**", "lib/x86_64/**", "lib/armeabi-v7a/**")
+        }
+    }
 }
 
 kotlin { jvmToolchain(17) }
+
+// sherpa-onnx runs the Parakeet speech model. Its Android library is published only as a release asset,
+// so it is fetched once into app/libs (not in git) and checked against a pinned hash.
+// This build links ONNX Runtime statically, so it does not clash with the ONNX Runtime the meaning model uses.
+val sherpaVersion = "1.13.8"
+val sherpaAar = file("libs/sherpa-onnx-static-link-onnxruntime-$sherpaVersion.aar")
+if (!sherpaAar.exists()) {
+    sherpaAar.parentFile.mkdirs()
+    val tmp = File(sherpaAar.path + ".part")
+    uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-static-link-onnxruntime-$sherpaVersion.aar")
+        .toURL().openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
+    val hash = MessageDigest.getInstance("SHA-256").digest(tmp.readBytes()).joinToString("") { "%02x".format(it) }
+    check(hash == "b22c3fc1b6a45666d28892bb2f7694beeb77a8362d7ebd77c1a5431ec9435471") { "sherpa-onnx download has an unexpected hash: $hash" }
+    tmp.renameTo(sherpaAar)
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.09.00")
@@ -84,6 +107,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
+    implementation(files(sherpaAar))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
