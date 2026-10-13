@@ -5,6 +5,7 @@ Poslije svake meditacije korisnik izgovori kratak uvid ili osjećaj. Aplikacija 
 Fajlovi:
 
 - `app/src/main/assets/koani.json` — 49 slučajeva iz zbirke *Bezvratna kapija*, prevedenih na crnogorski (ijekavica, latinica).
+- `app/src/main/assets/price.json` — 277 čitanja iz četiri zbirke (polje `zbirka`): 39 zen priča, 39 odlomaka iz *Džuang Cea*, svih 81 poglavlje *Tao Te Chinga* i cijela *Dhammapada* u 118 grupa stihova. Biraju se po značenju kao i poruke; kartica nosi ime zbirke.
 - `app/src/main/assets/poruke.json` — 42 kratke originalne poruke za trenutke kad zagonetni koan ne bi pristajao (umor, tuga, nemir, samokritika, zahvalnost, radost i slično).
 
 ## Izvor i autorska prava
@@ -13,6 +14,15 @@ Koani su iz zbirke *Wumenguan* / *Mumonkan* (Mumon, 1228), prema engleskom prevo
 https://en.wikisource.org/wiki/The_Gateless_Gate
 
 Original je u javnom vlasništvu zbog starosti. Engleski prevod je u SAD-u u javnom vlasništvu jer autorsko pravo nije obnovljeno (Wikisource oznake PD-old i PD-US-no-renewal). Prevodi na crnogorski su naši, rađeni slobodno, ali vjerno engleskom tekstu. Mumonovi komentari su ponegdje skraćeni. Poruke su originalni tekstovi napisani za ovu aplikaciju, nijesu citati.
+
+### Čitanja (`price.json`)
+
+- *Tao Te Ching* (Lao Ce), prema prevodu Jamesa Leggea, *The Tao Teh King* (1891), Project Gutenberg #216. Javno vlasništvo.
+- *Džuang Ce*, prema prevodu Herberta A. Gilesa, *Chuang Tzu: Mystic, Moralist, and Social Reformer* (1889), Project Gutenberg #59709. Javno vlasništvo; izabrano 39 parabola.
+- *Dhammapada*, prema prevodu F. Maxa Müllera (1881), Project Gutenberg #2017. Javno vlasništvo. Svi stihovi osim pet koji bi, izvađeni iz konteksta i ponuđeni automatski, zbunjivali ili vrijeđali: 242 (o ženi), 284 (o ljubavi muškarca prema ženama), 294–295 (doslovno „ubio oca i majku“) i 309–310 (o tuđoj ženi). U polju `izvor` piše tačno koji stihovi su u stavci.
+- Zen priče su tradicionalne anegdote o istorijskim učiteljima (Nan-in, Hakuin, Tanzan, Rjokan, Bankei…), **prepričane našim riječima**. Namjerno nijesu prevod zbirke *101 Zen Stories* (Senzaki i Reps, 1939), čiji tekst možda još nije u javnom vlasništvu.
+
+Prevodi i prepričavanja su naši: ijekavica, latinica, a `kadaPomaze` u prvom licu, riječima kojima bi čovjek opisao svoje stanje.
 
 ## Teme
 

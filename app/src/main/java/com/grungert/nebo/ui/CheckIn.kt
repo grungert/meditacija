@@ -367,6 +367,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                         Text(when {
                             item.id == weekKoan?.id && round == 0 -> "KOAN OVE SEDMICE"
                             item.isKoan -> "KOAN ZA TEBE"
+                            item.collection != null -> item.collection.uppercase()
                             else -> "PORUKA ZA TEBE"
                         }, style = LabelStyle)
                         PaperCard {

@@ -25,6 +25,8 @@ data class KoanItem(
     val themes: List<String>,
     val whenHelps: String,
     val source: String?,
+    /** Which collection a reading comes from ("Zen priča", "Tao Te Ching", …); null for koans and the app's own messages. */
+    val collection: String? = null,
 )
 
 class KoanLibrary(context: Context) {
@@ -41,10 +43,12 @@ class KoanLibrary(context: Context) {
                     question = o.optString("pitanje").ifBlank { null },
                     themes = if (t == null) emptyList() else List(t.length()) { t.getString(it) },
                     whenHelps = o.optString("kadaPomaze"), source = o.optString("izvor").ifBlank { null },
+                    collection = o.optString("zbirka").ifBlank { null },
                 )
             }
         }.getOrDefault(emptyList())
-        load("koani.json", true) + load("poruke.json", false)
+        // readings: Zen stories, Zhuangzi, the Tao Te Ching and the Dhammapada, chosen by meaning like the messages
+        load("koani.json", true) + load("poruke.json", false) + load("price.json", false)
     }
 
     fun byId(id: String?) = items.firstOrNull { it.id == id }

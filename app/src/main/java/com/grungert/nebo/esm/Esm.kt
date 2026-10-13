@@ -186,7 +186,7 @@ object Esm {
             ACTION_DAILY -> {
                 val lib = ctx.app.library
                 // the week's koan question when one is being carried, otherwise a question from the library
-                val item = lib.byId(s.activeWeekKoan()) ?: lib.items.filter { it.isKoan && it.question != null }.randomOrNull()
+                val item = lib.byId(s.activeWeekKoan()) ?: lib.items.filter { it.question != null }.randomOrNull()   // koans and readings carry a question
                 val q = item?.question
                 if (s.dailyQuestion && q != null) {
                     val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java)

@@ -158,6 +158,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                 SectionLabel("Izvori")
                 Text("Koani: Mumon, Bezvratna kapija (1228), po engleskom prevodu Nyogena Senzakija i Paula Repsa (1934), " +
                     "javno vlasništvo. Prepričano na naš jezik. Poruke su pisane za ovu aplikaciju.", style = SmallStyle)
+                Text("Tao Te Ching po prevodu Jamesa Leggea (1891), Džuang Ce po prevodu Herberta A. Gilesa (1889) i Dhammapada po prevodu " +
+                    "F. Maxa Müllera (1881), sve javno vlasništvo, prevedeno na naš jezik. Zen priče su tradicionalne anegdote, prepričane za ovu aplikaciju.", style = SmallStyle)
                 Text("Parakeet TDT 0.6B v3 (NVIDIA, CC-BY-4.0) kroz sherpa-onnx (Apache-2.0). Whisper (OpenAI, MIT) kroz whisper.cpp. " +
                     "Model za značenje: multilingual-e5-small (MIT).", style = SmallStyle)
                 Text("Sve što snimiš i zapišeš ostaje na telefonu.", style = SmallStyle)
