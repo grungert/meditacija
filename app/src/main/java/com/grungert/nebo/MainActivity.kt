@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
+        // "Zapiši" on the home-screen widget
+        if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")
     }
 
     @Composable

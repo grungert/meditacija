@@ -34,6 +34,7 @@ class NeboApp : Application() {
         Esm.ensureChannel(this)
         scope.launch {
             Esm.refresh(this@NeboApp)
+            com.grungert.nebo.widget.NeboWidget.refresh(this@NeboApp)   // the day of the week koan moves on
             transcriber.drain()
             recommender.warmUp()
             val retag = settings.themesVersion < THEMES_VERSION

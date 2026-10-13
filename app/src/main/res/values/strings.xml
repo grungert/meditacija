@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Nebo</string>
+    <string name="widget_description">Koan sedmice i sesija jednim dodirom</string>
+    <string name="widget_label_default">NEBO</string>
+    <string name="widget_text_default">Nekoliko daha, i nebo je tu.</string>
+    <string name="widget_start">Kreni</string>
+    <string name="widget_note">Zapiši</string>
 </resources>

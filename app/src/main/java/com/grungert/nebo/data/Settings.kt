@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 
 /** Small preferences that make the next session start the way the last one did. */
-class Settings(context: Context) {
+class Settings(private val context: Context) {
     private val p = context.getSharedPreferences("nebo", Context.MODE_PRIVATE)
 
     var sessionType: String
@@ -113,7 +113,10 @@ class Settings(context: Context) {
     /** The koan being carried this week, or null once seven days have passed. */
     fun activeWeekKoan(now: Long = System.currentTimeMillis()): String? =
         weekKoanId?.takeIf { now - weekKoanSince in 0 until 7 * 86_400_000L }
-    fun carryKoan(id: String?) { weekKoanId = id; weekKoanSince = System.currentTimeMillis() }
+    fun carryKoan(id: String?) {
+        weekKoanId = id; weekKoanSince = System.currentTimeMillis()
+        com.grungert.nebo.widget.NeboWidget.refresh(context)
+    }
     /** Which day (1..7) of carrying the koan this is. */
     fun weekKoanDay(now: Long = System.currentTimeMillis()) = ((now - weekKoanSince) / 86_400_000L + 1).toInt()
     var dailyQuestion: Boolean
