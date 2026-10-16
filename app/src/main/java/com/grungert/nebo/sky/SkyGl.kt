@@ -17,6 +17,7 @@ class SkyFrame(
     val dim: Float = 0f,
     val cover: Float = 0f,
     val drop: Float = 0f,
+    val lake: Float = 0f,
 )
 
 /** Renders the painted sky shader (the same GLSL as the browser prototype) at reduced resolution. */
@@ -57,7 +58,7 @@ class SkyRenderer(private val context: Context) : GLSurfaceView.Renderer {
         loc.clear()
         for (n in listOf("uRes", "uTime", "uDrift", "uMorph", "uWind", "uWalk", "uBreath", "uMotion", "uSkyTop", "uSkyMid",
             "uSkyHor", "uSh", "uMd", "uLt", "uRim", "uSunCol", "uGrassTop", "uGrassBot", "uSunPos", "uMoonPos",
-            "uSunAmt", "uMoonAmt", "uStars", "uLight", "uDim", "uCover", "uDrop")) {
+            "uSunAmt", "uMoonAmt", "uStars", "uLight", "uDim", "uCover", "uDrop", "uLake")) {
             loc[n] = GLES20.glGetUniformLocation(program, n)
         }
     }
@@ -85,7 +86,7 @@ class SkyRenderer(private val context: Context) : GLSurfaceView.Renderer {
         GLES20.glUniform2f(loc["uSunPos"]!!, f.sun[0], f.sun[1])
         GLES20.glUniform2f(loc["uMoonPos"]!!, f.moon[0], f.moon[1])
         u1("uSunAmt", f.sunAmt); u1("uMoonAmt", f.moonAmt); u1("uStars", f.pal.stars)
-        u3("uLight", f.light); u1("uDim", f.dim); u1("uCover", f.cover); u1("uDrop", f.drop)
+        u3("uLight", f.light); u1("uDim", f.dim); u1("uCover", f.cover); u1("uDrop", f.drop); u1("uLake", f.lake)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 3)
     }
 

@@ -16,6 +16,7 @@ uniform float uCover;             // extra cloud cover for rain, snow and fog
 uniform float uDim;               // 0 normal, 1 fully dark (eyes closed)
 uniform vec3 uLight;              // normalised direction towards the sun or moon
 uniform float uDrop;              // 0..1: the breathing drop of water is shown
+uniform float uLake;              // 0..1: the lower part of the picture becomes a still lake
 
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -263,6 +264,33 @@ vec3 drop(vec2 p, vec2 dc, float dr, float d) {
   return mix(col, uSh * 0.55, smoothstep(0.96, 1.0, d) * 0.35);
 }
 
+// The lake of the 50-50 practice: the world sits on the far shore and lies upside down in the water below it.
+// The whole sky above the scene's own meadow is fitted between the shore (LAKE_Y) and the top of the screen,
+// so the meadow becomes the far bank; the water mirrors it with the same fit.
+const float LAKE_Y = 0.42;
+const float BANK_Y = 0.12;
+const float FIT = (1.0 - BANK_Y) / (1.0 - LAKE_Y);
+
+vec3 lake(vec2 p) {
+  if (p.y >= LAKE_Y) return scene(vec2(p.x, BANK_Y + (p.y - LAKE_Y) * FIT));
+  float d = LAKE_Y - p.y;              // how far below the shore
+  float near = d / LAKE_Y;             // 0 at the far shore, 1 at the bottom of the screen
+  // the water moves: long slow swells, and finer ripples nearer the viewer
+  float swell = sin(p.y * 260.0 / (0.25 + near) - uTime * 1.1) * 0.0022 * (0.25 + near);
+  float fine = (noise(vec2(p.x * 9.0 + uTime * 0.05, p.y * 70.0 - uTime * 0.35)) - 0.5) * 0.010 * near;
+  vec3 refl = scene(vec2(p.x + swell + fine, BANK_Y + d * FIT * (1.0 + 0.03 * sin(p.x * 3.0 + uTime * 0.3))));
+  // reflections are a little cooler and darker than the world, and the water deepens towards the viewer
+  vec3 deep = mix(uSkyHor, uSh, 0.55) * 0.42 + uGrassBot * 0.08;
+  float fresnel = mix(0.88, 0.38, smoothstep(0.0, 1.0, near));
+  vec3 col = mix(deep, refl * vec3(0.90, 0.95, 1.0), fresnel);
+  // glints where the light catches the little waves
+  float glint = smoothstep(0.78, 1.0, noise(vec2(p.x * 4.0 + uTime * 0.06, p.y * 160.0 - uTime * 0.2)));
+  col += mix(vec3(1.0), uSunCol, 0.5) * glint * (0.06 + 0.10 * uSunAmt + 0.06 * uMoonAmt) * (1.0 - near * 0.7);
+  // a pale line where the water meets the far bank
+  col = mix(col, mix(uSkyHor, vec3(1.0), 0.3), smoothstep(0.0035, 0.0, d) * 0.6);
+  return col;
+}
+
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes;
   float asp = uRes.x / uRes.y;
@@ -276,7 +304,9 @@ void main() {
   float inside = uDrop * (1.0 - smoothstep(1.0 - aa, 1.0, d));
 
   vec3 col = vec3(0.0);
-  if (inside < 0.999) {
+  if (uLake > 0.999) col = lake(p);
+  else if (uLake > 0.001) col = mix(scene(p), lake(p), uLake);
+  else if (inside < 0.999) {
     col = scene(p);
     // a soft shadow around the drop keeps it legible over a white cloud
     col *= 1.0 - uDrop * (0.10 * smoothstep(1.35, 1.0, d) + 0.06 * smoothstep(1.08, 1.0, d));

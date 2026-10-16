@@ -26,6 +26,8 @@ class SceneFlags(
     val season: Season = Season.SUMMER,
     val weather: Weather = Weather.CLEAR,
     val foreground: Boolean = true,
+    /** The 50-50 lake fills the lower part of the picture: the meadow and its grass are not drawn. */
+    val lake: Boolean = false,
 )
 
 /**
@@ -171,9 +173,9 @@ class Scenery(private val u: Float) {
         season = flags.season; weather = flags.weather
         drawLeaves(c, pal, dt, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
-        drawMeadow(c, pal, t, e.wind, e.reducedMotion)
+        if (!flags.lake) drawMeadow(c, pal, t, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
-        if (flags.foreground) drawForeground(c, pal, t, e.wind, e.reducedMotion)
+        if (flags.foreground && !flags.lake) drawForeground(c, pal, t, e.wind, e.reducedMotion)
         if (season != Season.WINTER && weather != Weather.RAIN) drawFireflies(c, pal, t)
         when (weather) {
             Weather.RAIN -> drawRain(c, dt, e.wind)

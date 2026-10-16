@@ -61,7 +61,8 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
     var dark by mutableStateOf(false)
     var sheetOpen by mutableStateOf(false)
-    var foreground by mutableStateOf(true)   // a sheet covers the screen, so the bottom bar steps aside
+    var foreground by mutableStateOf(true)
+    var lake by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
 
@@ -153,6 +154,7 @@ class MainActivity : ComponentActivity() {
                 season = host.season,
                 weather = host.weather,
                 foreground = host.foreground,
+                lake = host.lake,
             )
             AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
                 when (sc) {
