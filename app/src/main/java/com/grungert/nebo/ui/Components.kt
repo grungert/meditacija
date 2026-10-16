@@ -118,15 +118,15 @@ fun GlassButton(
 
 /** A round icon with a label underneath. */
 @Composable
-fun IconButton(icon: NeboIcon, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false) {
+fun IconButton(icon: NeboIcon, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, circle: Dp = 56.dp) {
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(horizontal = 6.dp, vertical = 6.dp),
+        modifier.clip(RoundedCornerShape(18.dp)).clickable(role = Role.Button, onClickLabel = label, onClick = onClick).padding(horizontal = 2.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(Modifier.size(56.dp).clip(CircleShape).background(if (selected) Ink.paper else Ink.surfaceHigh), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(circle).clip(CircleShape).background(if (selected) Ink.paper else Ink.surfaceHigh), contentAlignment = Alignment.Center) {
             Icon(icon, if (selected) Ink.inkOnPaper else Ink.text, 24.dp)
         }
-        Text(label, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.text))
+        Text(label, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.text), maxLines = 1, softWrap = false)
     }
 }
 

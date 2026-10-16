@@ -4,6 +4,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.animation.AnimatedVisibility
+import com.grungert.nebo.koan.FourPointsReader
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -14,6 +17,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Rect
@@ -79,6 +83,19 @@ import kotlin.math.ceil
 
 /** Haptics that carry the breath when the eyes are closed: a swell to breathe in, an ebb to breathe out. */
 private val SHADE = Color(0xFF14223F)
+
+/** The stages of a four-points session: which point (null for all together), its name, and what to notice. */
+private val POINT_STAGES = listOf(
+    Triple(FourPointsReader.THOUGHTS, "Misli", "Primijeti misli koje dolaze. Ne prati ih, samo vidi da su tu."),
+    Triple(FourPointsReader.EMOTIONS, "Emocije", "Šta osjećaš? Daj osjećaju ime, tiho, u sebi."),
+    Triple(FourPointsReader.BODY, "Tijelo", "Gdje se to osjeća u tijelu? Stomak, grudi, ramena, grlo, lice."),
+    Triple(FourPointsReader.URGES, "Nagoni", "Šta te vuče da uradiš? Primijeti poriv, i ne idi za njim."),
+    Triple(null, "Sve zajedno", "Sve četiri tačke odjednom. Kako jedna pomjera drugu?"),
+)
+
+/** Five equal parts of a timed session; an open-ended one moves on every two minutes and then stays with all four. */
+private fun pointsStage(elapsed: Float, planned: Int): Int =
+    if (planned > 0) (elapsed / (planned / 5f)).toInt().coerceIn(0, 4) else (elapsed / 120f).toInt().coerceAtMost(4)
 
 /**
  * White on a white cloud disappears, so a soft shade sits behind text drawn straight on the sky:
@@ -215,6 +232,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // soft bells at the chosen interval, or at unexpected moments for a mindfulness bell
         fun gap(): Float = if (cfg.intervalMinutes < 0) 120f + kotlin.random.Random.nextFloat() * 240f else cfg.intervalMinutes * 60f
         var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
+        var pointsBellAt = -1
         host.onFrame = { dt ->
             if (!ended && !paused) {
                 elapsed += dt
@@ -223,6 +241,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 host.breath.progress = if (e.phaseDuration > 0f) e.phaseT / e.phaseDuration else 0f
                 if (ambienceOpen) lastTouch = 0f
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
+                // a soft bell as the four points turn from one to the next
+                if (cfg.type == "points") {
+                    val st = pointsStage(elapsed, planned)
+                    if (st != pointsBellAt) { if (pointsBellAt >= 0) scope.launch { Bell.ring(soft = true) }; pointsBellAt = st }
+                }
                 if (elapsed >= nextBell && (planned == 0 || elapsed < planned - 20)) {
                     nextBell += gap()
                     scope.launch { Bell.ring(soft = true) }
@@ -322,6 +345,30 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                             drawCircle(Color.White.copy(alpha = 0.70f), r, c, style = Stroke(1.dp.toPx()))
                         }
                     }
+                }
+            }
+        }
+
+        // four points: thoughts, emotions, body and urges in turn, then all of them together
+        if (cfg.type == "points" && !ended) {
+            val stage = pointsStage(elapsed, planned)
+            AnimatedContent(stage, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "points",
+                modifier = Modifier.align(Alignment.Center)) { st ->
+                val (key, title, line) = POINT_STAGES[st]
+                // more words than elsewhere on the sky, so they sit on a dark glass that reads over any cloud
+                Column(Modifier.screenPadding().fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(SHADE.copy(alpha = 0.55f))
+                    .padding(horizontal = 20.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // the four points, the current one lit
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (k in listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)) {
+                            val on = key == null || key == k
+                            Box(Modifier.size(if (on) 12.dp else 8.dp).clip(CircleShape).background(POINT_COLORS.getValue(k).copy(alpha = if (on) 1f else 0.35f)))
+                        }
+                    }
+                    Text(title, style = TitleStyle.copy(fontWeight = FontWeight.Light, color = key?.let { POINT_COLORS.getValue(it) } ?: Ink.text,
+                        shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)))
+                    Text(line, style = BodyStyle.copy(color = Ink.text), textAlign = TextAlign.Center)
                 }
             }
         }

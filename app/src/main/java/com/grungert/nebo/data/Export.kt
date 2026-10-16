@@ -59,6 +59,9 @@ object Export {
                     ev.text?.takeIf { it.isNotBlank() }?.let { sb.appendLine("  napisano: $it") }
                     ev.transcript?.takeIf { it.isNotBlank() }?.let { sb.appendLine("  izgovoreno: $it") }
                     if (ev.audioPath != null && ev.transcript == null) sb.appendLine("  (snimak čeka transkripciju)")
+                    if (ev.points.thoughts.isNotBlank()) sb.appendLine("  misli: ${ev.points.thoughts}")
+                    if (ev.points.body.isNotEmpty()) sb.appendLine("  tijelo: ${ev.points.body.joinToString(", ")}")
+                    if (ev.points.urges.isNotEmpty()) sb.appendLine("  nagoni: ${ev.points.urges.joinToString(", ")}")
                     if (ev.themes.isNotEmpty()) sb.appendLine("  teme: ${ev.themes.joinToString(", ") { THEME_NAMES[it] ?: it }}")
                     library.byId(ev.koanId)?.let { sb.appendLine("  koan: ${it.title ?: it.text.take(60)}") }
                 }

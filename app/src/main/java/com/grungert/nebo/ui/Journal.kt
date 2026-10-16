@@ -66,6 +66,7 @@ import com.grungert.nebo.data.Session
 import com.grungert.nebo.data.TYPE_LABEL
 import com.grungert.nebo.koan.Lexicon
 import com.grungert.nebo.koan.MOODS
+import com.grungert.nebo.koan.FourPointsReader
 import com.grungert.nebo.koan.THEME_NAMES
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -200,6 +201,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
 private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, onDelete: () -> Unit) {
     var text by remember { mutableStateOf(e.words) }
     val moods = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(e.moods) } }
+    val points = remember { FourPointsState(e.points) }
     var confirmDelete by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(onBack = onClose)
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(interactionSource = null, indication = null, onClick = onClose)) {
@@ -224,9 +226,7 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, on
                 BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
                     cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp))
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in MOODS.map { it.first }) Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m])
-            }
+            FourPointsCard(points, moods)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 SmallAction(NeboIcon.Trash, "Obriši") { confirmDelete = true }
                 Spacer(Modifier.weight(1f))
@@ -239,7 +239,7 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, on
                         // corrected words of a recording become its transcript, as on the check-in screen
                         e.audioPath != null -> e.copy(text = null, transcript = words, moods = moods.toList(), themes = emptyList())
                         else -> e.copy(text = words.ifBlank { null }, moods = moods.toList(), themes = emptyList())
-                    })
+                    }.copy(points = points.toPoints()))
                 }, strong = true)
             }
         }
@@ -300,6 +300,7 @@ internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSim
                 words.isNotBlank() -> Text(words, style = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null))
                 row.audioPath != null && row.transcript == null -> Text("Snimak čeka da postane tekst.", style = SmallStyle.copy(shadow = null))
             }
+            row.points.summary().takeIf { it.isNotBlank() }?.let { Text(it, style = SmallStyle.copy(shadow = null)) }
             if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accent, shadow = null))
             if (row.audioPath != null || (onSimilar != null && words.isNotBlank()) || onEdit != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (row.audioPath != null) SmallAction(NeboIcon.Play, "Preslušaj") { player.play(row.audioPath) {} }
@@ -410,6 +411,26 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     }
                 }
             }
+            Panel {
+                SectionLabel("Kako su povezani")
+                if (d.links.isEmpty()) Text("Kad u bilješkama primijetiš i tijelo i nagone, ovdje će se pokazati šta najčešće ide uz koju emociju.",
+                    style = SmallStyle.copy(shadow = null))
+                else {
+                    Text("Uz koju emociju najčešće ide koje stanje tijela i koji nagon:", style = SmallStyle.copy(shadow = null))
+                    for (l in d.links) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        @Composable fun pill(text: String, color: Color) = Text(text, style = SmallStyle.copy(color = Ink.inkOnPaper, fontWeight = FontWeight.SemiBold, shadow = null),
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(color).padding(horizontal = 10.dp, vertical = 5.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                pill(l.mood, MOOD_COLORS[l.mood] ?: POINT_COLORS.getValue(FourPointsReader.EMOTIONS))
+                                l.body?.let { Text("→", style = SmallStyle.copy(shadow = null)); pill(it, POINT_COLORS.getValue(FourPointsReader.BODY)) }
+                                l.urge?.let { Text("→", style = SmallStyle.copy(shadow = null)); pill(it, POINT_COLORS.getValue(FourPointsReader.URGES)) }
+                            }
+                        }
+                        Text("${l.times}×", style = SmallStyle.copy(shadow = null))
+                    }
+                }
+            }
             if (d.shifts.isNotEmpty()) Panel {
                 SectionLabel("Prije → poslije sesije")
                 for ((s, n) in d.shifts) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -454,7 +475,24 @@ class StatsData(
     val types: List<Pair<String, Int>>, val themes: List<Pair<String, Int>>, val shifts: List<Pair<String, Int>>,
     val promptsFired: Int, val promptsAnswered: Int, val esmByPart: List<Int>,
     val moodWeeks: List<Map<String, Int>>,
+    val links: List<PointLink> = emptyList(),
 )
+
+/** An emotion and what most often comes with it in the body and as an urge, across the notes that name them. */
+class PointLink(val mood: String, val body: String?, val urge: String?, val times: Int)
+
+/** For each emotion seen at least twice: the body sensation and the urge that most often came with it. */
+fun pointLinks(entries: List<Entry>): List<PointLink> {
+    val withPoints = entries.filter { it.moods.isNotEmpty() && (it.points.body.isNotEmpty() || it.points.urges.isNotEmpty()) }
+    return withPoints.flatMap { e -> e.moods.map { it to e } }.groupBy({ it.first }, { it.second })
+        .filter { it.value.size >= 2 }
+        .map { (mood, es) ->
+            fun top(pick: (Entry) -> List<String>) = es.flatMap(pick).groupingBy { it }.eachCount().maxByOrNull { it.value }?.takeIf { it.value >= 2 }?.key
+            PointLink(mood, top { it.points.body }, top { it.points.urges }, es.size)
+        }
+        .filter { it.body != null || it.urge != null }
+        .sortedByDescending { it.times }.take(5)
+}
 
 private fun dayPart(t: Long): Int {
     val h = Calendar.getInstance().apply { timeInMillis = t }.get(Calendar.HOUR_OF_DAY)
@@ -490,7 +528,7 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         weekMinutes = weeks.last(), weekSessions = sessions.count { it.startedAt >= thisWeek }, weekNotes = entries.count { it.createdAt >= thisWeek }, weeks = weeks, weekLabels = labels,
         dayParts = parts, types = types, themes = themeCount.toList().sortedByDescending { it.second }.take(8),
         shifts = shifts.toList().sortedByDescending { it.second }.take(6),
-        promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null },
+        promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null }, links = pointLinks(entries),
         esmByPart = IntArray(4).also { a -> esm.forEach { a[dayPart(it.createdAt)]++ } }.toList(),
         moodWeeks = (7 downTo 0).map { k ->
             entries.filter { it.createdAt in (thisWeek - k * week) until (thisWeek - (k - 1) * week) }.flatMap { it.moods }.groupingBy { it }.eachCount()

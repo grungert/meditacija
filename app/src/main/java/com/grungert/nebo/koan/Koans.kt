@@ -302,6 +302,28 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             .sortedWith(compareByDescending<InsightThread> { it.entries.last().createdAt / 86_400_000L }.thenByDescending { it.entries.size })
     }
 
+    /**
+     * The four points in what someone said. Pieces whose words place them nowhere go by meaning: compared with a
+     * description of each point, and placed only when one is clearly closer than the others.
+     */
+    suspend fun readFourPoints(text: String): FourPointsReader.Reading = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val e = embedderOrNull()
+            val protos = e?.let { em ->
+                FourPointsReader.DESCRIPTIONS.mapValues { (k, d) ->
+                    db.embedding("fp:$k", Embedder.MODEL_ID, d.hashCode()) ?: em.embed(d).also { db.putEmbedding("fp:$k", Embedder.MODEL_ID, d.hashCode(), it) }
+                }
+            }
+            FourPointsReader.read(text) { piece ->
+                if (e == null || protos == null) null else {
+                    val v = e.embed(piece)
+                    val ranked = protos.map { it.key to Embedder.cosine(v, it.value) }.sortedByDescending { it.second }
+                    ranked[0].first.takeIf { ranked[0].second - ranked[1].second > 0.012f }
+                }
+            }
+        }
+    }
+
     /** Plain words for how close two notes are. */
     fun closeness(score: Float): String = when {
         !usesMeaning -> if (score >= 0.5f) "iste teme" else "slične teme"

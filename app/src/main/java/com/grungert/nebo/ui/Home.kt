@@ -65,7 +65,7 @@ import java.util.Date
 import java.util.Locale
 
 data class SessionConfig(
-    val type: String,          // breath | walk | thoughts | silence
+    val type: String,          // breath | walk | thoughts | silence | points
     val minutes: Int,          // 0 = open-ended
     val pattern: String,
     val intervalMinutes: Int,  // 0 none, -1 random
@@ -84,6 +84,7 @@ val SESSION_TYPES = listOf(
     SessionType("walk", "Šetnja", "Livadom, korak po korak, uz dah.", NeboIcon.Steps),
     SessionType("thoughts", "Oblaci", "Primijetiš misao, dodirneš nebo, pustiš je.", NeboIcon.Cloud),
     SessionType("silence", "Tišina", "Samo nebo i zvono.", NeboIcon.Silence),
+    SessionType("points", "4 tačke", "Misli, emocije, tijelo i nagoni, jedno po jedno, pa sve zajedno.", NeboIcon.Points),
 )
 
 private fun greeting(h: Float) = when {
@@ -217,9 +218,9 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
                 }
 
                 // or one tap for a kind of session
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    for (t in SESSION_TYPES) IconButton(t.icon, t.name, { startType(t.id) }, selected = t.id == last.type)
-                    IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) })
+                Row(Modifier.fillMaxWidth()) {
+                    for (t in SESSION_TYPES) IconButton(t.icon, t.name, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 50.dp)
+                    IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 50.dp)
                 }
             }
         }

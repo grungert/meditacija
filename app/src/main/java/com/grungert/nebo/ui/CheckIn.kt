@@ -9,8 +9,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.geometry.CornerRadius
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -97,6 +95,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var audioSeconds by remember { mutableFloatStateOf(0f) }
     var text by remember { mutableStateOf("") }
     val moods = remember { mutableStateListOf<String>() }
+    val points = remember { FourPointsState() }
     var askedMic by remember { mutableStateOf(false) }
     var silent by remember { mutableStateOf(false) }
     var transcribing by remember { mutableStateOf(false) }
@@ -139,6 +138,8 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     if (audio == f && t != null) {
                         heard = t
                         if (text.isBlank() && t.isNotBlank()) { text = t; fieldFromVoice = true }
+                        // the four points, read from what was said; the person's own picks always stay
+                        if (t.isNotBlank() && !points.touched) points.fillFrom(app.recommender.readFourPoints(t), moods)
                     }
                 }
             } else f.delete()
@@ -166,11 +167,13 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         if (recording) recorder.stop()
         scope.launch {
             val typed = text.trim().ifBlank { null }
+            // written words get their four points read too, unless the person has filled them in
+            if (typed != null && !points.touched && points.recognised.isEmpty()) points.fillFrom(app.recommender.readFourPoints(typed), moods)
             // when the field holds the transcript, the corrected version becomes the transcript;
             // without one yet, the recording is transcribed in the background after saving
             val transcript = if (fieldFromVoice) typed ?: "" else heard
             val entry = Entry(createdAt = System.currentTimeMillis(), kind = sc.kind, sessionId = sc.sessionId, promptId = sc.promptId,
-                audioPath = audio?.absolutePath, text = if (fieldFromVoice) null else typed, moods = moods.toList(),
+                audioPath = audio?.absolutePath, text = if (fieldFromVoice) null else typed, moods = moods.toList(), points = points.toPoints(),
                 transcript = if (audio != null) transcript else null, transcriptModel = if (transcript != null) model else null)
             val id = withContext(Dispatchers.IO) {
                 val id = app.db.insertEntry(entry)
@@ -270,13 +273,13 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 }
             }
 
-            // moods: one scrolling row
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("Kako je u tebi (po želji)")
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(MOODS.map { it.first }) { m -> Chip(m, m in moods, { if (m in moods) moods.remove(m) else moods.add(m) }, dot = MOOD_COLORS[m]) }
-                }
+            // thoughts, emotions, body and urges: the moods are the emotions; written words are read a moment after typing stops
+            LaunchedEffect(text) {
+                if (fieldFromVoice || points.touched || text.trim().length < 12) return@LaunchedEffect
+                delay(1500)
+                points.fillFrom(app.recommender.readFourPoints(text), moods)
             }
+            FourPointsCard(points, moods)
         }
         // the actions stay within reach at the bottom
         Row(
@@ -331,7 +334,8 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
         waiting = false
         val p = if (weekKoan != null && round == 0 && !com.grungert.nebo.koan.Lexicon.soundsLikeDistress(entry?.words ?: ""))
             Pick(weekKoan, "Koan ove sedmice, ${app.settings.weekKoanDay()}. dan. Šta ti danas pokazuje?")
-        else app.recommender.pick(entry?.words ?: "", entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
+        else app.recommender.pick(listOfNotNull(entry?.words, entry?.points?.summary()?.ifBlank { null }).joinToString(". "),
+            entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
         p.item?.let { seen += it.id }
         pick = p
         if (entry != null) withContext(Dispatchers.IO) { app.db.updateEntry(entry.copy(themes = p.themes)) }

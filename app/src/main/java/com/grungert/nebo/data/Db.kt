@@ -36,15 +36,40 @@ data class Entry(
     val themes: List<String> = emptyList(),
     val koanId: String? = null,
     val starred: Boolean = false,
+    /** The four points of the moment: thoughts, body and urges (the emotions are the moods). */
+    val points: FourPoints = FourPoints(),
 ) {
     /** What the person said, preferring their own typed words, then the transcript. */
     val words: String get() = listOfNotNull(text?.takeIf { it.isNotBlank() }, transcript?.takeIf { it.isNotBlank() }).joinToString("\n")
 }
 
+/**
+ * Thoughts, emotions, body and urges influence each other; noticing all four shows the chain.
+ * Emotions are kept as the entry's moods; the other three live here.
+ */
+data class FourPoints(
+    val thoughts: String = "",
+    val body: List<String> = emptyList(),
+    val urges: List<String> = emptyList(),
+) {
+    val isEmpty get() = thoughts.isBlank() && body.isEmpty() && urges.isEmpty()
+
+    fun toJson(): String? = if (isEmpty) null else org.json.JSONObject()
+        .put("misli", thoughts).put("tijelo", org.json.JSONArray(body)).put("nagoni", org.json.JSONArray(urges)).toString()
+
+    companion object {
+        fun fromJson(s: String?): FourPoints = if (s.isNullOrBlank()) FourPoints() else runCatching {
+            val o = org.json.JSONObject(s)
+            fun list(k: String) = o.optJSONArray(k)?.let { a -> List(a.length()) { a.getString(it) } } ?: emptyList()
+            FourPoints(o.optString("misli"), list("tijelo"), list("nagoni"))
+        }.getOrDefault(FourPoints())
+    }
+}
+
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
-class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 3) {
+class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
@@ -52,7 +77,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 3) {
             walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT)""")
         db.execSQL("""CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
             session_id INTEGER, prompt_id INTEGER, audio_path TEXT, text TEXT, transcript TEXT, transcript_model TEXT,
-            moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0)""")
+            moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0, points TEXT)""")
         db.execSQL("""CREATE TABLE prompts(id INTEGER PRIMARY KEY AUTOINCREMENT, scheduled_at INTEGER NOT NULL, fired_at INTEGER,
             answered_entry_id INTEGER, dismissed INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE embeddings(item_id TEXT PRIMARY KEY, model TEXT NOT NULL, text_hash INTEGER NOT NULL, vec BLOB NOT NULL)""")
@@ -64,6 +89,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 3) {
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE entries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
         if (oldVersion < 3) createFeedback(db)
+        if (oldVersion < 4) db.execSQL("ALTER TABLE entries ADD COLUMN points TEXT")
     }
 
     /** +1 when a koan or message spoke to the person, -1 for "not now". */
@@ -148,14 +174,14 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 3) {
         put("created_at", createdAt); put("kind", kind); put("session_id", sessionId); put("prompt_id", promptId)
         put("audio_path", audioPath); put("text", text); put("transcript", transcript); put("transcript_model", transcriptModel)
         put("moods", moods.joinToString(",")); put("themes", themes.joinToString(",")); put("koan_id", koanId)
-        put("starred", if (starred) 1 else 0)
+        put("starred", if (starred) 1 else 0); put("points", points.toJson())
     }
 
     private fun Cursor.toEntry() = Entry(
         id = long("id"), createdAt = long("created_at"), kind = str("kind")!!, sessionId = longOrNull("session_id"),
         promptId = longOrNull("prompt_id"), audioPath = str("audio_path"), text = str("text"), transcript = str("transcript"),
         transcriptModel = str("transcript_model"), moods = csv(str("moods")), themes = csv(str("themes")), koanId = str("koan_id"),
-        starred = int("starred") == 1,
+        starred = int("starred") == 1, points = FourPoints.fromJson(str("points")),
     )
 
     // ---------- prompts ----------
