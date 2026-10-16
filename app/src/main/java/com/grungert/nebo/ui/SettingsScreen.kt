@@ -57,6 +57,10 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     var haptics by remember { mutableStateOf(s.haptics) }
     var ambient by remember { mutableStateOf(s.ambient) }
     var weekReminder by remember { mutableStateOf(s.weekReminder) }
+    var fifty by remember { mutableStateOf(s.fiftyOn) }
+    var fiftyN by remember { mutableIntStateOf(s.fiftyPerDay) }
+    var fiftyFrom by remember { mutableIntStateOf(s.fiftyFrom) }
+    var fiftyTo by remember { mutableIntStateOf(s.fiftyTo) }
     var daily by remember { mutableStateOf(s.dailyQuestion) }
     var dailyHour by remember { mutableIntStateOf(s.dailyHour) }
     var refresh by remember { mutableIntStateOf(0) }
@@ -86,6 +90,31 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             ReminderPanel()
 
             BackupPanel()
+
+            Panel {
+                SectionLabel("50-50 tokom dana")
+                fun applyFifty() {
+                    s.fiftyOn = fifty; s.fiftyPerDay = fiftyN; s.fiftyFrom = fiftyFrom; s.fiftyTo = fiftyTo
+                    s.fiftyPlanDay = 0   // plan the day again with the new choices
+                    app.scope.launch { Esm.refresh(context) }
+                }
+                SwitchRow("Podsjeti me na 50-50", fifty, {
+                    fifty = it
+                    if (it && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    applyFifty()
+                }, sub = "Pola pažnje u tijelu, pola u svijetu oko tebe. Tiho obavještenje u nasumično vrijeme; dodir otvara vježbu od jednog minuta.")
+                if (fifty) {
+                    Text("Koliko puta dnevno", style = SmallStyle)
+                    ChipRow { for (n in listOf(3, 4, 5, 6, 8)) Chip("$n", fiftyN == n, { fiftyN = n; applyFifty() }) }
+                    Text("Od", style = SmallStyle)
+                    ChipRow { for (h in listOf(7, 8, 9, 10)) Chip("$h h", fiftyFrom == h, { fiftyFrom = h; applyFifty() }) }
+                    Text("Do", style = SmallStyle)
+                    ChipRow { for (h in listOf(18, 19, 20, 21, 22)) Chip("$h h", fiftyTo == h, { fiftyTo = h; applyFifty() }) }
+                }
+                GlassButton("Probaj sada", { go(Screen.Fifty) })
+            }
 
             Panel {
                 SectionLabel("Zapažanja tokom dana")

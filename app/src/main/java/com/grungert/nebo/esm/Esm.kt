@@ -35,11 +35,24 @@ object Esm {
     private const val ACTION_FIRE = "com.grungert.nebo.ESM_FIRE"
     private const val ACTION_PLAN = "com.grungert.nebo.ESM_PLAN"
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
+    private const val ACTION_FIFTY = "com.grungert.nebo.FIFTY"
+    const val EXTRA_FIFTY = "fifty_fifty"
+    private const val FIFTY_CHANNEL = "pedeset"
+    private val FIFTY_LINES = listOf(
+        "Pola pažnje u tijelu, pola napolju. Stopala na podu, i zvukovi oko tebe.",
+        "Osjeti dah, i u isto vrijeme vidi svjetlo oko sebe.",
+        "Ruke, njihova težina. I jedna boja koju sada vidiš.",
+        "Gdje je tvoje tijelo upravo sada? I šta se čuje izdaleka?",
+        "Pola unutra, pola vani. Samo nekoliko daha.",
+    )
 
     fun ensureChannel(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Zapažanja tokom dana", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Nekoliko puta dnevno, u nasumično vrijeme: kako si sada?"
+        })
+        nm.createNotificationChannel(NotificationChannel(FIFTY_CHANNEL, "50-50", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "Nekoliko puta dnevno: pola pažnje u tijelu, pola u svijetu oko tebe."
         })
     }
 
@@ -53,6 +66,7 @@ object Esm {
         scheduleWeek(ctx, am)
         scheduleDaily(ctx, am)
         scheduleReminder(ctx, am)
+        scheduleFifty(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
         val now = System.currentTimeMillis()
         val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
@@ -96,6 +110,38 @@ object Esm {
         val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.dailyHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
         arm(am, c.timeInMillis, pi)
+    }
+
+    /** Plans the day's 50-50 moments at random within the chosen hours (or tomorrow's, when today's are over) and arms the next. */
+    private fun scheduleFifty(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_FIFTY, 0)
+        val s = ctx.app.settings
+        if (!s.fiftyOn) { am.cancel(pi); s.fiftyPlanDay = 0; return }
+        val now = System.currentTimeMillis()
+        fun plan(offset: Int): List<Long> {
+            val day = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, offset); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+            val key = today(day)
+            if (s.fiftyPlanDay == key) return s.fiftyPlan
+            val from = maxOf(day.timeInMillis + s.fiftyFrom * 3_600_000L, now + 10 * 60_000L)
+            val times = randomTimes(from, day.timeInMillis + s.fiftyTo * 3_600_000L, s.fiftyPerDay)
+            s.fiftyPlanDay = key; s.fiftyPlan = times
+            return times
+        }
+        val next = plan(0).firstOrNull { it > now + 30_000L } ?: plan(1).firstOrNull { it > now } ?: return
+        arm(am, next, pi)
+    }
+
+    /** A gentle 50-50 reminder; a touch opens the one-minute practice. */
+    private fun notifyFifty(ctx: Context) {
+        val open = PendingIntent.getActivity(ctx, 11, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FIFTY, true)
+            .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val line = FIFTY_LINES.random()
+        ctx.getSystemService(NotificationManager::class.java).notify(FIFTY_NOTIFICATION_ID, Notification.Builder(ctx, FIFTY_CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification).setContentTitle("50-50").setContentText(line)
+            .setStyle(Notification.BigTextStyle().bigText(line + "\nDodirni za vježbu od jednog minuta."))
+            .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(20 * 60_000L).build())
     }
 
     private fun reminderDay(days: String, c: Calendar): Boolean {
@@ -206,6 +252,7 @@ object Esm {
                         .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
                 }
             }
+            ACTION_FIFTY -> if (s.fiftyOn) notifyFifty(ctx)
             ACTION_SILENCE -> {
                 s.esmSilencedDay = today()
                 ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -218,6 +265,7 @@ object Esm {
     private const val WEEK_NOTIFICATION_ID = 8
     private const val DAILY_NOTIFICATION_ID = 9
     private const val REMIND_NOTIFICATION_ID = 10
+    private const val FIFTY_NOTIFICATION_ID = 12
 
     private fun notify(ctx: Context, promptId: Long) {
         val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)

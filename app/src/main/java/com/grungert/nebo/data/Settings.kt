@@ -93,6 +93,26 @@ class Settings(private val context: Context) {
         set(v) = p.edit { putBoolean("haptics", v) }
 
     // experience sampling
+    /** 50-50: a few times a day, half the attention in the body and half on the world outside. */
+    var fiftyOn: Boolean
+        get() = p.getBoolean("fiftyOn", false)
+        set(v) = p.edit { putBoolean("fiftyOn", v) }
+    var fiftyPerDay: Int
+        get() = p.getInt("fiftyPerDay", 4)
+        set(v) = p.edit { putInt("fiftyPerDay", v) }
+    var fiftyFrom: Int
+        get() = p.getInt("fiftyFrom", 9)
+        set(v) = p.edit { putInt("fiftyFrom", v) }
+    var fiftyTo: Int
+        get() = p.getInt("fiftyTo", 20)
+        set(v) = p.edit { putInt("fiftyTo", v) }
+    /** The planned moments of one day: the day (yyyymmdd) and the times. Planned anew when the settings change. */
+    var fiftyPlanDay: Int
+        get() = p.getInt("fiftyPlanDay", 0)
+        set(v) = p.edit { putInt("fiftyPlanDay", v) }
+    var fiftyPlan: List<Long>
+        get() = p.getString("fiftyPlan", "")!!.split(',').mapNotNull { it.toLongOrNull() }
+        set(v) = p.edit { putString("fiftyPlan", v.joinToString(",")) }
     var esmEnabled: Boolean
         get() = p.getBoolean("esmEnabled", false)
         set(v) = p.edit { putBoolean("esmEnabled", v) }

@@ -53,6 +53,7 @@ sealed class Screen {
     data class Similar(val entryId: Long) : Screen()
     data class KoanNotes(val koanId: String) : Screen()
     data class Thread(val ids: List<Long>, val title: String) : Screen()
+    data object Fifty : Screen()
 }
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
@@ -113,6 +114,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
+        if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty
         // "Zapiši" on the home-screen widget
         if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")
     }
@@ -133,6 +135,7 @@ class MainActivity : ComponentActivity() {
                 is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup, is Screen.Week -> Screen.Home
                 is Screen.Similar -> Screen.Journal
                 is Screen.Thread -> Screen.Journal
+                Screen.Fifty -> Screen.Home
                 is Screen.KoanNotes -> Screen.Home
                 is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
                 else -> Screen.Home
@@ -164,6 +167,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Week -> com.grungert.nebo.ui.WeekScreen(sc, go)
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                     is Screen.Thread -> com.grungert.nebo.ui.ThreadScreen(sc, go)
+                    Screen.Fifty -> com.grungert.nebo.ui.FiftyScreen(host, go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
                 }
             }
