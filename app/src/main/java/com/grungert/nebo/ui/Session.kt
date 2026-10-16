@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -358,23 +360,28 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             AnimatedContent(stage, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "points",
                 modifier = Modifier.align(Alignment.Center)) { st ->
                 val (key, title, line) = POINT_STAGES[st]
-                // more words than elsewhere on the sky, so they sit on a dark glass that reads over any cloud
-                Column(Modifier.screenPadding().fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(SHADE.copy(alpha = 0.55f))
-                    .padding(horizontal = 20.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // the four points: those already visited glow, the current one is drawn larger
+                // the constellation floats free above; the words sit on a solid night-blue card, narrow and edged in the
+                // point's colour, so they read the same over cloud or clear sky without the sky showing through
+                val tone = key?.let { POINT_COLORS.getValue(it) } ?: Ink.accent
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     val order = listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)
-                    PointsConstellation(order.withIndex().associate { (i, k) -> k to (i <= st) }, Modifier.size(width = 150.dp, height = 104.dp),
+                    PointsConstellation(order.withIndex().associate { (i, k) -> k to (i <= st) }, Modifier.size(width = 170.dp, height = 118.dp),
                         highlight = key, labels = false)
-                    Text(title, style = TitleStyle.copy(fontWeight = FontWeight.Light, color = key?.let { POINT_COLORS.getValue(it) } ?: Ink.text,
-                        shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)))
-                    Text(line, style = BodyStyle.copy(color = Ink.text), textAlign = TextAlign.Center)
-                    // how far into this point, until the next one
-                    if (planned > 0 && st < 4) {
-                        val part = planned / 5f
-                        val k = ((elapsed - st * part) / part).coerceIn(0f, 1f)
-                        Box(Modifier.width(120.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.15f))) {
-                            Box(Modifier.fillMaxWidth(k).fillMaxHeight().background(key?.let { POINT_COLORS.getValue(it) } ?: Ink.accent))
+                    Column(
+                        Modifier.widthIn(max = 320.dp).padding(horizontal = 24.dp).clip(RoundedCornerShape(26.dp))
+                            .background(Color(0xF20E1834)).border(1.dp, tone.copy(alpha = 0.45f), RoundedCornerShape(26.dp))
+                            .padding(horizontal = 22.dp, vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(title, style = TitleStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Light, color = tone, shadow = null))
+                        Text(line, style = BodyStyle.copy(color = Ink.text, lineHeight = 23.sp, shadow = null), textAlign = TextAlign.Center)
+                        // how far into this point, until the next one
+                        if (planned > 0 && st < 4) {
+                            val part = planned / 5f
+                            val k = ((elapsed - st * part) / part).coerceIn(0f, 1f)
+                            Box(Modifier.padding(top = 4.dp).width(110.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
+                                Box(Modifier.fillMaxWidth(k).fillMaxHeight().background(tone))
+                            }
                         }
                     }
                 }
