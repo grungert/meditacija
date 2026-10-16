@@ -99,7 +99,12 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
             val t0 = System.nanoTime()
             (if (choice.engine == "parakeet") ParakeetEngine(models, choice)
             else WhisperEngine(models.file(choice.files[0].name).absolutePath, settings.whisperLang).takeIf { it.ok })
-                ?.also { loaded = it; loadedKey = key; Log.i(TAG, "loaded ${choice.id} in %.1f s".format((System.nanoTime() - t0) / 1e9)) }
+                ?.also {
+                    loaded = it; loadedKey = key
+                    val took = (System.nanoTime() - t0) / 1e9f
+                    settings.measuredSpeech(choice.id, loadSeconds = took)
+                    Log.i(TAG, "loaded ${choice.id} in %.1f s".format(took))
+                }
         } catch (t: Throwable) {
             Log.e(TAG, "could not load ${choice.id}", t); null
         }
@@ -126,8 +131,23 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     private fun heard(engine: SpeechEngine, pcm: FloatArray): String =
         if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) "" else {
             val t0 = System.nanoTime()
-            engine.transcribe(pcm).also { Log.i(TAG, "%.1f s of audio in %.2f s".format(pcm.size / 16000f, (System.nanoTime() - t0) / 1e9)) }
+            engine.transcribe(pcm).also {
+                val took = (System.nanoTime() - t0) / 1e9f
+                val audio = pcm.size / 16000f
+                loadedKey?.substringBefore('/')?.let { id -> settings.measuredSpeech(id, rate = took / audio.coerceAtLeast(1f)) }
+                Log.i(TAG, "%.1f s of audio in %.2f s".format(audio, took))
+            }
         }
+
+    /**
+     * About how many seconds turning a recording of this length into text will take, from the last measurements
+     * on this phone: loading the model (unless it is still loaded) plus the work per second of audio.
+     */
+    fun estimateSeconds(audioSeconds: Float): Float {
+        val choice = models.readyWhisper() ?: return 0f
+        val load = if (loadedKey?.startsWith(choice.id + "/") == true) 0f else settings.speechLoadSeconds(choice.id)
+        return load + settings.speechRate(choice.id) * audioSeconds + 0.5f
+    }
 
     /** Transcribes one recording straight away, for showing the text while the person is still on the screen. */
     suspend fun transcribeNow(file: File): String? = withContext(Dispatchers.Default) {

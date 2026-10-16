@@ -65,6 +65,13 @@ class Settings(private val context: Context) {
     var breathSound: Boolean
         get() = p.getBoolean("breathSound", true)
         set(v) = p.edit { putBoolean("breathSound", v) }
+    /** How long the phone took to load a speech model, and seconds of work per second of audio, as last measured. */
+    fun speechLoadSeconds(model: String) = p.getFloat("speechLoad_$model", if (model == "parakeet") 8f else 3f)
+    fun speechRate(model: String) = p.getFloat("speechRate_$model", if (model == "parakeet") 0.3f else 1.2f)
+    fun measuredSpeech(model: String, loadSeconds: Float? = null, rate: Float? = null) = p.edit {
+        loadSeconds?.let { putFloat("speechLoad_$model", it) }
+        rate?.let { putFloat("speechRate_$model", it) }
+    }
     var ambient: Boolean
         get() = p.getBoolean("ambient", true)
         set(v) = p.edit { putBoolean("ambient", v) }

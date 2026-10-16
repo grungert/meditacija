@@ -1,6 +1,8 @@
 package com.grungert.nebo.ui
 
 import android.Manifest
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -98,6 +100,8 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var askedMic by remember { mutableStateOf(false) }
     var silent by remember { mutableStateOf(false) }
     var transcribing by remember { mutableStateOf(false) }
+    var expected by remember { mutableFloatStateOf(1f) }       // about how long the text will take, in seconds
+    var waited by remember { mutableFloatStateOf(0f) }
     var heard by remember { mutableStateOf<String?>(null) }      // what the speech model heard in the current recording
     var fieldFromVoice by remember { mutableStateOf(false) }     // the text field holds that transcript, maybe corrected
     var model by remember { mutableStateOf<String?>(null) }
@@ -128,6 +132,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 heard = null
                 model = app.transcriber.readyModel()
                 if (model != null) {
+                    expected = app.transcriber.estimateSeconds(dur).coerceAtLeast(1f); waited = 0f
                     transcribing = true
                     val t = app.transcriber.transcribeNow(f)
                     transcribing = false
@@ -224,11 +229,24 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                             topLeft = Offset(i * w + w * 0.2f, (size.height - h) / 2), size = Size(w * 0.6f, h), cornerRadius = CornerRadius(w * 0.3f))
                     }
                 }
+                // while the words are worked out: a bar that fills over the time this phone usually needs,
+                // slowing near the end rather than stopping, so it never claims to be done before it is
+                if (transcribing) {
+                    LaunchedEffect(Unit) { while (true) { delay(100); waited += 0.1f } }
+                    val k = waited / expected
+                    val fill = if (k < 1f) 0.9f * k else 0.9f + 0.09f * (1f - kotlin.math.exp(-(k - 1f) * 1.5f))
+                    val shown by animateFloatAsState(fill, tween(300), label = "transcribe")
+                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.15f))) {
+                        Box(Modifier.fillMaxWidth(shown).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(Ink.accent))
+                    }
+                }
                 Text(
                     when {
                         recording -> clock(seconds) + " / " + clock(MAX_SECONDS.toFloat())
                         silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
-                        transcribing -> "Pretvaram u tekst…"
+                        transcribing -> (expected - waited).let { left ->
+                            if (left > 1.5f) "Pretvaram glas u tekst… još oko ${kotlin.math.ceil(left).toInt()} s" else "Pretvaram glas u tekst, samo trenutak…"
+                        }
                         audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
                         audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti."
                         audio != null -> "Snimljeno · " + clock(audioSeconds)
@@ -246,7 +264,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.surface).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionLabel(if (fieldFromVoice) "Tvoje riječi, možeš ispraviti" else "Ili napiši")
                 Box {
-                    if (text.isEmpty()) Text("Šta je u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
+                    if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else "Šta je u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
                     BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
                         cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp))
                 }
