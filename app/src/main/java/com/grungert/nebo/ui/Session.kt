@@ -39,6 +39,9 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
@@ -359,16 +362,21 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 Column(Modifier.screenPadding().fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(SHADE.copy(alpha = 0.55f))
                     .padding(horizontal = 20.dp, vertical = 22.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // the four points, the current one lit
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        for (k in listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)) {
-                            val on = key == null || key == k
-                            Box(Modifier.size(if (on) 12.dp else 8.dp).clip(CircleShape).background(POINT_COLORS.getValue(k).copy(alpha = if (on) 1f else 0.35f)))
-                        }
-                    }
+                    // the four points: those already visited glow, the current one is drawn larger
+                    val order = listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)
+                    PointsConstellation(order.withIndex().associate { (i, k) -> k to (i <= st) }, Modifier.size(width = 150.dp, height = 104.dp),
+                        highlight = key, labels = false)
                     Text(title, style = TitleStyle.copy(fontWeight = FontWeight.Light, color = key?.let { POINT_COLORS.getValue(it) } ?: Ink.text,
                         shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)))
                     Text(line, style = BodyStyle.copy(color = Ink.text), textAlign = TextAlign.Center)
+                    // how far into this point, until the next one
+                    if (planned > 0 && st < 4) {
+                        val part = planned / 5f
+                        val k = ((elapsed - st * part) / part).coerceIn(0f, 1f)
+                        Box(Modifier.width(120.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.15f))) {
+                            Box(Modifier.fillMaxWidth(k).fillMaxHeight().background(key?.let { POINT_COLORS.getValue(it) } ?: Ink.accent))
+                        }
+                    }
                 }
             }
         }

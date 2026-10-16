@@ -1,6 +1,17 @@
 package com.grungert.nebo.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,6 +65,77 @@ val POINT_COLORS = mapOf(
 )
 val POINT_NAMES = mapOf(THOUGHTS to "Misli", EMOTIONS to "Emocije", BODY to "Tijelo", URGES to "Nagoni")
 
+val POINT_ICONS = mapOf(THOUGHTS to NeboIcon.Cloud, EMOTIONS to NeboIcon.Heart, BODY to NeboIcon.Body, URGES to NeboIcon.Urge)
+
+/** Where each point sits: a diamond read clockwise, thought above, the body below. */
+private val SPOTS = mapOf(
+    THOUGHTS to Offset(0.5f, 0f), EMOTIONS to Offset(1f, 0.5f), BODY to Offset(0.5f, 1f), URGES to Offset(0f, 0.5f),
+)
+
+/**
+ * The four points as lights in a diamond, every one joined to every other by a thread. A point glows in its colour
+ * when it holds something; a thread brightens when both its ends do. [selected] gets a ring, [highlight] (in a session)
+ * is drawn larger while the others rest. Labels are left out when [labels] is false.
+ */
+@Composable
+fun PointsConstellation(
+    filled: Map<String, Boolean>, modifier: Modifier = Modifier, selected: String? = null, highlight: String? = null,
+    labels: Boolean = true, onTap: ((String) -> Unit)? = null,
+) {
+    val glow = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { glow.animateTo(1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse)) }
+    BoxWithConstraints(modifier) {
+        val node = if (labels) 52.dp else 26.dp
+        val labelH = if (labels) 22.dp else 0.dp
+        val w = maxWidth; val h = maxHeight
+        fun center(k: String) = SPOTS.getValue(k).let { o -> DpOffset((w - node) * o.x + node / 2, (h - node - labelH) * o.y + node / 2) }
+        Canvas(Modifier.fillMaxSize()) {
+            val keys = SPOTS.keys.toList()
+            fun pt(k: String) = center(k).let { Offset(it.x.toPx(), it.y.toPx()) }
+            val mid = Offset(size.width / 2, (size.height - labelH.toPx()) / 2)
+            for (i in keys.indices) for (j in i + 1 until keys.size) {
+                val a = keys[i]; val b = keys[j]
+                val pa = pt(a); val pb = pt(b)
+                val lit = filled.getValue(a) && filled.getValue(b)
+                // threads bow gently towards the middle, like strings, and are drawn twice for a soft glow
+                val ctrl = Offset((pa.x + pb.x) / 2 * 0.8f + mid.x * 0.2f, (pa.y + pb.y) / 2 * 0.8f + mid.y * 0.2f)
+                val path = Path().apply { moveTo(pa.x, pa.y); quadraticTo(ctrl.x, ctrl.y, pb.x, pb.y) }
+                val tone = if (lit) lerp(POINT_COLORS.getValue(a), POINT_COLORS.getValue(b), 0.5f) else Color.White
+                if (lit) drawPath(path, tone.copy(alpha = 0.18f + 0.12f * glow.value), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(path, tone.copy(alpha = if (lit) 0.85f else 0.13f), style = Stroke((if (lit) 1.6f else 1f).dp.toPx(), cap = StrokeCap.Round))
+            }
+            for (k in keys) {
+                if (!filled.getValue(k) && highlight != k) continue
+                val c = POINT_COLORS.getValue(k)
+                val r = node.toPx() * (if (highlight == k) 1.25f else 0.95f) * (0.9f + 0.1f * glow.value)
+                drawCircle(Brush.radialGradient(listOf(c.copy(alpha = 0.55f), c.copy(alpha = 0f)), pt(k), r), r, pt(k))
+            }
+        }
+        for (k in SPOTS.keys) {
+            val c = POINT_COLORS.getValue(k)
+            val on = filled.getValue(k)
+            val dim = highlight != null && highlight != k
+            val ctr = center(k)
+            val size = if (highlight == k) node * 1.15f else node
+            Column(
+                Modifier.offset(x = ctr.x - 50.dp, y = ctr.y - size / 2).width(100.dp)
+                    .then(if (onTap != null) Modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Tab, onClickLabel = POINT_NAMES[k]) { onTap(k) } else Modifier),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier.size(size).clip(CircleShape)
+                        .background(if (on) c else Ink.surfaceHigh.copy(alpha = if (dim) 0.5f else 1f))
+                        .then(if (selected == k) Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else Modifier)
+                        .then(if (!on) Modifier.border(1.5.dp, c.copy(alpha = if (dim) 0.3f else 0.7f), CircleShape) else Modifier),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(POINT_ICONS.getValue(k), if (on) Ink.inkOnPaper else c.copy(alpha = if (dim) 0.45f else 1f), size * 0.46f) }
+                if (labels) Text(POINT_NAMES.getValue(k), style = SmallStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (on || selected == k) Ink.text else Ink.soft, shadow = null), modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
 /** The editable four points of one note. The emotions are the note's moods, held by the screen. */
 class FourPointsState(initial: FourPoints = FourPoints()) {
     var thoughts by mutableStateOf(initial.thoughts)
@@ -101,43 +183,7 @@ fun FourPointsCard(state: FourPointsState, moods: SnapshotStateList<String>, sta
             "stisnut stomak traži bijeg u telefon. Kad primijetiš sva četiri, vidiš lanac, i možeš ga prekinuti tamo gdje je najlakše.",
             style = SmallStyle.copy(shadow = null))
 
-        // the diagram: four points, every one joined to every other
-        BoxWithConstraints(Modifier.fillMaxWidth().height(118.dp)) {
-            val w = maxWidth; val h = maxHeight
-            val pill = 112.dp; val ph = 40.dp
-            val spots = mapOf(
-                THOUGHTS to Offset(0f, 0f), EMOTIONS to Offset(1f, 0f),
-                BODY to Offset(0f, 1f), URGES to Offset(1f, 1f),
-            )
-            Canvas(Modifier.fillMaxSize()) {
-                val cx = { k: String -> pill.toPx() / 2 + spots.getValue(k).x * (size.width - pill.toPx()) }
-                val cy = { k: String -> ph.toPx() / 2 + spots.getValue(k).y * (size.height - ph.toPx()) }
-                val keys = spots.keys.toList()
-                for (i in keys.indices) for (j in i + 1 until keys.size) {
-                    val a = keys[i]; val b = keys[j]
-                    val lit = filled.getValue(a) && filled.getValue(b)
-                    drawLine(Color.White.copy(alpha = if (lit) 0.55f else 0.14f), Offset(cx(a), cy(a)), Offset(cx(b), cy(b)), (if (lit) 2f else 1.2f) * density)
-                }
-            }
-            for ((k, s) in spots) {
-                val c = POINT_COLORS.getValue(k)
-                val on = filled.getValue(k)
-                Box(
-                    Modifier.offset(x = (w - pill) * s.x, y = (h - ph) * s.y).width(pill).height(ph)
-                        .clip(RoundedCornerShape(20.dp)).background(if (on) c.copy(alpha = 0.92f) else Ink.surfaceHigh)
-                        .then(if (open == k) Modifier.border(2.dp, c, RoundedCornerShape(20.dp)) else Modifier)
-                        .clickable(role = Role.Tab, onClickLabel = POINT_NAMES[k]) { open = k },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (!on) Box(Modifier.size(7.dp).clip(CircleShape).background(c))
-                        if (!on) Box(Modifier.width(7.dp))
-                        Text(POINT_NAMES.getValue(k), style = BodyStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                            color = if (on) Ink.inkOnPaper else Ink.text, shadow = null))
-                    }
-                }
-            }
-        }
+        PointsConstellation(filled, selected = open, onTap = { open = it }, modifier = Modifier.fillMaxWidth().height(200.dp))
         if (state.recognised.isNotEmpty()) Text("Prepoznato iz tvojih riječi: " + state.recognised.joinToString(", ") { POINT_NAMES.getValue(it).lowercase() } +
             ". Možeš ispraviti.", style = SmallStyle.copy(color = Ink.accent, shadow = null))
 

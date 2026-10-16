@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** A small hand-drawn line icon set, drawn on a 24-unit grid with round strokes. */
-enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share, Pause, Stop, Close, Trash, Points }
+enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share, Pause, Stop, Close, Trash, Points, Heart, Body, Urge }
 
 @Composable
 fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Modifier) {
@@ -104,6 +104,19 @@ fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Mo
                 // four points, each joined to the others
                 line(6f, 6f, 18f, 6f); line(6f, 18f, 18f, 18f); line(6f, 6f, 6f, 18f); line(18f, 6f, 18f, 18f); line(6f, 6f, 18f, 18f); line(18f, 6f, 6f, 18f)
                 circle(6f, 6f, 2.6f, fill = true); circle(18f, 6f, 2.6f, fill = true); circle(6f, 18f, 2.6f, fill = true); circle(18f, 18f, 2.6f, fill = true)
+            }
+            NeboIcon.Heart -> drawPath(path {
+                m(12f, 19.5f); q(4f, 14f, 4.5f, 9f); q(5.2f, 5f, 9f, 5.2f); q(11f, 5.4f, 12f, 7.5f)
+                q(13f, 5.4f, 15f, 5.2f); q(18.8f, 5f, 19.5f, 9f); q(20f, 14f, 12f, 19.5f); close()
+            }, color, style = st)
+            NeboIcon.Body -> {
+                circle(12f, 5.5f, 2.4f)
+                drawPath(path { m(12f, 8.5f); l(12f, 14.5f); m(6.5f, 10.5f); q(12f, 12.5f, 17.5f, 10.5f); m(12f, 14.5f); l(8.5f, 20f); m(12f, 14.5f); l(15.5f, 20f) }, color, style = st)
+            }
+            NeboIcon.Urge -> {
+                drawPath(path { m(4f, 12f); q(9f, 12f, 12f, 12f); l(18f, 12f) }, color, style = st)
+                drawPath(path { m(14.5f, 7.5f); l(19f, 12f); l(14.5f, 16.5f) }, color, style = st)
+                line(4f, 7.5f, 8f, 7.5f); line(4f, 16.5f, 8f, 16.5f)
             }
             NeboIcon.Share -> {
                 drawPath(path { m(8f, 9f); l(5.5f, 9f); l(5.5f, 20f); l(18.5f, 20f); l(18.5f, 9f); l(16f, 9f) }, color, style = st)
