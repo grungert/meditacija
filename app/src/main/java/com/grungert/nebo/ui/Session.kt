@@ -460,7 +460,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (cfg.type == "bodyscan" && !ended) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val area = with(density) { Rect(0f, maxHeight.toPx() * 0.13f, maxWidth.toPx(), maxHeight.toPx() * 0.64f) }
+                val area = with(density) { Rect(maxWidth.toPx() * 0.06f, maxHeight.toPx() * 0.14f, maxWidth.toPx() * 0.94f, maxHeight.toPx() * 0.66f) }
                 BodyScanView(elapsed, planned, area, marks.toList()) { figure[0] = it }
             }
             val (st, inStage, len) = scanStage(elapsed, planned)

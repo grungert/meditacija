@@ -120,8 +120,10 @@ fun PointsConstellation(
             val dim = highlight != null && highlight != k
             val ctr = center(k)
             val size = if (highlight == k) node * 1.15f else node
+            // without labels the column is only as wide as its light, so a small card cannot squeeze it off centre
+            val colW = if (labels) 100.dp else size
             Column(
-                Modifier.offset(x = ctr.x - 50.dp, y = ctr.y - size / 2).width(100.dp)
+                Modifier.offset(x = ctr.x - colW / 2, y = ctr.y - size / 2).width(colW)
                     .then(if (onTap != null) Modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Tab, onClickLabel = POINT_NAMES[k]) { onTap(k) } else Modifier),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {

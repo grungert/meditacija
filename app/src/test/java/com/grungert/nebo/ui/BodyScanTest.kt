@@ -21,12 +21,13 @@ class BodyScanTest {
 
     @Test
     fun aTouchFindsItsPart() {
-        assertEquals("ramena", regionAt(at(0.33f, 0.215f), box, "stopala"))
-        assertEquals("stomak", regionAt(at(0.5f, 0.45f), box, "stopala"))
+        assertEquals("ramena", regionAt(at(0.36f, 0.285f), box, "stopala"))
+        assertEquals("stomak", regionAt(at(0.5f, 0.555f), box, "stopala"))
         // the back is reached through the torso, while the scan is on it
-        assertEquals("leđa", regionAt(at(0.5f, 0.40f), box, "leđa"))
-        assertEquals("ruke", regionAt(at(0.85f, 0.45f), box, "glava"))
-        assertNull(regionAt(at(0.95f, 0.95f), box, "noge"))
+        assertEquals("leđa", regionAt(at(0.5f, 0.47f), box, "leđa"))
+        assertEquals("ruke", regionAt(at(0.77f, 0.55f), box, "glava"))
+        assertEquals("noge", regionAt(at(0.2f, 0.76f), box, "glava"))
+        assertNull(regionAt(at(0.98f, 0.04f), box, "noge"))
     }
 
     @Test
