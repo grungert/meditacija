@@ -19,7 +19,25 @@ data class Session(
     val walk: Boolean,
     val thoughts: Int = 0,
     val koanId: String? = null,
+    /** Where tension was touched during a body scan. */
+    val marks: List<BodyMark> = emptyList(),
+    /** Where the mind went most often during a clouds session, as the person said afterwards. */
+    val wander: List<String> = emptyList(),
 )
+
+/** One touch on the body during a scan: the region, and where on the figure (0..1 of its width and height). */
+data class BodyMark(val region: String, val x: Float, val y: Float) {
+    companion object {
+        fun toJson(marks: List<BodyMark>): String? = if (marks.isEmpty()) null else org.json.JSONArray().also { a ->
+            for (m in marks) a.put(org.json.JSONObject().put("r", m.region).put("x", m.x.toDouble()).put("y", m.y.toDouble()))
+        }.toString()
+
+        fun fromJson(s: String?): List<BodyMark> = if (s.isNullOrBlank()) emptyList() else runCatching {
+            val a = org.json.JSONArray(s)
+            List(a.length()) { i -> a.getJSONObject(i).let { BodyMark(it.getString("r"), it.optDouble("x").toFloat(), it.optDouble("y").toFloat()) } }
+        }.getOrDefault(emptyList())
+    }
+}
 
 /** One spoken or written moment: before or after a session, an answer to a random prompt, or a free note. */
 data class Entry(
@@ -69,12 +87,12 @@ data class FourPoints(
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
-class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
+class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
             type TEXT NOT NULL, planned_sec INTEGER NOT NULL, actual_sec INTEGER NOT NULL DEFAULT 0, pattern TEXT NOT NULL,
-            walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT)""")
+            walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT, marks TEXT, wander TEXT)""")
         db.execSQL("""CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
             session_id INTEGER, prompt_id INTEGER, audio_path TEXT, text TEXT, transcript TEXT, transcript_model TEXT,
             moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0, points TEXT)""")
@@ -90,6 +108,10 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
         if (oldVersion < 2) db.execSQL("ALTER TABLE entries ADD COLUMN starred INTEGER NOT NULL DEFAULT 0")
         if (oldVersion < 3) createFeedback(db)
         if (oldVersion < 4) db.execSQL("ALTER TABLE entries ADD COLUMN points TEXT")
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN marks TEXT")
+            db.execSQL("ALTER TABLE sessions ADD COLUMN wander TEXT")
+        }
     }
 
     /** +1 when a koan or message spoke to the person, -1 for "not now". */
@@ -108,7 +130,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
 
     fun deleteEntry(id: Long) {
         writableDatabase.delete("entries", "id=?", arrayOf(id.toString()))
-        writableDatabase.delete("embeddings", "item_id=?", arrayOf("entry:$id"))
+        writableDatabase.delete("embeddings", "item_id IN (?, ?)", arrayOf("entry:$id", "passage:$id"))
     }
 
     // ---------- sessions ----------
@@ -117,11 +139,19 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
         put("pattern", s.pattern); put("walk", if (s.walk) 1 else 0)
     })
 
-    fun finishSession(id: Long, endedAt: Long, actualSec: Int, thoughts: Int) {
+    fun finishSession(id: Long, endedAt: Long, actualSec: Int, thoughts: Int, marks: List<BodyMark> = emptyList()) {
         writableDatabase.update("sessions", ContentValues().apply {
             put("ended_at", endedAt); put("actual_sec", actualSec); put("thoughts", thoughts)
+            if (marks.isNotEmpty()) put("marks", BodyMark.toJson(marks))
         }, "id=?", arrayOf(id.toString()))
     }
+
+    fun setSessionWander(id: Long, wander: List<String>) {
+        writableDatabase.update("sessions", ContentValues().apply { put("wander", wander.joinToString(",").ifEmpty { null }) }, "id=?", arrayOf(id.toString()))
+    }
+
+    fun session(id: Long): Session? =
+        readableDatabase.rawQuery("SELECT * FROM sessions WHERE id=?", arrayOf(id.toString())).use { c -> if (c.moveToNext()) c.toSession() else null }
 
     fun setSessionKoan(id: Long, koanId: String) {
         writableDatabase.update("sessions", ContentValues().apply { put("koan_id", koanId) }, "id=?", arrayOf(id.toString()))
@@ -136,6 +166,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 4) {
         id = long("id"), startedAt = long("started_at"), endedAt = longOrNull("ended_at"), type = str("type")!!,
         plannedSec = int("planned_sec"), actualSec = int("actual_sec"), pattern = str("pattern")!!,
         walk = int("walk") == 1, thoughts = int("thoughts"), koanId = str("koan_id"),
+        marks = BodyMark.fromJson(str("marks")), wander = csv(str("wander")),
     )
 
     // ---------- entries ----------

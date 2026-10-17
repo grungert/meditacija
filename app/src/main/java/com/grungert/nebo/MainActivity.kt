@@ -54,6 +54,7 @@ sealed class Screen {
     data class KoanNotes(val koanId: String) : Screen()
     data class Thread(val ids: List<Long>, val title: String) : Screen()
     data object Fifty : Screen()
+    data object Constellations : Screen()
 }
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
@@ -116,6 +117,8 @@ class MainActivity : ComponentActivity() {
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
         if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty
+        // "3 minuta" on the daily reminder: the breathing space, straight away
+        if (intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
         // "Zapiši" on the home-screen widget
         if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")
     }
@@ -136,6 +139,7 @@ class MainActivity : ComponentActivity() {
                 is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup, is Screen.Week -> Screen.Home
                 is Screen.Similar -> Screen.Journal
                 is Screen.Thread -> Screen.Journal
+                Screen.Constellations -> Screen.Journal
                 Screen.Fifty -> Screen.Home
                 is Screen.KoanNotes -> Screen.Home
                 is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
@@ -170,6 +174,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                     is Screen.Thread -> com.grungert.nebo.ui.ThreadScreen(sc, go)
                     Screen.Fifty -> com.grungert.nebo.ui.FiftyScreen(host, go)
+                    Screen.Constellations -> com.grungert.nebo.ui.ConstellationsScreen(host, go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
                 }
             }

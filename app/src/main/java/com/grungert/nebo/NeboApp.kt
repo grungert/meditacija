@@ -40,10 +40,11 @@ class NeboApp : Application() {
             val retag = settings.themesVersion < THEMES_VERSION
             recommender.tagNotes(force = retag)
             if (retag) settings.themesVersion = THEMES_VERSION
+            recommender.warmSearch()
             com.grungert.nebo.data.Backup.autoIfDue(this@NeboApp)
         }
         // a note that just became text gets its themes
-        scope.launch { transcriber.done.collect { if (it > 0) recommender.tagNotes() } }
+        scope.launch { transcriber.done.collect { if (it > 0) { recommender.tagNotes(); recommender.warmSearch() } } }
     }
 }
 

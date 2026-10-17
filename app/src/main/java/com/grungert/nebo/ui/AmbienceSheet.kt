@@ -42,13 +42,17 @@ val TIME_OPTIONS = listOf("zora" to "6.2", "dan" to "12.5", "zalazak" to "18.9",
  * the time of day, the season and the weather. Choices are kept for the next session too.
  */
 @Composable
-fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, breathOn: Boolean? = null, onBreath: (Boolean) -> Unit = {}, onClose: () -> Unit) {
+fun AmbienceSheet(
+    host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, breathOn: Boolean? = null, onBreath: (Boolean) -> Unit = {},
+    lakeAllowed: Boolean = true, onClose: () -> Unit,
+) {
     val s = LocalContext.current.app.settings
     var volume by remember { mutableStateOf(s.ambientVolume) }
     var timeMode by remember { mutableStateOf(s.timeMode) }
     var seasonMode by remember { mutableStateOf(s.seasonMode) }
     var weatherMode by remember { mutableStateOf(s.weatherMode) }
     var front by remember { mutableStateOf(s.meadowFront) }
+    var lake by remember { mutableStateOf(s.lakeScene && lakeAllowed) }
 
     fun time(v: String) { timeMode = v; s.timeMode = v; host.day.mode = v }
     fun season(v: String) { seasonMode = v; s.seasonMode = v; host.applyWeatherSettings(v, weatherMode) }
@@ -84,6 +88,14 @@ fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, b
 
             if (breathOn != null) SwitchRow("Zvuk daha", breathOn, onBreath, sub = "Tihi šum vazduha: raste na udahu, spušta se na izdahu.")
 
+            SectionLabel("Mjesto")
+            if (lakeAllowed) ChipRow {
+                Chip("livada", !lake, { lake = false; s.lakeScene = false; host.lake = false })
+                Chip("jezero", lake, { lake = true; s.lakeScene = true; host.lake = true })
+            } else Text("Šetnja uvijek ide livadom.", style = SmallStyle.copy(shadow = null))
+            if (!lake) SwitchRow("Prednji plan livade", front, { front = it; s.meadowFront = it; host.foreground = it },
+                sub = "Nekoliko krupnih tamnih vlati uz donju ivicu, za dubinu.")
+
             SectionLabel("Doba dana")
             ChipRow {
                 Chip("po satu", timeMode == "clock", { time("clock") })
@@ -96,9 +108,6 @@ fun AmbienceSheet(host: SkyHost, soundOn: Boolean, onSound: (Boolean) -> Unit, b
                 Chip("kako dođe", weatherMode == "auto", { weather("auto") })
                 for (w in Weather.entries) Chip(w.label, weatherMode == w.name, { weather(w.name) })
             }
-
-            SectionLabel("Livada")
-            SwitchRow("Prednji plan", front, { front = it; s.meadowFront = it; host.foreground = it }, sub = "Nekoliko krupnih tamnih vlati uz donju ivicu, za dubinu.")
 
             SectionLabel("Godišnje doba")
             ChipRow {

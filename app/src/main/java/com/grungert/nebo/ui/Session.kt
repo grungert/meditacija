@@ -55,6 +55,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,7 +77,9 @@ import com.grungert.nebo.SkyHost
 import com.grungert.nebo.app
 import com.grungert.nebo.audio.Bell
 import com.grungert.nebo.audio.Cue
+import com.grungert.nebo.data.BodyMark
 import com.grungert.nebo.data.Session
+import com.grungert.nebo.koan.MindHabits
 import com.grungert.nebo.sky.Phase
 import com.grungert.nebo.sky.Scenery
 import com.grungert.nebo.sky.patternById
@@ -111,6 +114,38 @@ private fun Modifier.softShade() = drawBehind {
     scale(1f, 0.42f, pivot = center) {
         drawCircle(Brush.radialGradient(listOf(SHADE.copy(alpha = 0.30f), SHADE.copy(alpha = 0.12f), Color.Transparent), center, r), r, center)
     }
+}
+
+/**
+ * What a part of a guided session asks, on a solid night-blue card edged in its colour, so it reads the same over cloud
+ * or clear sky: an optional small label, the title, the words, and a thin bar for how far into this part.
+ */
+@Composable
+private fun StageCard(title: String, line: String, tone: Color, progress: Float?, label: String? = null) {
+    Column(
+        Modifier.widthIn(max = 340.dp).padding(horizontal = 24.dp).clip(RoundedCornerShape(26.dp))
+            .background(Color(0xF20E1834)).border(1.dp, tone.copy(alpha = 0.45f), RoundedCornerShape(26.dp))
+            .padding(horizontal = 22.dp, vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        if (label != null) Text(label, style = LabelStyle.copy(color = tone.copy(alpha = 0.85f), shadow = null))
+        Text(title, style = TitleStyle.copy(fontSize = 28.sp, fontWeight = FontWeight.Light, color = tone, shadow = null), textAlign = TextAlign.Center)
+        Text(line, style = BodyStyle.copy(color = Ink.text, lineHeight = 23.sp, shadow = null), textAlign = TextAlign.Center)
+        if (progress != null) Box(Modifier.padding(top = 4.dp).width(110.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
+            Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(tone))
+        }
+    }
+}
+
+/** A line for the end of a body scan: where tension was touched today, and where it most often is over the last scans. */
+private fun scanNote(today: List<String>, sessions: List<Session>): String {
+    val names = today.mapNotNull { bodyRegion(it)?.name?.lowercase() }
+    val now = if (names.isEmpty()) "Danas bez oznaka napetosti." else "Napetost danas: " + names.joinToString(", ") + "."
+    val scans = sessions.filter { it.type == "bodyscan" && it.marks.isNotEmpty() }
+    if (scans.size < 3) return now
+    val top = scans.flatMap { s -> s.marks.map { it.region }.distinct() }.groupingBy { it }.eachCount().maxByOrNull { it.value } ?: return now
+    val where = bodyRegion(top.key)?.where ?: return now
+    return now + " Najčešće je nosiš $where (${top.value} od ${scans.size} skeniranja)."
 }
 
 /** A round glass control for the session's top bar. */
@@ -163,7 +198,14 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var left by remember { mutableStateOf(false) }
     var soundOn by remember { mutableStateOf(cfg.ambient) }
     var breathOn by remember { mutableStateOf(cfg.paced && app.settings.breathSound) }
-    val planned = cfg.minutes * 60
+    val planned = cfg.plannedSeconds
+    // body scan: the places touched, with the second of each touch, and where the figure stands on screen
+    val marks = remember { mutableStateListOf<Pair<BodyMark, Float>>() }
+    val figure = remember { arrayOfNulls<Rect>(1) }
+    // clouds: where the mind went, asked at the end
+    val wander = remember { mutableStateListOf<String>() }
+    var endNote by remember { mutableStateOf<String?>(null) }
+    val asksWander = cfg.type == "thoughts"
 
     fun pause(on: Boolean) {
         if (ended) return
@@ -182,6 +224,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (left) return
         left = true
         val id = sessionId
+        if (id != null && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
         go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
     }
 
@@ -202,18 +245,22 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         app.scope.launch { Bell.ring() }
         scope.launch {
             val id = sessionId
+            val touched = marks.map { it.first }
             if (id != null) withContext(Dispatchers.IO) {
-                app.db.finishSession(id, System.currentTimeMillis(), elapsed.toInt(), scenery.thoughtCount)
+                app.db.finishSession(id, System.currentTimeMillis(), elapsed.toInt(), scenery.thoughtCount, touched)
             }
+            if (cfg.type == "bodyscan") endNote = withContext(Dispatchers.IO) { scanNote(touched.map { it.region }.distinct(), app.db.sessions()) }
             delay(1500)
             endReady = true
-            delay(7000)
-            proceed()
+            // after the clouds the ending waits for an answer (or a skip); otherwise it moves on by itself
+            if (!asksWander) { delay(7000); proceed() }
         }
     }
 
     DisposableEffect(Unit) {
         view.keepScreenOn = true
+        // by the lake, if that is where the person sits; the walk always goes through the meadow
+        host.lake = app.settings.lakeScene && cfg.type != "walk"
         val e = host.engine
         e.walkOn = cfg.type == "walk"
         e.paced = cfg.paced
@@ -237,7 +284,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // soft bells at the chosen interval, or at unexpected moments for a mindfulness bell
         fun gap(): Float = if (cfg.intervalMinutes < 0) 120f + kotlin.random.Random.nextFloat() * 240f else cfg.intervalMinutes * 60f
         var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
-        var pointsBellAt = -1
+        var stageAt = -1
         host.onFrame = { dt ->
             if (!ended && !paused) {
                 elapsed += dt
@@ -246,10 +293,21 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 host.breath.progress = if (e.phaseDuration > 0f) e.phaseT / e.phaseDuration else 0f
                 if (ambienceOpen) lastTouch = 0f
                 if (lastTouch > 5f) { showUi = false; if (peek) { peek = false; host.dark = cfg.eyesClosed } }
-                // a soft bell as the four points turn from one to the next
-                if (cfg.type == "points") {
-                    val st = pointsStage(elapsed, planned)
-                    if (st != pointsBellAt) { if (pointsBellAt >= 0) scope.launch { Bell.ring(soft = true) }; pointsBellAt = st }
+                // a soft bell as the four points or the parts of the hourglass turn from one to the next;
+                // the body scan moves on with a light tick, and rings once for the whole body
+                val st = when (cfg.type) {
+                    "points" -> pointsStage(elapsed, planned)
+                    "hourglass" -> hourglassStage(elapsed)
+                    "bodyscan" -> scanStage(elapsed, planned).first
+                    else -> -1
+                }
+                if (st != stageAt) {
+                    if (stageAt >= 0) when (cfg.type) {
+                        "bodyscan" -> if (st == BODY_REGIONS.lastIndex) scope.launch { Bell.ring(soft = true) }
+                            else if (app.settings.haptics) runCatching { vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)) }
+                        else -> scope.launch { Bell.ring(soft = true) }
+                    }
+                    stageAt = st
                 }
                 if (elapsed >= nextBell && (planned == 0 || elapsed < planned - 20)) {
                     nextBell += gap()
@@ -262,6 +320,15 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             lastTouch = 0f; showUi = true
             if (cfg.eyesClosed && !ended && !paused) { peek = true; host.dark = false }
             if (cfg.type == "thoughts" && !ended && !paused) { scenery.addThought(pos.x, pos.y); thoughts = scenery.thoughtCount }
+            // a touch on the body marks tension there
+            val box = figure[0]
+            if (cfg.type == "bodyscan" && !ended && !paused && box != null) {
+                val current = BODY_REGIONS[scanStage(elapsed, planned).first].id
+                regionAt(pos, box, current)?.let { r ->
+                    marks += BodyMark(r, ((pos.x - box.left) / box.width).coerceIn(0f, 1f), ((pos.y - box.top) / box.height).coerceIn(0f, 1f)) to elapsed
+                    if (app.settings.haptics) runCatching { vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)) }
+                }
+            }
         }
         word = if (cfg.paced) e.phase.label else ""
         scope.launch {
@@ -289,12 +356,16 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             host.ambience.stop()
             host.breath.stop()
             host.onPhase = null; host.onFrame = null; host.onTap = null
-            host.showCircle = false; host.dark = false
+            host.showCircle = false; host.dark = false; host.lake = false
             e.paced = false; e.walkOn = false; e.running = true
         }
     }
 
     Box(Modifier.fillMaxSize()) {
+        // the far shore, reeds and lily pads, when sitting by the lake
+        val lakeShown by animateFloatAsState(if (host.lake) 1f else 0f, tween(900), label = "lake")
+        if (lakeShown > 0.01f) LakeShore(host, visible = lakeShown)
+
         // time along the edge of the screen: a thin line that goes once around, clockwise from the top
         if (planned > 0) {
             val glow by animateFloatAsState(when { host.dark && !peek -> 0f; showUi || paused -> 0.75f; else -> 0.3f }, tween(600), label = "edge")
@@ -367,29 +438,47 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     val order = listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)
                     PointsConstellation(order.withIndex().associate { (i, k) -> k to (i <= st) }, Modifier.size(width = 170.dp, height = 118.dp),
                         highlight = key, labels = false)
-                    Column(
-                        Modifier.widthIn(max = 320.dp).padding(horizontal = 24.dp).clip(RoundedCornerShape(26.dp))
-                            .background(Color(0xF20E1834)).border(1.dp, tone.copy(alpha = 0.45f), RoundedCornerShape(26.dp))
-                            .padding(horizontal = 22.dp, vertical = 20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(title, style = TitleStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Light, color = tone, shadow = null))
-                        Text(line, style = BodyStyle.copy(color = Ink.text, lineHeight = 23.sp, shadow = null), textAlign = TextAlign.Center)
-                        // how far into this point, until the next one
-                        if (planned > 0 && st < 4) {
-                            val part = planned / 5f
-                            val k = ((elapsed - st * part) / part).coerceIn(0f, 1f)
-                            Box(Modifier.padding(top = 4.dp).width(110.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.12f))) {
-                                Box(Modifier.fillMaxWidth(k).fillMaxHeight().background(tone))
-                            }
-                        }
-                    }
+                    // how far into this point, until the next one
+                    val part = planned / 5f
+                    StageCard(title, line, tone, if (planned > 0 && st < 4) ((elapsed - st * part) / part).coerceIn(0f, 1f) else null)
+                }
+            }
+        }
+
+        // the three-minute breathing space: an hourglass of light, and what each minute asks
+        if (cfg.type == "hourglass" && !ended) {
+            HourglassView(elapsed)
+            val st = hourglassStage(elapsed)
+            AnimatedContent(st, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "hourglass",
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)) { s ->
+                val (name, title, line) = HOURGLASS_STAGES[s]
+                StageCard(title, line, Ink.accent, ((elapsed - s * 60f) / 60f).coerceIn(0f, 1f), label = "${name.uppercase()} · ${s + 1} OD 3")
+            }
+        }
+
+        // the body scan: a figure of light, the warm light resting on one part after another, touches marking tension
+        if (cfg.type == "bodyscan" && !ended) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val area = with(density) { Rect(0f, maxHeight.toPx() * 0.13f, maxWidth.toPx(), maxHeight.toPx() * 0.64f) }
+                BodyScanView(elapsed, planned, area, marks.toList()) { figure[0] = it }
+            }
+            val (st, inStage, len) = scanStage(elapsed, planned)
+            AnimatedContent(st, transitionSpec = { fadeIn(tween(1200)) togetherWith fadeOut(tween(1200)) }, label = "scan",
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)) { s ->
+                val region = BODY_REGIONS[s]
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StageCard(region.name, region.line, Ink.accent,
+                        if (planned > 0 || s < BODY_REGIONS.lastIndex) (inStage / len).coerceIn(0f, 1f) else null,
+                        label = if (s < BODY_REGIONS.lastIndex) "${s + 1} OD ${BODY_REGIONS.size - 1}" else "NA KRAJU")
+                    if (elapsed < 25f) Text("Ako negdje osjetiš napetost, dodirni to mjesto na tijelu.", style = SmallStyle,
+                        textAlign = TextAlign.Center, modifier = Modifier.screenPadding())
                 }
             }
         }
 
         if (cfg.type == "thoughts") {
-            AnimatedVisibility(elapsed < 9f, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
+            AnimatedVisibility(elapsed < 9f && !ended, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
                 Text("Kad primijetiš da je misao odlutala,\ndodirni nebo i pusti je.", style = HeadStyle.copy(fontSize = 24.sp),
                     textAlign = TextAlign.Center, modifier = Modifier.screenPadding())
             }
@@ -402,7 +491,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
 
         // drawn above the eyes-closed darkness, so the question is there for the first breaths
         val weekQuestion = remember { app.library.byId(app.settings.activeWeekKoan())?.question }
-        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type != "thoughts" && !ended, enter = fadeIn(), exit = fadeOut(),
+        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type !in listOf("thoughts", "bodyscan", "hourglass") && !ended, enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.screenPadding()) {
                 Text("PITANJE SEDMICE", style = LabelStyle)
@@ -419,7 +508,9 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                             style = NumberStyle.copy(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp))
                         Text(when {
                             cfg.type == "thoughts" -> "oblaka: $thoughts"
-                            planned > 0 -> "preostalo od ${cfg.minutes} min"
+                            cfg.type == "bodyscan" && marks.isNotEmpty() ->
+                                marks.map { it.first.region }.distinct().size.let { n -> "napetost: $n " + plural(n, "mjesto", "mjesta", "mjesta") }
+                            planned > 0 -> "preostalo od ${planned / 60} min"
                             else -> "bez ograničenja"
                         }, style = SmallStyle)
                     }
@@ -439,7 +530,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             GlassButton("Nastavi", { pause(false) }, strong = true, icon = NeboIcon.Play)
         }
 
-        if (ambienceOpen && !ended) AmbienceSheet(host, soundOn, { on ->
+        if (ambienceOpen && !ended) AmbienceSheet(host, soundOn, lakeAllowed = cfg.type != "walk", onSound = { on ->
             soundOn = on; app.settings.ambient = on
             if (on) host.ambience.start() else host.ambience.stop()
         }, breathOn = if (cfg.paced) breathOn else null, onBreath = { on ->
@@ -447,7 +538,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (on) host.breath.start() else host.breath.stop()
         }, onClose = { ambienceOpen = false; lastTouch = 0f; host.dark = cfg.eyesClosed && !paused })
 
-        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (endReady) proceed() },
+        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (endReady && !asksWander) proceed() },
             contentAlignment = Alignment.Center) {
             val shown by animateFloatAsState(if (endReady) 1f else 0f, tween(1800), label = "end")
             Column(Modifier.alpha(shown).fillMaxWidth().softShade().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -455,7 +546,19 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 Text("Sesija je završena.", style = TitleStyle.copy(fontWeight = FontWeight.Light, shadow = Shadow(SHADE.copy(alpha = 0.55f), Offset(0f, 1f), 12f)))
                 val min = (elapsed / 60f).let { if (it < 1f) null else kotlin.math.ceil(it).toInt() }
                 Text(if (min == null) "Neka zvono utihne." else "$min min tišine. Neka zvono utihne.", style = SmallStyle, textAlign = TextAlign.Center)
-                Text("Dodirni za nastavak", style = SmallStyle)
+                endNote?.let { Text(it, style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = Shadow(SHADE.copy(alpha = 0.7f), Offset(0f, 1f), 10f)), textAlign = TextAlign.Center, modifier = Modifier.screenPadding()) }
+                if (asksWander) {
+                    // one tap: where did the mind go most often? (any number, or none)
+                    Column(Modifier.widthIn(max = 360.dp).padding(horizontal = 20.dp).clip(RoundedCornerShape(26.dp)).background(Color(0xF20E1834))
+                        .padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Kuda je um najčešće odlazio?", style = HeadStyle.copy(fontSize = 19.sp, shadow = null))
+                        ChipRow { for (wd in MindHabits.WANDER) Chip(wd, wd in wander, { if (wd in wander) wander.remove(wd) else wander.add(wd) }) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            GlassButton("Preskoči", { wander.clear(); proceed() }, Modifier.weight(1f))
+                            GlassButton("Dalje", { proceed() }, Modifier.weight(1f), strong = true, enabled = endReady)
+                        }
+                    }
+                } else Text("Dodirni za nastavak", style = SmallStyle)
             }
         }
     }

@@ -9,7 +9,8 @@ import kotlin.math.sqrt
 
 /**
  * multilingual-e5-small on ONNX Runtime: a sentence in, a 384-number "meaning" out.
- * Both sides of a comparison use the "query: " prefix, which e5 recommends for symmetric similarity.
+ * Comparing two notes, both sides use the "query: " prefix, which e5 recommends for symmetric similarity;
+ * searching, the notes are embedded as "passage: ", which ranked the right notes higher on our test set.
  */
 class Embedder(modelFile: File, tokenizerFile: File) : AutoCloseable {
     private val env = OrtEnvironment.getEnvironment()
@@ -18,8 +19,8 @@ class Embedder(modelFile: File, tokenizerFile: File) : AutoCloseable {
     })
     private val tokenizer = SentencePieceUnigram.load(tokenizerFile)
 
-    fun embed(text: String): FloatArray {
-        val ids = tokenizer.encode("query: " + text.trim(), maxLen = 256)
+    fun embed(text: String, prefix: String = "query: "): FloatArray {
+        val ids = tokenizer.encode(prefix + text.trim(), maxLen = 256)
         val shape = longArrayOf(1, ids.size.toLong())
         val mask = LongArray(ids.size) { 1 }
         OnnxTensor.createTensor(env, LongBuffer.wrap(ids), shape).use { tIds ->

@@ -12,7 +12,10 @@ import java.util.Date
 import java.util.Locale
 
 val KIND_LABEL = mapOf("before" to "prije sesije", "after" to "poslije sesije", "esm" to "zapažanje na poziv", "note" to "zapažanje", "week" to "sedmični pregled")
-val TYPE_LABEL = mapOf("breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci misli", "silence" to "Tišina")
+val TYPE_LABEL = mapOf(
+    "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci misli", "silence" to "Tišina", "points" to "4 tačke",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela",
+)
 
 /** Plain text, oldest first, easy to read or to send for a look at the patterns. */
 object Export {
@@ -50,7 +53,9 @@ object Export {
                     val mins = ev.actualSec / 60
                     sb.appendLine("${time.format(Date(t))} · sesija: ${TYPE_LABEL[ev.type] ?: ev.type}, $mins min" +
                         (if (ev.type == "breath" || ev.type == "walk") ", ritam ${ev.pattern}" else "") +
-                        (if (ev.walk) ", šetnja" else "") + (if (ev.thoughts > 0) ", oblaka misli: ${ev.thoughts}" else ""))
+                        (if (ev.walk) ", šetnja" else "") + (if (ev.thoughts > 0) ", oblaka misli: ${ev.thoughts}" else "") +
+                        (if (ev.marks.isNotEmpty()) ", napetost: " + ev.marks.map { it.region }.distinct().joinToString(", ") else "") +
+                        (if (ev.wander.isNotEmpty()) ", um je odlazio u: " + ev.wander.joinToString(", ") else ""))
                     library.byId(ev.koanId)?.let { sb.appendLine("  koan: ${it.title ?: it.text.take(60)}") }
                 }
                 is Entry -> {

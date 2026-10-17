@@ -65,7 +65,7 @@ import java.util.Date
 import java.util.Locale
 
 data class SessionConfig(
-    val type: String,          // breath | walk | thoughts | silence | points
+    val type: String,          // breath | walk | thoughts | silence | points | hourglass | bodyscan
     val minutes: Int,          // 0 = open-ended
     val pattern: String,
     val intervalMinutes: Int,  // 0 none, -1 random
@@ -75,9 +75,12 @@ data class SessionConfig(
     val ambient: Boolean = true,
 ) {
     val paced get() = type == "breath" || type == "walk"
+    /** The planned length in seconds: the breathing space is always three minutes. */
+    val plannedSeconds get() = if (type == "hourglass") HOURGLASS_SECONDS else minutes * 60
 }
 
-data class SessionType(val id: String, val name: String, val about: String, val icon: NeboIcon)
+/** A kind of session; [short] is the label under its round button, where the full name would not fit. */
+data class SessionType(val id: String, val name: String, val about: String, val icon: NeboIcon, val short: String = name)
 
 val SESSION_TYPES = listOf(
     SessionType("breath", "Disanje", "Krug svjetla vodi udah i izdah.", NeboIcon.Breath),
@@ -85,7 +88,16 @@ val SESSION_TYPES = listOf(
     SessionType("thoughts", "Oblaci", "Primijetiš misao, dodirneš nebo, pustiš je.", NeboIcon.Cloud),
     SessionType("silence", "Tišina", "Samo nebo i zvono.", NeboIcon.Silence),
     SessionType("points", "4 tačke", "Misli, emocije, tijelo i nagoni, jedno po jedno, pa sve zajedno.", NeboIcon.Points),
+    SessionType("hourglass", "Pješčani sat", "Tri minute: široko, pa samo dah, pa cijelo tijelo. Za usred dana.", NeboIcon.Hourglass, short = "3 minuta"),
+    SessionType("bodyscan", "Skeniranje tijela", "Svjetlo putuje od stopala do tjemena. Dodirni gdje osjećaš napetost.", NeboIcon.Body, short = "Tijelo"),
 )
+
+/** Lengths offered for a kind of session; the breathing space has none to choose. */
+private fun lengthsFor(type: String) = when (type) {
+    "hourglass" -> emptyList()
+    "bodyscan" -> listOf(5, 10, 15, 20, 0)
+    else -> listOf(3, 5, 10, 15, 20, 0)
+}
 
 private fun greeting(h: Float) = when {
     h < 5 -> "Laku noć"
@@ -102,12 +114,16 @@ fun weekStart(): Long = Calendar.getInstance().apply {
 
 fun android.content.Context.lastConfig(): SessionConfig {
     val s = app.settings
-    return SessionConfig(s.sessionType, s.minutes, s.pattern, s.intervalMinutes, s.checkInBefore, s.checkInAfter, s.eyesClosed, s.ambient)
+    // a length chosen for another kind may not suit this one (a three-minute body scan rushes)
+    val lengths = lengthsFor(s.sessionType)
+    val minutes = if (lengths.isEmpty() || s.minutes in lengths) s.minutes else 10
+    return SessionConfig(s.sessionType, minutes, s.pattern, s.intervalMinutes, s.checkInBefore, s.checkInAfter, s.eyesClosed, s.ambient)
 }
 
 private fun describe(c: SessionConfig): String {
     val t = SESSION_TYPES.firstOrNull { it.id == c.type } ?: SESSION_TYPES[0]
-    return t.name + " · " + (if (c.minutes == 0) "slobodno" else "${c.minutes} min") + (if (c.paced) " · " + patternById(c.pattern).ratio else "")
+    val length = c.plannedSeconds.let { if (it == 0) "slobodno" else "${it / 60} min" }
+    return t.name + " · " + length + (if (c.paced) " · " + patternById(c.pattern).ratio else "")
 }
 
 /**
@@ -119,7 +135,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val s = context.app.settings
     LaunchedEffect(Unit) {
-        host.showCircle = false; host.dark = false
+        host.showCircle = false; host.dark = false; host.lake = false
         host.engine.paced = false
         host.engine.walkOn = false
         host.onTap = null; host.onPhase = null; host.onFrame = null
@@ -217,10 +233,13 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
                         contentAlignment = Alignment.Center) { Icon(NeboIcon.Settings, Ink.text, 20.dp) }
                 }
 
-                // or one tap for a kind of session
-                Row(Modifier.fillMaxWidth()) {
-                    for (t in SESSION_TYPES) IconButton(t.icon, t.name, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 50.dp)
-                    IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 50.dp)
+                // or one tap for a kind of session, four to a row, and the microphone for a note
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (row in SESSION_TYPES.chunked(4)) Row(Modifier.fillMaxWidth()) {
+                        for (t in row) IconButton(t.icon, t.short, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 50.dp)
+                        if (row.size < 4) IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 50.dp)
+                        repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+                    }
                 }
             }
         }
@@ -262,6 +281,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     var breathSnd by remember { mutableStateOf(s.breathSound) }
     var seasonMode by remember { mutableStateOf(s.seasonMode) }
     var weatherMode by remember { mutableStateOf(s.weatherMode) }
+    var lakeMode by remember { mutableStateOf(s.lakeScene) }
     var more by remember { mutableStateOf(false) }
     val paced = type == "breath" || type == "walk"
 
@@ -273,12 +293,15 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
     }
     LaunchedEffect(timeMode) { host.day.mode = timeMode }
     LaunchedEffect(seasonMode, weatherMode) { host.applyWeatherSettings(seasonMode, weatherMode) }
+    // the sky behind shows the place: the walk always goes through the meadow
+    LaunchedEffect(lakeMode, type) { host.lake = lakeMode && type != "walk" }
+    LaunchedEffect(type) { val ls = lengthsFor(type); if (ls.isNotEmpty() && minutes !in ls) minutes = if (10 in ls) 10 else ls.first() }
 
     fun start() {
         s.sessionType = type; s.minutes = minutes; s.pattern = pattern; s.timeMode = timeMode
         s.intervalMinutes = interval; s.checkInBefore = before; s.checkInAfter = after
         s.eyesClosed = eyes; s.ambient = ambient; s.ambientVolume = volume; s.breathSound = breathSnd
-        s.seasonMode = seasonMode; s.weatherMode = weatherMode
+        s.seasonMode = seasonMode; s.weatherMode = weatherMode; s.lakeScene = lakeMode
         val cfg = SessionConfig(type, minutes, pattern, interval, before, after, eyes && paced, ambient)
         go(if (before) Screen.CheckIn("before", config = cfg) else Screen.Session(cfg))
     }
@@ -291,13 +314,21 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ScreenHeader("Nova sesija", { go(Screen.Home) })
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                for (t in SESSION_TYPES) IconButton(t.icon, t.name, { type = t.id }, selected = type == t.id)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (row in SESSION_TYPES.chunked(4)) Row(Modifier.fillMaxWidth()) {
+                    for (t in row) IconButton(t.icon, t.short, { type = t.id }, Modifier.weight(1f), selected = type == t.id, circle = 52.dp)
+                    repeat(4 - row.size) { Box(Modifier.weight(1f)) }
+                }
             }
-            Text(SESSION_TYPES.firstOrNull { it.id == type }?.about ?: "", style = SmallStyle)
+            SESSION_TYPES.firstOrNull { it.id == type }?.let { t ->
+                Text(t.name, style = BodyStyle.copy(fontWeight = FontWeight.Bold))
+                Text(t.about, style = SmallStyle)
+            }
             Panel {
                 SectionLabel("Trajanje")
-                ChipRow { for (m in listOf(3, 5, 10, 15, 20, 0)) Chip(if (m == 0) "slobodno" else "$m min", minutes == m, { minutes = m }) }
+                val lengths = lengthsFor(type)
+                if (lengths.isEmpty()) Text("Uvijek tri minute: po jedna za svaki dio.", style = SmallStyle.copy(shadow = null))
+                else ChipRow { for (m in lengths) Chip(if (m == 0) "slobodno" else "$m min", minutes == m, { minutes = m }) }
                 if (paced) {
                     SectionLabel("Ritam disanja")
                     ChipRow { for (p in PATTERNS) Chip(p.ratio, pattern == p.id, { pattern = p.id }, sub = p.name) }
@@ -310,7 +341,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(if (more) "Manje opcija" else "Više opcija", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
-                    if (!more) Text("Zvono, zvuk, nebo, zatvorene oči, bilješke", style = SmallStyle.copy(shadow = null))
+                    if (!more) Text("Zvono, zvuk, mjesto i nebo, zatvorene oči, bilješke", style = SmallStyle.copy(shadow = null))
                 }
                 Text(if (more) "−" else "+", style = HeadStyle.copy(shadow = null))
             }
@@ -337,6 +368,12 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
                     }
                     Panel {
                         SectionLabel("Nebo")
+                        Text("Mjesto", style = SmallStyle.copy(shadow = null))
+                        if (type == "walk") Text("Šetnja uvijek ide livadom.", style = SmallStyle.copy(shadow = null))
+                        else ChipRow {
+                            Chip("livada", !lakeMode, { lakeMode = false })
+                            Chip("jezero", lakeMode, { lakeMode = true })
+                        }
                         Text("Doba dana", style = SmallStyle.copy(shadow = null))
                         ChipRow {
                             Chip("po satu", timeMode == "clock", { timeMode = "clock" })

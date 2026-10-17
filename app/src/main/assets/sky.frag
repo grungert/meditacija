@@ -247,11 +247,17 @@ vec3 scene(vec2 p) {
 
 // The breath as a drop of water hanging in the sky: it bends what lies behind it,
 // catches the light on the side facing the sun and gathers a warm glow on the far side.
+vec3 lake(vec2 p);
+
 vec3 drop(vec2 p, vec2 dc, float dr, float d) {
   vec2 q = p - dc;
   float z = sqrt(max(0.0, 1.0 - d * d));
-  // like a real drop it acts as a lens: the world below shows upside down, gathered into it
-  vec3 col = scene(dc - q * (1.4 + 1.6 * (1.0 - z)) - vec2(0.0, 0.9 * dr));
+  // like a real drop it acts as a lens: the world below shows upside down, gathered into it (by the lake, the water)
+  vec2 src = dc - q * (1.4 + 1.6 * (1.0 - z)) - vec2(0.0, 0.9 * dr);
+  vec3 col;
+  if (uLake > 0.999) col = lake(src);
+  else if (uLake < 0.001) col = scene(src);
+  else col = mix(scene(src), lake(src), uLake);
   col = col * vec3(1.03, 1.02, 1.0) + 0.04;
   vec3 lightCol = mix(vec3(1.0, 0.98, 0.95), uRim, 0.25);
   col = mix(col, lightCol, pow(1.0 - z, 2.5) * 0.55);
@@ -304,10 +310,10 @@ void main() {
   float inside = uDrop * (1.0 - smoothstep(1.0 - aa, 1.0, d));
 
   vec3 col = vec3(0.0);
-  if (uLake > 0.999) col = lake(p);
-  else if (uLake > 0.001) col = mix(scene(p), lake(p), uLake);
-  else if (inside < 0.999) {
-    col = scene(p);
+  if (inside < 0.999) {
+    if (uLake > 0.999) col = lake(p);
+    else if (uLake > 0.001) col = mix(scene(p), lake(p), uLake);
+    else col = scene(p);
     // a soft shadow around the drop keeps it legible over a white cloud
     col *= 1.0 - uDrop * (0.10 * smoothstep(1.35, 1.0, d) + 0.06 * smoothstep(1.08, 1.0, d));
   }

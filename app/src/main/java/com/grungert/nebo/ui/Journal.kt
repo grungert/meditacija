@@ -22,6 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import com.grungert.nebo.koan.MindHabits
+import com.grungert.nebo.koan.SearchWords
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,6 +106,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     LaunchedEffect(filter) { lastFilter = filter }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
+    var meaning by remember { mutableStateOf<List<Pair<Entry, Float>>?>(null) }   // found by sense, not by the words
     var reload by remember { mutableIntStateOf(0) }
     val player = remember { NotePlayer() }
     val scope = rememberCoroutineScope()
@@ -114,7 +118,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
         rows = withContext(Dispatchers.IO) {
             val q = query.trim().lowercase()
             val entries = if (filter == 3) emptyList() else app.db.entries().filter { e ->
-                (filter != 1 || e.starred) && (q.isEmpty() || e.words.lowercase().contains(q) || e.moods.any { it.contains(q) })
+                (filter != 1 || e.starred) && (q.isEmpty() || byWords(e, q))
             }
             val sessions = if (filter == 1 || filter == 2 || q.isNotEmpty()) emptyList() else app.db.sessions()
             val out = ArrayList<Any>()
@@ -128,10 +132,21 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
         }
     }
 
+    // the same search by meaning, a moment after typing stops: notes close in sense that do not use the words
+    LaunchedEffect(query, filter, reload) {
+        meaning = null
+        val q = query.trim()
+        if (q.length < 3 || filter == 3 || !app.recommender.usesMeaning) { meaning = emptyList(); return@LaunchedEffect }
+        delay(450)
+        val all = withContext(Dispatchers.IO) { app.db.entries() }.filter { filter != 1 || it.starred }
+        meaning = app.recommender.searchByMeaning(q, all, all.filter { byWords(it, q.lowercase()) }.map { it.id }.toSet())
+    }
+
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().screenPadding().padding(top = 8.dp)) {
             ScreenHeader("Dnevnik", null) {
+                RoundAction(NeboIcon.Stars, "Nebo zapisa") { go(Screen.Constellations) }
                 RoundAction(NeboIcon.Search, if (searching) "Zatvori pretragu" else "Traži") { searching = !searching; if (!searching) query = "" }
                 RoundAction(NeboIcon.Share, "Izvezi") {
                     scope.launch { Export.share(context, app.db, app.library, app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() })) }
@@ -143,7 +158,8 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.weight(1f)) {
-                        if (query.isEmpty()) Text("Traži po riječima ili raspoloženju", style = BodyStyle.copy(color = Ink.faint, shadow = null))
+                        if (query.isEmpty()) Text(if (app.recommender.usesMeaning) "Riječ ili kratka rečenica" else "Traži po riječima ili raspoloženju",
+                            style = BodyStyle.copy(color = Ink.faint, shadow = null))
                         BasicTextField(query, { query = it }, singleLine = true, textStyle = BodyStyle.copy(shadow = null),
                             cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth())
                     }
@@ -153,7 +169,9 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
             Segmented(listOf("Sve", "Uvidi", "Bilješke", "Sesije", "Niti"), filter, { filter = it })
             if (filter == 4) { ThreadsList(go); return@Column }
             val r = rows
-            if (r != null && r.isEmpty()) Text(when {
+            val m = meaning
+            val bySense = query.trim().length >= 3 && app.recommender.usesMeaning && filter != 3
+            if (r != null && r.isEmpty() && (query.isBlank() || !bySense || m?.isEmpty() == true)) Text(when {
                 query.isNotBlank() -> "Ništa ne odgovara pretrazi."
                 filter == 1 -> "Označi zvjezdicom bilješke koje su ti nešto otvorile. Ovdje će se skupljati."
                 else -> "Ovdje će se pojaviti tvoje sesije i zapažanja."
@@ -166,6 +184,23 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                         is Entry -> EntryCard(row, player, onStar = {
                             scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred)) }; reload++ }
                         }, onSimilar = { go(Screen.Similar(row.id)) }, onEdit = { player.stop(); editing = row })
+                    }
+                }
+                if (query.isNotBlank() && bySense) {
+                    if (m == null) item { Text("Tražim i po značenju…", style = SmallStyle, modifier = Modifier.padding(top = 14.dp)) }
+                    else if (m.isNotEmpty()) {
+                        item {
+                            Column(Modifier.padding(top = 18.dp, bottom = 2.dp)) {
+                                Text("Po značenju", style = HeadStyle.copy(fontSize = 18.sp))
+                                Text("Bilješke bliske po smislu, i bez tih riječi.", style = SmallStyle)
+                            }
+                        }
+                        items(m) { (e, z) ->
+                            EntryCard(e, player, onStar = {
+                                scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(e.copy(starred = !e.starred)) }; reload++ }
+                            }, onSimilar = { go(Screen.Similar(e.id)) }, onEdit = { player.stop(); editing = e },
+                                footer = dayLabel(e.createdAt) + " · " + when { z >= 2.3f -> "vrlo blisko"; z >= 1.9f -> "blisko"; else -> "slično" })
+                        }
                     }
                 }
             }
@@ -191,6 +226,12 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
             })
         }
     }
+}
+
+/** A note found by the words of a search, in any of their forms, or by a mood. */
+private fun byWords(e: Entry, q: String): Boolean {
+    val stems = SearchWords.stems(q)
+    return (if (stems.isEmpty()) e.words.lowercase().contains(q) else SearchWords.matches(e.words, stems)) || e.moods.any { it.contains(q) }
 }
 
 /**
@@ -431,6 +472,49 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     }
                 }
             }
+            Panel {
+                SectionLabel("Gdje nosiš napetost")
+                if (d.tension.isEmpty()) Text("Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.",
+                    style = SmallStyle.copy(shadow = null))
+                else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                    BodyMap(d.tension, Modifier.width(92.dp).height(220.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val ranked = d.tension.entries.sortedByDescending { it.value }
+                        bodyRegion(ranked.first().key)?.let { Text("Najčešće je nosiš ${it.where}.", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null)) }
+                        val top = ranked.first().value.coerceAtLeast(1)
+                        for ((id, n) in ranked.take(5)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.size(9.dp).clip(CircleShape).background(TENSION.copy(alpha = 0.35f + 0.65f * n / top)))
+                            Text(bodyRegion(id)?.name ?: id, style = BodyStyle.copy(fontSize = 14.sp, shadow = null), modifier = Modifier.weight(1f))
+                            Text("$n×", style = SmallStyle.copy(shadow = null))
+                        }
+                        Text(if (d.scans > 0) "Iz skeniranja tijela i iz bilješki s tačkom tijelo." else "Iz bilješki s tačkom tijelo. Skeniranje tijela dodaje još.",
+                            style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+                    }
+                }
+            }
+            Panel {
+                SectionLabel("Navike uma")
+                Text("Ovo nisu greške, nego navike koje ima svaki um. Kad ih primijetiš, manje te vode.", style = SmallStyle.copy(shadow = null))
+                if (d.times.isEmpty() && d.habits.isEmpty() && d.wander.isEmpty())
+                    Text("Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.",
+                        style = SmallStyle.copy(shadow = null))
+                if (d.times.isNotEmpty()) {
+                    val (top, _) = d.times.maxBy { it.value }.toPair()
+                    Text("Posljednjih 30 dana um je najčešće bio ${top.label}: ${top.about}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
+                    TimeBar(d.times)
+                }
+                for ((id, n) in d.habits) MindHabits.habit(id)?.let { h ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(h.name, style = BodyStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, shadow = null))
+                            Text(h.about, style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+                        }
+                        Text("$n×", style = SmallStyle.copy(shadow = null))
+                    }
+                }
+                if (d.wander.isNotEmpty()) Text("U „Oblacima“ um je najčešće odlazio u: " + d.wander.take(3).joinToString(", ") { "${it.first} (${it.second})" } + ".",
+                    style = SmallStyle.copy(shadow = null))
+            }
             if (d.shifts.isNotEmpty()) Panel {
                 SectionLabel("Prije → poslije sesije")
                 for ((s, n) in d.shifts) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -457,6 +541,26 @@ fun StatsScreen(go: (Screen) -> Unit) {
     }
 }
 
+/** The mind's time as one bar in three parts: the past, here and now, the future. */
+@Composable
+private fun TimeBar(times: Map<MindHabits.Time, Int>) {
+    val total = times.values.sum().coerceAtLeast(1)
+    val colors = mapOf(MindHabits.Time.PAST to POINT_COLORS.getValue(FourPointsReader.THOUGHTS), MindHabits.Time.NOW to POINT_COLORS.getValue(FourPointsReader.BODY),
+        MindHabits.Time.FUTURE to POINT_COLORS.getValue(FourPointsReader.EMOTIONS))
+    Row(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(Ink.surfaceHigh)) {
+        for (t in MindHabits.Time.entries) {
+            val n = times[t] ?: 0
+            if (n > 0) Box(Modifier.weight(n.toFloat()).fillMaxHeight().background(colors.getValue(t)))
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        for (t in MindHabits.Time.entries) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(colors.getValue(t)))
+            Text("${t.label} ${(times[t] ?: 0) * 100 / total}%", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+        }
+    }
+}
+
 /** An icon, a label, a thin bar for the value and the value itself. */
 @Composable
 private fun MeterRow(icon: NeboIcon, label: String, value: Int, max: Int, unit: String) {
@@ -476,7 +580,22 @@ class StatsData(
     val promptsFired: Int, val promptsAnswered: Int, val esmByPart: List<Int>,
     val moodWeeks: List<Map<String, Int>>,
     val links: List<PointLink> = emptyList(),
+    /** How often each part of the body was named as tense: in scans (once a scan) and in notes' body point. */
+    val tension: Map<String, Int> = emptyMap(),
+    val scans: Int = 0,
+    /** The habits of mind in the last 30 days' notes, the mind's time, and where it went during clouds sessions. */
+    val habits: List<Pair<String, Int>> = emptyList(),
+    val times: Map<MindHabits.Time, Int> = emptyMap(),
+    val wander: List<Pair<String, Int>> = emptyList(),
 )
+
+/** Where tension was named: each scan counts a part once, each note once for each part its body point names. */
+fun tensionCounts(sessions: List<Session>, entries: List<Entry>): Map<String, Int> {
+    val c = HashMap<String, Int>()
+    for (s in sessions) if (s.type == "bodyscan") s.marks.map { it.region }.distinct().forEach { c[it] = (c[it] ?: 0) + 1 }
+    for (e in entries) e.points.body.mapNotNull { regionOfLabel(it) }.distinct().forEach { c[it] = (c[it] ?: 0) + 1 }
+    return c
+}
 
 /** An emotion and what most often comes with it in the body and as an urge, across the notes that name them. */
 class PointLink(val mood: String, val body: String?, val urge: String?, val times: Int)
@@ -524,6 +643,8 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
     }
     val fired = prompts.filter { it.firedAt != null }
     val esm = entries.filter { it.kind == "esm" }
+    val month = entries.filter { it.createdAt >= System.currentTimeMillis() - 30 * 86_400_000L }
+    val mind = month.map { it.words + "\n" + it.points.thoughts }
     return StatsData(
         weekMinutes = weeks.last(), weekSessions = sessions.count { it.startedAt >= thisWeek }, weekNotes = entries.count { it.createdAt >= thisWeek }, weeks = weeks, weekLabels = labels,
         dayParts = parts, types = types, themes = themeCount.toList().sortedByDescending { it.second }.take(8),
@@ -533,6 +654,11 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         moodWeeks = (7 downTo 0).map { k ->
             entries.filter { it.createdAt in (thisWeek - k * week) until (thisWeek - (k - 1) * week) }.flatMap { it.moods }.groupingBy { it }.eachCount()
         },
+        tension = tensionCounts(sessions, entries),
+        scans = sessions.count { it.type == "bodyscan" },
+        habits = MindHabits.HABITS.map { h -> h.id to mind.count { h.id in MindHabits.habits(it) } }.filter { it.second > 0 }.sortedByDescending { it.second },
+        times = mind.mapNotNull { MindHabits.time(it) }.groupingBy { it }.eachCount(),
+        wander = sessions.flatMap { it.wander }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
     )
 }
 

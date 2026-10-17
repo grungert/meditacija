@@ -37,6 +37,7 @@ object Esm {
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
     private const val ACTION_FIFTY = "com.grungert.nebo.FIFTY"
     const val EXTRA_FIFTY = "fifty_fifty"
+    const val EXTRA_HOURGLASS = "hourglass"
     private const val FIFTY_CHANNEL = "pedeset"
     private val FIFTY_LINES = listOf(
         "Pola pažnje u tijelu, pola napolju. Stopala na podu, i zvukovi oko tebe.",
@@ -214,11 +215,15 @@ object Esm {
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     val start = PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_START, true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    // or just the three-minute breathing space, for a full day
+                    val short = PendingIntent.getActivity(ctx, 6, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_HOURGLASS, true)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
                         .setSmallIcon(R.drawable.ic_notification).setContentTitle("Vrijeme za tišinu")
                         .setContentText("Nekoliko minuta disanja ispod neba?").setContentIntent(open).setAutoCancel(true)
                         .setTimeoutAfter(3 * 60 * 60_000L)
                         .addAction(Notification.Action.Builder(null, "Započni", start).build())
+                        .addAction(Notification.Action.Builder(null, "3 minuta", short).build())
                         .addAction(Notification.Action.Builder(null, "Za 15 min", pending(ctx, ACTION_SNOOZE + ".req", 0)).build())
                         .build())
                 }

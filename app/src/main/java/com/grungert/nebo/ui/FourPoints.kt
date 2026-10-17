@@ -75,17 +75,19 @@ private val SPOTS = mapOf(
 /**
  * The four points as lights in a diamond, every one joined to every other by a thread. A point glows in its colour
  * when it holds something; a thread brightens when both its ends do. [selected] gets a ring, [highlight] (in a session)
- * is drawn larger while the others rest. Labels are left out when [labels] is false.
+ * is drawn larger while the others rest. Labels are left out when [labels] is false. With [strength] (0..1 for each
+ * point, as in a thread) the glow of each light and thread follows how strongly that point shows.
  */
 @Composable
 fun PointsConstellation(
     filled: Map<String, Boolean>, modifier: Modifier = Modifier, selected: String? = null, highlight: String? = null,
-    labels: Boolean = true, onTap: ((String) -> Unit)? = null,
+    labels: Boolean = true, strength: Map<String, Float>? = null, nodeSize: androidx.compose.ui.unit.Dp? = null, onTap: ((String) -> Unit)? = null,
 ) {
+    fun power(k: String) = strength?.get(k) ?: 1f
     val glow = remember { Animatable(0f) }
     LaunchedEffect(Unit) { glow.animateTo(1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse)) }
     BoxWithConstraints(modifier) {
-        val node = if (labels) 52.dp else 26.dp
+        val node = nodeSize ?: if (labels) 52.dp else 26.dp
         val labelH = if (labels) 22.dp else 0.dp
         val w = maxWidth; val h = maxHeight
         fun center(k: String) = SPOTS.getValue(k).let { o -> DpOffset((w - node) * o.x + node / 2, (h - node - labelH) * o.y + node / 2) }
@@ -101,14 +103,15 @@ fun PointsConstellation(
                 val ctrl = Offset((pa.x + pb.x) / 2 * 0.8f + mid.x * 0.2f, (pa.y + pb.y) / 2 * 0.8f + mid.y * 0.2f)
                 val path = Path().apply { moveTo(pa.x, pa.y); quadraticTo(ctrl.x, ctrl.y, pb.x, pb.y) }
                 val tone = if (lit) lerp(POINT_COLORS.getValue(a), POINT_COLORS.getValue(b), 0.5f) else Color.White
-                if (lit) drawPath(path, tone.copy(alpha = 0.18f + 0.12f * glow.value), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
-                drawPath(path, tone.copy(alpha = if (lit) 0.85f else 0.13f), style = Stroke((if (lit) 1.6f else 1f).dp.toPx(), cap = StrokeCap.Round))
+                val both = minOf(power(a), power(b)).coerceIn(0.25f, 1f)
+                if (lit) drawPath(path, tone.copy(alpha = (0.18f + 0.12f * glow.value) * both), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(path, tone.copy(alpha = if (lit) 0.85f * both else 0.13f), style = Stroke((if (lit) 1.6f else 1f).dp.toPx(), cap = StrokeCap.Round))
             }
             for (k in keys) {
                 if (!filled.getValue(k) && highlight != k) continue
                 val c = POINT_COLORS.getValue(k)
-                val r = node.toPx() * (if (highlight == k) 1.25f else 0.95f) * (0.9f + 0.1f * glow.value)
-                drawCircle(Brush.radialGradient(listOf(c.copy(alpha = 0.55f), c.copy(alpha = 0f)), pt(k), r), r, pt(k))
+                val r = node.toPx() * (if (highlight == k) 1.25f else 0.95f) * (0.9f + 0.1f * glow.value) * (0.7f + 0.5f * power(k).coerceIn(0f, 1f))
+                drawCircle(Brush.radialGradient(listOf(c.copy(alpha = 0.55f * power(k).coerceIn(0.35f, 1f)), c.copy(alpha = 0f)), pt(k), r), r, pt(k))
             }
         }
         for (k in SPOTS.keys) {
@@ -128,7 +131,7 @@ fun PointsConstellation(
                         .then(if (selected == k) Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else Modifier)
                         .then(if (!on) Modifier.border(1.5.dp, c.copy(alpha = if (dim) 0.3f else 0.7f), CircleShape) else Modifier),
                     contentAlignment = Alignment.Center,
-                ) { Icon(POINT_ICONS.getValue(k), if (on) Ink.inkOnPaper else c.copy(alpha = if (dim) 0.45f else 1f), size * 0.46f) }
+                ) { if (node >= 20.dp) Icon(POINT_ICONS.getValue(k), if (on) Ink.inkOnPaper else c.copy(alpha = if (dim) 0.45f else 1f), size * 0.46f) }
                 if (labels) Text(POINT_NAMES.getValue(k), style = SmallStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                     color = if (on || selected == k) Ink.text else Ink.soft, shadow = null), modifier = Modifier.padding(top = 4.dp))
             }
@@ -145,6 +148,8 @@ class FourPointsState(initial: FourPoints = FourPoints()) {
     var touched by mutableStateOf(false)
     /** Which points were filled in from the person's words, for a short note under the diagram. */
     var recognised by mutableStateOf<List<String>>(emptyList())
+    /** Where they were read from: the person's words, or the places touched in a body scan. */
+    var fromScan by mutableStateOf(false)
 
     fun toPoints() = FourPoints(thoughts.trim(), body.toList(), urges.toList())
 
@@ -154,7 +159,7 @@ class FourPointsState(initial: FourPoints = FourPoints()) {
         r.moods.forEach { if (it !in moods) moods += it }
         r.body.forEach { if (it !in body) body += it }
         r.urges.forEach { if (it !in urges) urges += it }
-        recognised = r.found
+        recognised = (if (fromScan) recognised + r.found else r.found).distinct()
     }
 }
 
@@ -165,6 +170,7 @@ class FourPointsState(initial: FourPoints = FourPoints()) {
 @Composable
 fun FourPointsCard(state: FourPointsState, moods: SnapshotStateList<String>, startWith: String = EMOTIONS) {
     var open by remember { mutableStateOf(startWith) }
+    LaunchedEffect(startWith) { open = startWith }
     var explain by remember { mutableStateOf(false) }
     val filled = mapOf(
         THOUGHTS to state.thoughts.isNotBlank(), EMOTIONS to moods.isNotEmpty(),
@@ -184,8 +190,12 @@ fun FourPointsCard(state: FourPointsState, moods: SnapshotStateList<String>, sta
             style = SmallStyle.copy(shadow = null))
 
         PointsConstellation(filled, selected = open, onTap = { open = it }, modifier = Modifier.fillMaxWidth().height(200.dp))
-        if (state.recognised.isNotEmpty()) Text("Prepoznato iz tvojih riječi: " + state.recognised.joinToString(", ") { POINT_NAMES.getValue(it).lowercase() } +
-            ". Možeš ispraviti.", style = SmallStyle.copy(color = Ink.accent, shadow = null))
+        if (state.recognised.isNotEmpty()) Text(when {
+            state.fromScan && state.recognised.size > 1 -> "Iz skeniranja i tvojih riječi: "
+            state.fromScan -> "Tijelo je popunjeno iz skeniranja"
+            else -> "Prepoznato iz tvojih riječi: "
+        } +
+            (if (state.fromScan && state.recognised.size == 1) "" else state.recognised.joinToString(", ") { POINT_NAMES.getValue(it).lowercase() }) + ". Možeš ispraviti.", style = SmallStyle.copy(color = Ink.accent, shadow = null))
 
         // the editor of the chosen point
         when (open) {

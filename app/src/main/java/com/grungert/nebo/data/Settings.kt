@@ -61,6 +61,10 @@ class Settings(private val context: Context) {
     var meadowFront: Boolean
         get() = p.getBoolean("meadowFront", true)
         set(v) = p.edit { putBoolean("meadowFront", v) }
+    /** Sit by the still lake instead of in the meadow (every session but the walk, which goes through the meadow). */
+    var lakeScene: Boolean
+        get() = p.getBoolean("lakeScene", false)
+        set(v) = p.edit { putBoolean("lakeScene", v) }
     /** A soft rush of air that follows the breath in paced sessions. */
     var breathSound: Boolean
         get() = p.getBoolean("breathSound", true)

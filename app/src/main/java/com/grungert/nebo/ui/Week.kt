@@ -57,6 +57,9 @@ private class WeekData(
     val types: List<Pair<String, Int>>,
     val earlier: List<Pair<Entry, Float>>,
     val nextKoan: com.grungert.nebo.koan.KoanItem?,
+    /** The week's habits of mind, and where the mind most often was. */
+    val habits: List<Pair<String, Int>> = emptyList(),
+    val time: com.grungert.nebo.koan.MindHabits.Time? = null,
 )
 
 private fun themesOf(e: Entry) = (e.themes.ifEmpty { Lexicon.themes(e.words) } + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
@@ -106,9 +109,15 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
         val query = listOfNotNull(reflection?.words, themes.take(3).joinToString(", ") { THEME_NAMES[it.first] ?: it.first }).joinToString(". ")
         val nextKoan = app.recommender.pick(query, emptyList(), afterSession = true, koansOnly = true).item
         val fmt = SimpleDateFormat("d. MMMM", Locale.forLanguageTag("sr-Latn-ME"))
+        val mind = thisWeek.map { it.words + "\n" + it.points.thoughts }
+        val habits = com.grungert.nebo.koan.MindHabits.HABITS.map { h -> h.id to mind.count { h.id in com.grungert.nebo.koan.MindHabits.habits(it) } }
+            .filter { it.second > 0 }.sortedByDescending { it.second }
+        val times = mind.mapNotNull { com.grungert.nebo.koan.MindHabits.time(it) }.groupingBy { it }.eachCount()
+        val time = times.maxByOrNull { it.value }?.takeIf { top -> times.count { it.value == top.value } == 1 }?.key
         data = WeekData(
             reflection, fmt.format(Date(start)) + " – " + fmt.format(Date(start + week - 1)), themes, quotes, parts, moods,
             sessions.sumOf { it.actualSec } / 60, sessions.size, sessions.groupingBy { it.type }.eachCount().toList(), earlier, nextKoan,
+            habits, time,
         )
         app.settings.weekReviewed = Esm.weekKey()
     }
@@ -153,6 +162,13 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
                         else -> "  kao prošle"
                     }, style = SmallStyle.copy(color = if (before == 0) Ink.accent else Ink.soft))
                 }
+            }
+
+            if (d.habits.isNotEmpty() || d.time != null) Panel {
+                SectionLabel("Navike uma")
+                d.time?.let { Text("Um je ove sedmice najčešće bio ${it.label}: ${it.about}.", style = BodyStyle) }
+                if (d.habits.isNotEmpty()) Text(d.habits.joinToString(" · ") { (id, n) -> (com.grungert.nebo.koan.MindHabits.habit(id)?.name ?: id) + " $n×" },
+                    style = SmallStyle)
             }
 
             if (d.quotes.isNotEmpty()) {

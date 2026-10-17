@@ -188,6 +188,43 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         return db.embedding(key, Embedder.MODEL_ID, h) ?: e.embed(x.words).also { db.putEmbedding(key, Embedder.MODEL_ID, h, it) }
     }
 
+    /** The same note embedded as a passage, for search; cached apart from the note-to-note vector. */
+    private fun passageVector(x: com.grungert.nebo.data.Entry, e: Embedder): FloatArray {
+        val key = "passage:${x.id}"
+        val h = x.words.hashCode()
+        return db.embedding(key, Embedder.MODEL_ID, h) ?: e.embed(x.words, "passage: ").also { db.putEmbedding(key, Embedder.MODEL_ID, h, it) }
+    }
+
+    /** Readies every note for search by meaning, once, so the first search does not wait for them. */
+    suspend fun warmSearch() = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val e = embedderOrNull() ?: return@withLock
+            for (x in db.entries()) if (x.words.isNotBlank()) passageVector(x, e)
+        }
+    }
+
+    /**
+     * Notes closest in meaning to a search, best first, each with how far it stands above the rest (in standard
+     * deviations). e5 reads a short sentence far better than a single word: on test notes the right one came first for
+     * six of seven short sentences and for about half of the single words. So only notes that clearly stand out are
+     * returned, and the words themselves are matched separately. [exclude] are notes already found by their words.
+     */
+    suspend fun searchByMeaning(query: String, all: List<com.grungert.nebo.data.Entry>, exclude: Set<Long> = emptySet(), k: Int = 6):
+        List<Pair<com.grungert.nebo.data.Entry, Float>> = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val e = embedderOrNull() ?: return@withLock emptyList()
+            val notes = all.filter { it.words.isNotBlank() }
+            if (query.isBlank() || notes.size < 5) return@withLock emptyList()
+            val qv = e.embed(query)
+            val scored = notes.map { it to Embedder.cosine(qv, passageVector(it, e)) }
+            val mean = scored.map { it.second }.average().toFloat()
+            val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat().coerceAtLeast(1e-4f)
+            val open = scored.filter { it.first.id !in exclude }.sortedByDescending { it.second }
+            val best = open.firstOrNull()?.second ?: return@withLock emptyList()
+            open.filter { (_, s) -> (s - mean) / sd >= 1.5f && s >= best - 0.025f }.take(k).map { (n, s) -> n to (s - mean) / sd }
+        }
+    }
+
     /** Keyword themes, the moods' themes and, with the meaning model, the theme the words lean towards. */
     private fun themesFor(x: com.grungert.nebo.data.Entry, e: Embedder?): List<String> {
         val moods = x.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }

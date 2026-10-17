@@ -106,6 +106,17 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var model by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false }
+    // after a body scan, the places where tension was touched are already the body point of this note
+    var scanned by remember { mutableStateOf(false) }
+    LaunchedEffect(sc.sessionId) {
+        val id = sc.sessionId ?: return@LaunchedEffect
+        val touched = withContext(Dispatchers.IO) { app.db.session(id) }?.takeIf { it.type == "bodyscan" }?.marks ?: return@LaunchedEffect
+        val labels = touched.map { it.region }.distinct().mapNotNull { bodyRegion(it)?.label?.ifBlank { null } }
+        if (labels.isEmpty()) return@LaunchedEffect
+        labels.forEach { if (it !in points.body) points.body += it }
+        points.recognised = listOf(com.grungert.nebo.koan.FourPointsReader.BODY); points.fromScan = true
+        scanned = true
+    }
 
     val (title, prompt) = when (sc.kind) {
         "before" -> "Kako si sada?" to "Prije nego što počneš: šta je u tebi?"
@@ -279,7 +290,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 delay(1500)
                 points.fillFrom(app.recommender.readFourPoints(text), moods)
             }
-            FourPointsCard(points, moods)
+            FourPointsCard(points, moods, startWith = if (scanned) com.grungert.nebo.koan.FourPointsReader.BODY else com.grungert.nebo.koan.FourPointsReader.EMOTIONS)
         }
         // the actions stay within reach at the bottom
         Row(
