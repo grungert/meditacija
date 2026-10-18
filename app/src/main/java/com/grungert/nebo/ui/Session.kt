@@ -260,7 +260,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         // by the lake, if that is where the person sits; the walk always goes through the meadow
-        host.lake = app.settings.lakeScene && cfg.type != "walk"
+        // the hourglass stands on a veranda by the water, so it always has the lake behind it
+        host.lake = (app.settings.lakeScene || cfg.type == "hourglass") && cfg.type != "walk"
         val e = host.engine
         e.walkOn = cfg.type == "walk"
         e.paced = cfg.paced
@@ -447,7 +448,10 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
 
         // the three-minute breathing space: an hourglass of light, and what each minute asks
         if (cfg.type == "hourglass" && !ended) {
-            HourglassView(elapsed)
+            val hour = host.day.hour
+            HourglassView(elapsed, HourglassLight(
+                com.grungert.nebo.sky.Seasons.apply(com.grungert.nebo.sky.DayCycle.paletteAt(hour), host.season, host.weather),
+                com.grungert.nebo.sky.DayCycle.sunAmount(hour) * com.grungert.nebo.sky.Seasons.sunThrough(host.weather), host.season))
             val st = hourglassStage(elapsed)
             AnimatedContent(st, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "hourglass",
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)) { s ->
