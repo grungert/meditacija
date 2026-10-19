@@ -1,7 +1,9 @@
 package com.grungert.nebo
 
+import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import com.grungert.nebo.data.Db
 import com.grungert.nebo.data.Settings
 import com.grungert.nebo.esm.Esm
@@ -35,19 +37,39 @@ class NeboApp : Application() {
         Esm.ensureChannel(this)
         scope.launch {
             Esm.refresh(this@NeboApp)
-            com.grungert.nebo.widget.NeboWidget.refresh(this@NeboApp)   // the day of the week koan moves on
-            transcriber.drain()
-            recommender.warmUp()
-            // again for every note when the way of finding themes changed, or when the meaning model has arrived since
-            val meaning = recommender.usesMeaning
-            val retag = settings.themesVersion < THEMES_VERSION || (meaning && !settings.themesByMeaning)
-            recommender.tagNotes(force = retag)
-            if (retag) { settings.themesVersion = THEMES_VERSION; settings.themesByMeaning = meaning }
-            recommender.warmSearch()
-            com.grungert.nebo.data.Backup.autoIfDue(this@NeboApp)
+            transcriber.drain()   // nothing to do unless a recording waits for its text, and then it is worth doing
         }
         // a note that just became text gets its themes
         scope.launch { transcriber.done.collect { if (it > 0) { recommender.tagNotes(); recommender.warmSearch() } } }
+        // The meaning model, the widget's sky and the weekly copy wait until the person opens the app. Most starts of
+        // this process are an alarm, a widget redraw or a reply from a notification, gone again in seconds; doing all
+        // of it there cost about five seconds of processor and 400 MB each time.
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            private var warmed = false
+            override fun onActivityStarted(activity: Activity) {
+                if (warmed) return
+                warmed = true
+                scope.launch { warm() }
+            }
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+            override fun onActivityResumed(activity: Activity) {}
+            override fun onActivityPaused(activity: Activity) {}
+            override fun onActivityStopped(activity: Activity) {}
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+            override fun onActivityDestroyed(activity: Activity) {}
+        })
+    }
+
+    private suspend fun warm() {
+        com.grungert.nebo.widget.NeboWidget.refresh(this)   // the day of the week koan moves on
+        recommender.warmUp()
+        // again for every note when the way of finding themes changed, or when the meaning model has arrived since
+        val meaning = recommender.usesMeaning
+        val retag = settings.themesVersion < THEMES_VERSION || (meaning && !settings.themesByMeaning)
+        recommender.tagNotes(force = retag)
+        if (retag) { settings.themesVersion = THEMES_VERSION; settings.themesByMeaning = meaning }
+        recommender.warmSearch()
+        com.grungert.nebo.data.Backup.autoIfDue(this)
     }
 }
 

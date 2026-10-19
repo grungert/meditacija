@@ -343,12 +343,12 @@ private fun ReminderPanel() {
                 for ((label, v) in listOf("svaki dan" to "all", "radni dani" to "weekdays", "vikend" to "weekend")) Chip(label, days == v, { days = v; apply() })
             }
             SwitchRow("Ne podsjećaj ako sam već meditirao tog dana", skip, { skip = it; apply() })
-            // without exact alarms Android may deliver the reminder some minutes late, or later still while the phone lies idle
+            // without exact alarms Android may deliver the reminder up to about fifteen minutes late (see Esm.arm)
             val am = context.getSystemService(android.app.AlarmManager::class.java)
             var exact by remember { mutableStateOf(am.canScheduleExactAlarms()) }
             androidx.lifecycle.compose.LifecycleResumeEffect(Unit) { exact = am.canScheduleExactAlarms(); onPauseOrDispose {} }
             if (!exact) {
-                Text("Android trenutno smije poslati podsjetnik nekoliko minuta kasnije, a dok telefon dugo miruje i znatno kasnije. Za tačno vrijeme dozvoli Nebu tačne alarme.", style = SmallStyle)
+                Text("Android trenutno smije poslati podsjetnik i do petnaestak minuta kasnije. Za tačno vrijeme dozvoli Nebu tačne alarme.", style = SmallStyle)
                 GlassButton("Dozvoli tačno vrijeme", {
                     context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                         android.net.Uri.parse("package:" + context.packageName)))

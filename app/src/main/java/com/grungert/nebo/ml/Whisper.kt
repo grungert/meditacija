@@ -160,6 +160,11 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
         }.also { releaseLater() }
     }
 
+    /** A transcript worked out while the person was still on the screen, given to the note they saved. */
+    fun deliver(entryId: Long, text: String, model: String) {
+        if (db.setTranscript(entryId, text, model)) _done.value = entryId
+    }
+
     fun drain() {
         scope.launch {
             lock.withLock {

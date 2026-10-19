@@ -18,9 +18,8 @@ import kotlin.random.Random
 
 /**
  * Experience sampling: a few prompts a day at random moments inside a chosen window.
- * Alarms fire at the chosen minute when exact alarms are allowed, otherwise within a ten-minute window
- * (a plain inexact alarm may drift by most of the time left until it, which can be hours).
- * A missed prompt is simply missed.
+ * Alarms fire at the chosen minute when exact alarms are allowed. Otherwise see [arm]: they arrive up to about fifteen
+ * minutes late, also while the phone lies still in Doze. A missed prompt is simply missed.
  */
 object Esm {
     const val CHANNEL = "zapazanja"
@@ -37,6 +36,7 @@ object Esm {
     const val EXTRA_START = "start_session"
     private const val ACTION_FIRE = "com.grungert.nebo.ESM_FIRE"
     private const val ACTION_PLAN = "com.grungert.nebo.ESM_PLAN"
+    private const val ACTION_HOP = "com.grungert.nebo.ESM_HOP"   // a step towards a far alarm; only refreshes
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
     private const val ACTION_FIFTY = "com.grungert.nebo.FIFTY"
     const val EXTRA_FIFTY = "fifty_fifty"
@@ -82,9 +82,14 @@ object Esm {
      */
     @Synchronized
     fun refresh(ctx: Context) {
+        val am = ctx.getSystemService(AlarmManager::class.java)
+        hopFor = Long.MAX_VALUE
+        try { arrange(ctx, am) } finally { armHop(ctx, am) }
+    }
+
+    private fun arrange(ctx: Context, am: AlarmManager) {
         val s = ctx.app.settings
         val db = ctx.app.db
-        val am = ctx.getSystemService(AlarmManager::class.java)
         scheduleWeek(ctx, am)
         scheduleDaily(ctx, am)
         scheduleReminder(ctx, am)
@@ -110,10 +115,38 @@ object Esm {
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, tomorrow + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
     }
 
-    /** Fires at the time asked: exactly when the person allowed exact alarms, otherwise within ten minutes. */
+    /** Nearer than this, an alarm without exact timing is set to wake the phone even in Doze. */
+    private const val NEAR = 20 * 60_000L
+    /** The earliest alarm armed in this refresh that is still too far off to be set while-idle; [armHop] steps towards it. */
+    private var hopFor = Long.MAX_VALUE
+
+    /**
+     * Fires at the time asked: exactly when the person allowed exact alarms. Without that permission (the default on
+     * new installs) there are only inexact alarms, and they have two ways to be late:
+     * - setWindow is held back while the phone lies still in Doze, until the next maintenance window, which can be
+     *   hours away;
+     * - setAndAllowWhileIdle fires in Doze, but Android may move it by up to three quarters of the time left until it
+     *   (at least ten minutes), so set hours ahead it can also be hours late.
+     * So an alarm near at hand (under twenty minutes) is set while-idle, at most about fifteen minutes late; one further
+     * off is set with setWindow, which is on time while the phone is in use, and [armHop] wakes the app on the way to it
+     * so it can be set while-idle once it is near.
+     */
     private fun arm(am: AlarmManager, at: Long, pi: PendingIntent) {
-        if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
-        else am.setWindow(AlarmManager.RTC_WAKEUP, at, 10 * 60_000L, pi)
+        if (am.canScheduleExactAlarms()) { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi); return }
+        if (at - System.currentTimeMillis() <= NEAR) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
+        else { am.setWindow(AlarmManager.RTC_WAKEUP, at, 10 * 60_000L, pi); hopFor = minOf(hopFor, at) }
+    }
+
+    /**
+     * A while-idle wake halfway to the nearest far alarm. Android may move it by up to three quarters of its own
+     * distance (at least ten minutes), so it lands between halfway and seven eighths of the way, and never past the
+     * alarm while that is more than [NEAR] away; there [refresh] runs again and steps closer. Six or so steps cover a day.
+     */
+    private fun armHop(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_HOP, 0)
+        if (hopFor == Long.MAX_VALUE) { am.cancel(pi); return }
+        val now = System.currentTimeMillis()
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, now + (hopFor - now) / 2, pi)
     }
 
     /** Sunday at 19:00: the week is ready to be looked at. */
@@ -246,7 +279,7 @@ object Esm {
                 if (id > 0) db.markPromptAnswered(id, entryId)
                 nm.notify(NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification).setOnlyAlertOnce(true)
                     .setContentTitle("Zapisano").setContentText("Hvala. Vrati se onome što si radio.").setTimeoutAfter(2500).build())
-                ctx.app.scope.launch { ctx.app.recommender.tagNotes() }   // its themes, now rather than at the next start
+                // its themes are found when the app is next opened, not here, where the meaning model would load for one note
                 return
             }
             ACTION_REMIND, ACTION_SNOOZE -> {

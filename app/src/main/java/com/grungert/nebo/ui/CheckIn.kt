@@ -71,6 +71,7 @@ import com.grungert.nebo.data.Entry
 import com.grungert.nebo.koan.MOODS
 import com.grungert.nebo.koan.Pick
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,6 +107,8 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var saving by remember { mutableStateOf(false) }            // once Sačuvaj is tapped, nothing else on the screen acts
     var taking by remember { mutableStateOf<File?>(null) }       // the file being recorded into right now
     val alive = remember { booleanArrayOf(true) }               // false once the screen is gone
+    // the text of the current take, still being worked out; on the app's scope, so a save made meanwhile can use it
+    var live by remember { mutableStateOf<kotlinx.coroutines.Deferred<String?>?>(null) }
 
     // leaving the screen by any way (Back, the close button, a notification) stops the microphone, and a recording
     // that was not saved goes with it, so it never lingers in the phone or in a backup
@@ -157,14 +160,16 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             recording = false; taking = null
             silent = recorder.peak < Recorder.SILENCE
             if (dur > 0.6f && !silent) {
-                audio?.delete(); audio = f; audioSeconds = dur
+                audio?.delete(); audio = f; audioSeconds = dur; live = null
                 if (fieldFromVoice) { text = ""; fieldFromVoice = false }
                 heard = null
                 model = app.transcriber.readyModel()
                 if (model != null) {
                     expected = app.transcriber.estimateSeconds(dur).coerceAtLeast(1f); waited = 0f
                     transcribing = true
-                    val t = app.transcriber.transcribeNow(f)
+                    val job = app.scope.async { app.transcriber.transcribeNow(f) }
+                    live = job
+                    val t = job.await()
                     transcribing = false
                     if (audio == f && t != null) {
                         heard = t
@@ -211,6 +216,9 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             // when the field holds the transcript, the corrected version becomes the transcript;
             // without one yet, the recording is transcribed in the background after saving
             val transcript = if (fieldFromVoice) typed ?: "" else heard
+            // a take whose text is still being worked out: that text is kept for the note, not worked out a second time
+            val pending = if (audio != null && transcript == null) live else null
+            val takeModel = model
             val entry = Entry(createdAt = System.currentTimeMillis(), kind = sc.kind, sessionId = sc.sessionId, promptId = sc.promptId,
                 audioPath = audio?.absolutePath, text = if (fieldFromVoice) null else typed, moods = moods.toList(), points = points.toPoints(),
                 transcript = if (audio != null) transcript else null, transcriptModel = if (transcript != null) model else null)
@@ -219,7 +227,10 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 sc.promptId?.let { app.db.markPromptAnswered(it, id) }
                 id
             }
-            if (audio != null) app.transcriber.drain()
+            if (audio != null) app.scope.launch {
+                pending?.await()?.let { t -> if (takeModel != null) app.transcriber.deliver(id, t, takeModel) }
+                app.transcriber.drain()   // only what is still without text: a take saved before any model was ready
+            }
             app.scope.launch { app.recommender.tagNotes() }
             if (alive[0]) next(id)
         }
