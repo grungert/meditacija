@@ -117,7 +117,28 @@ object Bell {
 
     /** Rings once and returns as soon as the bell has started; it always sounds to its end. */
     suspend fun ring(soft: Boolean = false) = withContext(Dispatchers.Default) {
-        val pcm = render(if (soft) 392f else 262f, if (soft) 5f else 9f, if (soft) 0.5f else 0.9f)
+        play(render(if (soft) 392f else 262f, if (soft) 5f else 9f, if (soft) 0.5f else 0.9f))
+    }
+
+    /** A glass wind chime touched by the wind: high, bright and short, quieter than the bell. */
+    suspend fun chime(volume: Float = 0.35f) = withContext(Dispatchers.Default) {
+        val sr = 44_100
+        val base = listOf(1568f, 1760f, 1975f).random()
+        val n = (sr * 2.4f).toInt()
+        val pcm = ShortArray(n)
+        val parts = listOf(floatArrayOf(1f, 1f, 1.6f), floatArrayOf(2.76f, 0.35f, 0.7f), floatArrayOf(5.4f, 0.12f, 0.35f))
+        for (i in 0 until n) {
+            val t = i / sr.toFloat()
+            var s = 0f
+            for (p in parts) s += p[1] * exp(-t / p[2] * 2.2f) * sin(2 * PI.toFloat() * base * p[0] * t)
+            // the clapper touches twice, the second time softly
+            if (t > 0.18f) { val u = t - 0.18f; s += 0.45f * exp(-u / 1.2f * 2.2f) * sin(2 * PI.toFloat() * base * 1.002f * u) }
+            pcm[i] = (s * (t / 0.002f).coerceAtMost(1f) * volume * 0.25f * Short.MAX_VALUE).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        play(pcm)
+    }
+
+    private fun play(pcm: ShortArray) {
         val track = AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())

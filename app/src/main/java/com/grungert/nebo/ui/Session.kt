@@ -286,6 +286,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         fun gap(): Float = if (cfg.intervalMinutes < 0) 120f + kotlin.random.Random.nextFloat() * 240f else cfg.intervalMinutes * 60f
         var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
         var stageAt = -1
+        var lastGust = 1f; var lastChime = -100f
         host.onFrame = { dt ->
             if (!ended && !paused) {
                 elapsed += dt
@@ -301,6 +302,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     "hourglass" -> hourglassStage(elapsed)
                     "bodyscan" -> scanStage(elapsed, planned).first
                     else -> -1
+                }
+                if (cfg.type == "hourglass" && soundOn) {
+                    val g = windGust(elapsed)
+                    if (g > 0.93f && lastGust <= 0.93f && elapsed - lastChime > 10f) { lastChime = elapsed; app.scope.launch { Bell.chime() } }
+                    lastGust = g
                 }
                 if (st != stageAt) {
                     if (stageAt >= 0) when (cfg.type) {
@@ -449,9 +455,13 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // the three-minute breathing space: an hourglass of light, and what each minute asks
         if (cfg.type == "hourglass" && !ended) {
             val hour = host.day.hour
+            // following the calendar, the tree turns slowly near a change of season; a chosen season stays as it is
+            val turning = remember { if (app.settings.seasonMode == "auto") seasonBlend() else Triple(host.season, host.season, 0f) }
             HourglassView(elapsed, HourglassLight(
                 com.grungert.nebo.sky.Seasons.apply(com.grungert.nebo.sky.DayCycle.paletteAt(hour), host.season, host.weather),
-                com.grungert.nebo.sky.DayCycle.sunAmount(hour) * com.grungert.nebo.sky.Seasons.sunThrough(host.weather), host.season))
+                com.grungert.nebo.sky.DayCycle.sunAmount(hour) * com.grungert.nebo.sky.Seasons.sunThrough(host.weather),
+                if (app.settings.seasonMode == "auto") turning.first else host.season, turning.second, turning.third,
+                host.weather, host.engine.reducedMotion))
             val st = hourglassStage(elapsed)
             AnimatedContent(st, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "hourglass",
                 modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 28.dp)) { s ->
