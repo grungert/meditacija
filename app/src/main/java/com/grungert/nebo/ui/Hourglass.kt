@@ -356,7 +356,8 @@ private object Glass {
     const val CX = 685f
     const val NECK = 692f
     const val TOP = 445f
-    const val BOTTOM = 985f
+    const val BOTTOM = 997f      // the middle of the lower bulb's floor, an ellipse seen a little from above
+    const val FLOOR_RY = 16f
     const val ART_TOP = 0f
     const val ART_BOTTOM = 1242f
     const val ART_LEFT = 167f
@@ -462,37 +463,26 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     val spread = smooth(126f, 172f, t)
     val appear = smooth(0f, 2.5f, t)
 
-    // the woven mat under it, in the floor's perspective, the base standing in its middle
+    // a round woven rug under it, flattened exactly like the painted base, so both are seen from the same height
     val bx = ox + 650f * sc
-    val matBack = sy(1150f); val matFront = sy(1242f) + h * 0.03f
-    fun toFront(xBack: Float) = vx + (xBack - vx) * (matFront - vy) / (matBack - vy)
-    val bl = bx - 360f * sc; val br = bx + 360f * sc
-    val mat = Path().apply { moveTo(bl, matBack); lineTo(br, matBack); lineTo(toFront(br), matFront); lineTo(toFront(bl), matFront); close() }
-    drawPath(mat, Brush.verticalGradient(listOf(Color(0xFF51617E), Color(0xFF7F8FAA)), matBack, matFront))
-    clipPath(mat) {
-        val rows = 6; val cols = 12
-        fun at(f: Float, g: Float): Offset {
-            val y = matBack + (matFront - matBack) * g
-            val xl = bl + (toFront(bl) - bl) * g; val xr = br + (toFront(br) - br) * g
-            return Offset(xl + (xr - xl) * f, y)
-        }
-        for (row in 0 until rows) for (col in 0 until cols) {
-            if ((row + col) % 2 == 0) continue
-            val a = at(col / cols.toFloat(), row / rows.toFloat()); val b = at((col + 1) / cols.toFloat(), row / rows.toFloat())
-            val c = at((col + 1) / cols.toFloat(), (row + 1) / rows.toFloat()); val d = at(col / cols.toFloat(), (row + 1) / rows.toFloat())
-            drawPath(Path().apply { moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(c.x, c.y); lineTo(d.x, d.y); close() }, Color(0xFFDCE3EE).copy(alpha = 0.22f))
-        }
-        for (i in 0..24) { val f = i / 24f; drawLine(Color.White.copy(alpha = 0.12f), at(f, 0f), at(f, 1f), 1 * px) }
+    val rug = Offset(bx, sy(1188f))
+    val rugRx = 500f * sc; val rugRy = rugRx * 0.12f
+    fun oval(c: Offset, rx: Float, ry: Float) = androidx.compose.ui.geometry.Rect(c.x - rx, c.y - ry, c.x + rx, c.y + ry)
+    drawOval(Color.Black.copy(alpha = 0.18f), oval(rug + Offset(0f, 4 * px), rugRx * 1.02f, rugRy * 1.15f).topLeft, oval(rug, rugRx * 1.02f, rugRy * 1.15f).size)
+    for (i in 0 until 7) {
+        val f = 1f - i / 7f
+        val o = oval(rug, rugRx * f, rugRy * f)
+        drawOval(if (i % 2 == 0) Color(0xFF5A6A88) else Color(0xFFC9CFDA), o.topLeft, o.size)
     }
-    drawPath(mat, Color(0xFF2E3A52).copy(alpha = 0.6f), style = Stroke(1.5f * px))
-    // shadows that hold it on the ground: a long soft one cast away from the light, and a dark one where the base touches
+    drawOval(Color(0xFF2E3A52).copy(alpha = 0.55f), oval(rug, rugRx, rugRy).topLeft, oval(rug, rugRx, rugRy).size, style = Stroke(1.5f * px))
+    // shadows that hold it on the rug: a long soft one cast away from the light, and a dark one where the base touches
     fun softOval(c: Offset, rx: Float, ry: Float, alpha: Float) {
         scale(1f, ry / rx, c) {
             drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = alpha), Color.Black.copy(alpha = alpha * 0.5f), Color.Transparent), c, rx), rx, c)
         }
     }
-    softOval(Offset(bx - 170f * sc, sy(1238f)), 560f * sc, 70f * sc, 0.28f)
-    softOval(Offset(bx, sy(1230f)), 380f * sc, 36f * sc, 0.7f)
+    softOval(Offset(bx - 120f * sc, sy(1222f)), 520f * sc, 60f * sc, 0.30f)
+    softOval(Offset(bx, sy(1212f)), 350f * sc, 36f * sc, 0.75f)
     with(sway) { draw(ox, oy, sc, art.width * sc, art.height * sc, t) }
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
@@ -532,35 +522,48 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
                 cx - gw / 2, cx + gw / 2), Offset(cx - gw / 2, top), Size(gw, bottom - top))
         }
     }
-    if (k < 0.995f) {
-        val level = cy - (cy - topFull) * (1 - k)
-        val dip = 7 * px * (1 - k)
-        val heap = Path()
-        val hw = halfWidth(level) * 0.96f
-        heap.moveTo(cx - hw, level)
-        for (i in 0..20) { val f = i / 20f; val x = cx - hw + 2 * hw * f; val u = (x - cx) / hw; heap.lineTo(x, level + dip * (1 - u * u)) }
-        for (i in 0..24) { val y = level + (cy - level) * i / 24f; heap.lineTo(cx + halfWidth(y) * 0.96f, y) }
-        for (i in 24 downTo 0) { val y = level + (cy - level) * i / 24f; heap.lineTo(cx - halfWidth(y) * 0.96f, y) }
-        heap.close()
-        sandFill(heap, level, cy, 0.6f)
+    // the inside of the glass: its walls row by row, and the floor of the lower bulb, an ellipse seen a little from above
+    val floorY = sy(Glass.BOTTOM)
+    val interior = Path().apply {
+        var yi = 415f
+        moveTo(cx - Glass.inner(yi) * sc, sy(yi))
+        while (yi < Glass.BOTTOM) { yi = min(yi + 6f, Glass.BOTTOM); lineTo(cx - Glass.inner(yi) * sc, sy(yi)) }
+        val fr = Glass.inner(Glass.BOTTOM) * sc
+        for (i in 0..24) { val a = PI.toFloat() * i / 24; lineTo(cx - fr * cos(a), floorY + Glass.FLOOR_RY * sc * sin(a)) }
+        while (yi > 415f) { yi = max(yi - 6f, 415f); lineTo(cx + Glass.inner(yi) * sc, sy(yi)) }
+        close()
     }
-    if (k > 0.005f) {
-        val height = (bottom - cy) * 0.62f * k.pow(0.8f)
-        val base = bottom
-        val top = base - height
-        val heap = Path()
-        heap.moveTo(cx - halfWidth(base) * 0.96f, base)
-        for (i in 0..24) { val y = base - (base - top) * 0.55f * i / 24f; heap.lineTo(cx - halfWidth(y) * 0.96f, y) }
-        val shoulder = base - (base - top) * 0.55f
-        val sw = halfWidth(shoulder) * 0.96f
-        heap.quadraticTo(cx - sw * 0.3f, top - height * 0.08f, cx, top)
-        heap.quadraticTo(cx + sw * 0.3f, top - height * 0.08f, cx + sw, shoulder)
-        for (i in 24 downTo 0) { val y = base - (base - top) * 0.55f * i / 24f; heap.lineTo(cx + halfWidth(y) * 0.96f, y) }
-        heap.close()
-        sandFill(heap, top, base, 0.6f + 1.2f * rise)
+    val wide = 420f * sc
+    val lowerHeight = (floorY - cy) * 0.62f * k.pow(0.8f)
+    clipPath(interior) {
+        // the upper sand: its surface sinking, with a small hollow where it runs out
+        if (k < 0.995f) {
+            val level = cy - (cy - topFull) * (1 - k)
+            val dip = 7 * px * (1 - k)
+            val hw = halfWidth(level)
+            val heap = Path()
+            heap.moveTo(cx - wide, level)
+            for (i in 0..24) { val x = cx - hw + 2 * hw * i / 24f; val u = (x - cx) / hw; heap.lineTo(x, level + dip * (1 - u * u)) }
+            heap.lineTo(cx + wide, level); heap.lineTo(cx + wide, cy + 2 * px); heap.lineTo(cx - wide, cy + 2 * px); heap.close()
+            sandFill(heap, level, cy, 0.6f)
+        }
+        // the lower sand: from the floor of the bulb up to a soft peak
+        if (k > 0.005f) {
+            val top = floorY - lowerHeight
+            val hw = halfWidth(floorY - lowerHeight * 0.3f)
+            val heap = Path()
+            heap.moveTo(cx - wide, top + lowerHeight * 0.75f)
+            for (i in 0..32) {
+                val x = cx - hw + 2 * hw * i / 32f
+                val u = ((x - cx) / hw).coerceIn(-1f, 1f)
+                heap.lineTo(x, top + lowerHeight * 0.7f * u * u)
+            }
+            heap.lineTo(cx + wide, top + lowerHeight * 0.75f); heap.lineTo(cx + wide, floorY + 40 * sc); heap.lineTo(cx - wide, floorY + 40 * sc); heap.close()
+            sandFill(heap, top, floorY + Glass.FLOOR_RY * sc, 0.6f + 1.2f * rise)
+        }
     }
     if (k < 0.995f) {
-        val bottomTop = bottom - (bottom - cy) * 0.62f * k.pow(0.8f)
+        val bottomTop = floorY - lowerHeight
         val sw = (1.3f + 1.2f * gather) * px
         drawLine(SAND.copy(alpha = 0.22f * (0.6f + gather)), Offset(cx, cy), Offset(cx, bottomTop), sw * 6, StrokeCap.Round)
         drawLine(SAND_LIGHT, Offset(cx, cy - 2 * px), Offset(cx, bottomTop), sw, StrokeCap.Round)
