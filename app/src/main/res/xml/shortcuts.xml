@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press on the app icon: the breathing space, a wave, a note and breathing, one touch away. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="hourglass" android:enabled="true" android:icon="@drawable/ic_shortcut_hourglass"
+        android:shortcutShortLabel="@string/shortcut_hourglass" android:shortcutLongLabel="@string/shortcut_hourglass_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.grungert.nebo" android:targetClass="com.grungert.nebo.MainActivity">
+            <extra android:name="shortcut" android:value="hourglass" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="urge" android:enabled="true" android:icon="@drawable/ic_shortcut_wave"
+        android:shortcutShortLabel="@string/shortcut_urge" android:shortcutLongLabel="@string/shortcut_urge_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.grungert.nebo" android:targetClass="com.grungert.nebo.MainActivity">
+            <extra android:name="shortcut" android:value="urge" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="note" android:enabled="true" android:icon="@drawable/ic_shortcut_note"
+        android:shortcutShortLabel="@string/shortcut_note" android:shortcutLongLabel="@string/shortcut_note_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.grungert.nebo" android:targetClass="com.grungert.nebo.MainActivity">
+            <extra android:name="shortcut" android:value="note" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="breath" android:enabled="true" android:icon="@drawable/ic_shortcut_breath"
+        android:shortcutShortLabel="@string/shortcut_breath" android:shortcutLongLabel="@string/shortcut_breath_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.grungert.nebo" android:targetClass="com.grungert.nebo.MainActivity">
+            <extra android:name="shortcut" android:value="breath" />
+        </intent>
+    </shortcut>
+</shortcuts>

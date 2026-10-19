@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The quick-settings tile: the hourglass, one colour, as the system tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M6,3.5H18M6,20.5H18M7.5,3.5Q7.5,9.5 12,12Q16.5,9.5 16.5,3.5M7.5,20.5Q7.5,14.5 12,12Q16.5,14.5 16.5,20.5"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M9.6,20.5Q12,16.5 14.4,20.5Z"/>
+</vector>

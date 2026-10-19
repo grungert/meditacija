@@ -6,4 +6,13 @@
     <string name="widget_text_default">Nekoliko daha, i nebo je tu.</string>
     <string name="widget_start">Kreni</string>
     <string name="widget_note">Zapiši</string>
+    <string name="shortcut_hourglass">3 minuta</string>
+    <string name="shortcut_hourglass_long">Pješčani sat, 3 minuta</string>
+    <string name="shortcut_urge">Talas</string>
+    <string name="shortcut_urge_long">Talas: kad te nešto vuče</string>
+    <string name="shortcut_note">Zapiši</string>
+    <string name="shortcut_note_long">Zapiši kako si</string>
+    <string name="shortcut_breath">Disanje</string>
+    <string name="shortcut_breath_long">Disanje uz krug svjetla</string>
+    <string name="tile_label">3 minuta</string>
 </resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A launcher shortcut: the app's night blue, and the same glyph as on Home. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <path android:fillColor="#FF1B2A4E" android:pathData="M24,0A24,24 0,1 1,24 48A24,24 0,1 1,24 0Z"/>
+    <group android:translateX="12" android:translateY="12">
+        <path android:strokeColor="#FFF5E9D3" android:strokeWidth="1.6" android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="M3,10Q6,5.5 9,10Q12,14.5 15,10Q18,5.5 21,10M3,16Q6,12 9,16Q12,20 15,16Q18,12 21,16"/>
+    </group>
+</vector>

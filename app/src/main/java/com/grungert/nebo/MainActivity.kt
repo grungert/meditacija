@@ -97,6 +97,8 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
 }
 
 class MainActivity : ComponentActivity() {
+    companion object { const val EXTRA_SHORTCUT = "shortcut" }
+
     private var screen by mutableStateOf<Screen>(Screen.Home)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,6 +128,13 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty
         // "3 minuta" on the daily reminder: the breathing space, straight away
         if (intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
+        // a launcher shortcut or the quick-settings tile
+        when (intent?.getStringExtra(EXTRA_SHORTCUT)) {
+            "hourglass" -> screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
+            "urge" -> screen = Screen.Session(lastConfig().copy(type = "urge", minutes = 5, checkInBefore = false, eyesClosed = false))
+            "breath" -> lastConfig().let { c -> screen = Screen.Session(c.copy(type = "breath", minutes = if (c.minutes in listOf(3, 5, 10, 15, 20, 0)) c.minutes else 5, checkInBefore = false)) }
+            "note" -> screen = Screen.CheckIn("note")
+        }
         // "Zapiši" on the home-screen widget
         if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")
         intent?.let { setIntent(Intent(it).replaceExtras(null as android.os.Bundle?)) }
