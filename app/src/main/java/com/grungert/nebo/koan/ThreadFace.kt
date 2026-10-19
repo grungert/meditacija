@@ -138,7 +138,7 @@ object ThreadFaces {
             FourPointsReader.URGES -> Triple("urge", "Talas", "Da posmatraš poriv kako raste i opada, a ne ideš za njim.")
             FourPointsReader.BODY -> Triple("bodyscan", "Skeniranje tijela", "Da vidiš gdje ovo nosiš u tijelu.")
             FourPointsReader.THOUGHTS -> Triple("thoughts", "Oblaci", "Da misli vidiš kao oblake koji dolaze i prolaze.")
-            FourPointsReader.EMOTIONS -> if (heavyShare >= 0.5f) Triple("points", "4 tačke", "Da vidiš kako emocija pomjera tijelo i misli.")
+            FourPointsReader.EMOTIONS -> if (heavyShare >= 0.5f) Triple("rain", "RAIN", "Četiri koraka za tešku emociju, bez guranja i bez bježanja.")
                 else Triple("silence", "Tišina", "Samo budi s tim što je dobro.")
             else -> Triple("breath", "Disanje", "Nekoliko minuta s dahom, pa vidi šta ostaje.")
         }

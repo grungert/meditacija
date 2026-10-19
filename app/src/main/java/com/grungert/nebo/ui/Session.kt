@@ -84,6 +84,8 @@ import com.grungert.nebo.sky.Phase
 import com.grungert.nebo.sky.Scenery
 import com.grungert.nebo.sky.patternById
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import androidx.compose.foundation.layout.imePadding
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -213,6 +215,12 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var waveAfter by remember { mutableIntStateOf(6) }
     var waveStarted by remember { mutableStateOf(!asksWave) }
     var waveRated by remember { mutableStateOf(false) }
+    // RAIN: the step, the feelings named, the kind words; the places touched are the body-scan marks
+    val isRain = cfg.type == "rain"
+    var rainStep by remember { mutableIntStateOf(0) }
+    val rainMoods = remember { mutableStateListOf<String>() }
+    var rainWords by remember { mutableStateOf("") }
+    var rainEntry by remember { mutableStateOf<kotlinx.coroutines.Deferred<Long>?>(null) }
 
     fun pause(on: Boolean) {
         if (ended) return
@@ -233,6 +241,9 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         val id = sessionId
         if (id != null && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
         if (id != null && asksWave && waveStarted && waveRated) { val a = waveAfter; app.scope.launch(Dispatchers.IO) { app.db.setSessionUrgeAfter(id, a) } }
+        // RAIN has already been its own note: straight on to what it might want to read
+        val note = rainEntry
+        if (note != null) { app.scope.launch(Dispatchers.Main) { go(Screen.Koan(id, note.await())) }; return }
         go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
     }
 
@@ -256,6 +267,13 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // written on the app's scope, so leaving at once does not lose it
         val sec = elapsed.toInt(); val n = scenery.thoughtCount
         val written = if (id != null) app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) } else null
+        // RAIN keeps what was found as a note: the feelings named, the body where they sat, the words of kindness
+        if (isRain && (rainMoods.isNotEmpty() || touched.isNotEmpty() || rainWords.isNotBlank())) {
+            val body = touched.mapNotNull { bodyRegion(it.region)?.label?.ifBlank { null } }.distinct()
+            val entry = com.grungert.nebo.data.Entry(createdAt = System.currentTimeMillis(), kind = "rain", sessionId = id,
+                text = rainWords.trim().ifBlank { null }, moods = rainMoods.toList(), points = com.grungert.nebo.data.FourPoints(body = body))
+            rainEntry = app.scope.async(Dispatchers.IO) { app.db.insertEntry(entry).also { app.scope.launch { app.recommender.tagNotes() } } }
+        }
         scope.launch {
             written?.join()   // the note about this scan reads it back among the others
             if (cfg.type == "bodyscan") endNote = withContext(Dispatchers.IO) { scanNote(touched.map { it.region }.distinct(), app.db.sessions()) }
@@ -312,6 +330,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     "hourglass" -> hourglassStage(elapsed)
                     "bodyscan" -> scanStage(elapsed, planned).first
                     "urge" -> waveStage(elapsed, planned)
+                    "rain" -> rainStep
                     else -> -1
                 }
                 if (cfg.type == "hourglass" && soundOn) {
@@ -338,11 +357,11 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             lastTouch = 0f; showUi = true
             if (cfg.eyesClosed && !ended && !paused) { peek = true; host.dark = false }
             if (cfg.type == "thoughts" && !ended && !paused) { scenery.addThought(pos.x, pos.y); thoughts = scenery.thoughtCount }
-            // a touch on the body marks tension there
+            // a touch on the body marks tension there (in RAIN, where the feeling sits)
             val box = figure[0]
-            if (cfg.type == "bodyscan" && !ended && !paused && box != null) {
-                val current = BODY_REGIONS[scanStage(elapsed, planned).first].id
-                regionAt(pos, box, current)?.let { r ->
+            if ((cfg.type == "bodyscan" || (isRain && rainStep == 2)) && !ended && !paused && box != null) {
+                val current = if (isRain) null else BODY_REGIONS[scanStage(elapsed, planned).first].id
+                regionAt(pos, box, current, lenient = isRain)?.let { r ->
                     marks += BodyMark(r, ((pos.x - box.left) / box.width).coerceIn(0f, 1f), ((pos.y - box.top) / box.height).coerceIn(0f, 1f)) to elapsed
                     if (app.settings.haptics) runCatching { vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK)) }
                 }
@@ -532,6 +551,21 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             }
         }
 
+        // RAIN: a card for each step, moving on when the person is ready; the figure appears to touch where it sits
+        if (isRain && !ended) {
+            if (rainStep == 2) BoxWithConstraints(Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val area = with(density) { Rect(maxWidth.toPx() * 0.12f, maxHeight.toPx() * 0.12f, maxWidth.toPx() * 0.88f, maxHeight.toPx() * 0.50f) }
+                BodyTouchView(elapsed, area, marks.toList()) { figure[0] = it }
+            }
+            AnimatedContent(rainStep, transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(900)) }, label = "rain",
+                modifier = Modifier.align(if (rainStep == 2) Alignment.BottomCenter else Alignment.Center).navigationBarsPadding().imePadding()
+                    .padding(bottom = if (rainStep == 2) 24.dp else 0.dp)) { s ->
+                RainCard(s, rainMoods, { m -> if (m in rainMoods) rainMoods.remove(m) else rainMoods.add(m) }, marks.map { it.first.region }.distinct().size,
+                    rainWords, { rainWords = it }) { lastTouch = 0f; if (s < 3) rainStep = s + 1 else finish() }
+            }
+        }
+
         if (cfg.type == "thoughts") {
             AnimatedVisibility(elapsed < 9f && !ended, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
                 Text("Kad primijetiš da je misao odlutala,\ndodirni nebo i pusti je.", style = HeadStyle.copy(fontSize = 24.sp),
@@ -546,7 +580,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
 
         // drawn above the eyes-closed darkness, so the question is there for the first breaths
         val weekQuestion = remember { app.library.byId(app.settings.activeWeekKoan())?.question }
-        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type !in listOf("thoughts", "bodyscan", "hourglass", "urge") && !ended, enter = fadeIn(), exit = fadeOut(),
+        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type !in listOf("thoughts", "bodyscan", "hourglass", "urge", "rain") && !ended, enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.screenPadding()) {
                 Text("PITANJE SEDMICE", style = LabelStyle)

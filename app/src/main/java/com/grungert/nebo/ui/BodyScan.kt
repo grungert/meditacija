@@ -103,13 +103,14 @@ fun scanStage(elapsed: Float, planned: Int): Triple<Int, Float, Float> {
  * The region a touch at [pos] (on a canvas where the figure stands in [box]) belongs to, or null when it missed the body.
  * The part the scan is on wins when the touch is near it; the back is only reachable while the scan is on it.
  */
-fun regionAt(pos: Offset, box: Rect, current: String?): String? {
+fun regionAt(pos: Offset, box: Rect, current: String?, lenient: Boolean = false): String? {
     val nx = (pos.x - box.left) / box.width
     val ny = (pos.y - box.top) / box.height
     fun d(r: BodyRegion) = r.centers.minOf { c -> ((nx - c.x) / r.rx).let { it * it } + ((ny - c.y) / r.ry).let { it * it } }
     BODY_REGIONS.firstOrNull { it.id == current && it.id != WHOLE_BODY }?.let { if (d(it) <= 1.8f) return it.id }
     val best = BODY_REGIONS.filter { it.id != WHOLE_BODY && (it.id != "leđa" || current == "leđa") }.minByOrNull { d(it) } ?: return null
-    return best.id.takeIf { d(best) <= 2.4f }
+    // without a scan to follow (RAIN), a touch anywhere on the figure belongs to the nearest part
+    return best.id.takeIf { d(best) <= if (lenient) 9f else 2.4f }
 }
 
 /** A limb between two points: a capsule outline, so all the parts can be joined into one shape. */
@@ -295,5 +296,33 @@ fun BodyMap(counts: Map<String, Int>, modifier: Modifier = Modifier) {
         }
         drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(5f * density))
         drawPath(path, Color.White.copy(alpha = 0.6f), style = Stroke(1.2f * density))
+    }
+}
+
+/**
+ * The figure at rest, for marking where a feeling sits (RAIN's "istraži"): no travelling light, only a slow breath
+ * of glow, and the places touched. [onBox] reports where the figure stands, as in [BodyScanView].
+ */
+@Composable
+fun BodyTouchView(elapsed: Float, area: Rect, marks: List<Pair<BodyMark, Float>>, modifier: Modifier = Modifier, onBox: (Rect) -> Unit) {
+    val cache = remember { HashMap<Rect, Path>() }
+    Canvas(modifier.fillMaxSize()) {
+        val box = figureBox(area)
+        onBox(box)
+        val path = cache.getOrPut(box) { cache.clear(); figurePath(box) }
+        val breath = 0.5f + 0.5f * sin(elapsed * 2f * PI.toFloat() / 8f)
+        figureBase(box, path, 0.2f, breath)
+        drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(6f * density))
+        drawPath(path, Color.White.copy(alpha = 0.7f), style = Stroke(1.4f * density))
+        for ((m, born) in marks) {
+            val c = Offset(box.left + m.x * box.width, box.top + m.y * box.height)
+            val age = elapsed - born
+            drawCircle(Brush.radialGradient(listOf(TENSION.copy(alpha = 0.75f), TENSION.copy(alpha = 0f)), c, 20 * density), 20 * density, c)
+            drawCircle(Color.White.copy(alpha = 0.9f), 2.6f * density, c)
+            if (age in 0f..1.6f) {
+                val k = age / 1.6f
+                drawCircle(TENSION.copy(alpha = 0.8f * (1 - k)), (8 + 26 * k) * density, c, style = Stroke(1.6f * density))
+            }
+        }
     }
 }

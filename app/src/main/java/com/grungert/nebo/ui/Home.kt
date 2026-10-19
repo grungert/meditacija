@@ -73,7 +73,7 @@ data class SessionConfig(
 ) {
     val paced get() = type == "breath" || type == "walk"
     /** The planned length in seconds: the breathing space is always three minutes. */
-    val plannedSeconds get() = if (type == "hourglass") HOURGLASS_SECONDS else minutes * 60
+    val plannedSeconds get() = when (type) { "hourglass" -> HOURGLASS_SECONDS; "rain" -> 0; else -> minutes * 60 }
 }
 
 /** A kind of session; [short] is the label under its round button, where the full name would not fit. */
@@ -88,11 +88,12 @@ val SESSION_TYPES = listOf(
     SessionType("hourglass", "Pješčani sat", "Tri minute: široko, pa samo dah, pa cijelo tijelo. Za usred dana.", NeboIcon.Hourglass, short = "3 minuta"),
     SessionType("bodyscan", "Skeniranje tijela", "Svjetlo putuje od stopala do tjemena. Dodirni gdje osjećaš napetost.", NeboIcon.Body, short = "Tijelo"),
     SessionType("urge", "Talas", "Kad te nešto vuče: posmatraš poriv kako raste i opada, a ne ideš za njim.", NeboIcon.Wave),
+    SessionType("rain", "RAIN", "Za tešku emociju: prepoznaj je, dozvoli joj, nađi je u tijelu, budi blag prema sebi.", NeboIcon.Heart),
 )
 
 /** Lengths offered for a kind of session; the breathing space has none to choose. */
 private fun lengthsFor(type: String) = when (type) {
-    "hourglass" -> emptyList()
+    "hourglass", "rain" -> emptyList()   // three minutes, and as long as the steps take
     "bodyscan" -> listOf(5, 10, 15, 20, 0)
     "urge" -> listOf(3, 5, 10)   // a wave has a beginning, a crest and an end
     else -> listOf(3, 5, 10, 15, 20, 0)
