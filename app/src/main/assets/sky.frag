@@ -142,6 +142,10 @@ float gust(float x) {
   return g * g;
 }
 
+// How much the sky is pressed together vertically where it is drawn: by the lake the whole sky above the meadow is
+// fitted between the shore and the top of the screen, so the sun and the moon are stretched back by this to stay round.
+float gSquash = 1.0;
+
 // Everything behind the drop, at a point p (x scaled by the aspect ratio, y from 0 at the bottom to 1 at the top).
 vec3 scene(vec2 p) {
   float asp = uRes.x / uRes.y;
@@ -172,6 +176,7 @@ vec3 scene(vec2 p) {
 
   // moon
   vec2 dvm = p - moonP;
+  dvm.y /= gSquash;
   float dm = length(dvm);
   if (uMoonAmt > 0.01) {
     float disc = smoothstep(0.036, 0.033, dm);
@@ -183,6 +188,7 @@ vec3 scene(vec2 p) {
 
   // sun disc and rays
   vec2 dv = p - sunP;
+  dv.y /= gSquash;
   float dist = length(dv);
   if (uSunAmt > 0.01) {
     col = mix(col, uSunCol * 0.4 + vec3(0.65), smoothstep(0.032, 0.026, dist) * uSunAmt);
@@ -278,13 +284,15 @@ const float BANK_Y = 0.12;
 const float FIT = (1.0 - BANK_Y) / (1.0 - LAKE_Y);
 
 vec3 lake(vec2 p) {
-  if (p.y >= LAKE_Y) return scene(vec2(p.x, BANK_Y + (p.y - LAKE_Y) * FIT));
+  gSquash = FIT;
+  if (p.y >= LAKE_Y) { vec3 sky = scene(vec2(p.x, BANK_Y + (p.y - LAKE_Y) * FIT)); gSquash = 1.0; return sky; }
   float d = LAKE_Y - p.y;              // how far below the shore
   float near = d / LAKE_Y;             // 0 at the far shore, 1 at the bottom of the screen
   // the water moves: long slow swells, and finer ripples nearer the viewer
   float swell = sin(p.y * 260.0 / (0.25 + near) - uTime * 1.1) * 0.0022 * (0.25 + near);
   float fine = (noise(vec2(p.x * 9.0 + uTime * 0.05, p.y * 70.0 - uTime * 0.35)) - 0.5) * 0.010 * near;
   vec3 refl = scene(vec2(p.x + swell + fine, BANK_Y + d * FIT * (1.0 + 0.03 * sin(p.x * 3.0 + uTime * 0.3))));
+  gSquash = 1.0;
   // reflections are a little cooler and darker than the world, and the water deepens towards the viewer
   vec3 deep = mix(uSkyHor, uSh, 0.55) * 0.42 + uGrassBot * 0.08;
   float fresnel = mix(0.88, 0.38, smoothstep(0.0, 1.0, near));
