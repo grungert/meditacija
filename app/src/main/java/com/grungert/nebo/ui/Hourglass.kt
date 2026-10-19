@@ -68,6 +68,11 @@ private val SAND_DEEP = Color(0xFFD99A55)
 private val FIREFLY = Color(0xFFE9F7A8)
 private val LANTERN = Color(0xFFFFC777)
 
+/** The far shore of the lake in the sky shader (1 - LAKE_Y). */
+private const val HORIZON = 0.58f
+/** The painted base is an ellipse 0.236 as deep as wide: tan(asin(0.236)), how far below the horizon it is per focal length. */
+private const val BASE_TAN = 0.2428f
+
 private class Grain(val u: Float, val v: Float, val ph: Float, val sp: Float, val s: Float, val w: Float)
 
 private fun smooth(a: Float, b: Float, x: Float): Float {
@@ -358,6 +363,9 @@ private object Glass {
     const val TOP = 445f
     const val BOTTOM = 997f      // the middle of the lower bulb's floor, an ellipse seen a little from above
     const val FLOOR_RY = 16f
+    /** The centre of the ellipse of the base's bottom rim (335 wide each way, 79 deep), and its centre across. */
+    const val BASE_Y = 1145f
+    const val BASE_X = 660f
     const val ART_TOP = 0f
     const val ART_BOTTOM = 1242f
     const val ART_LEFT = 167f
@@ -387,17 +395,30 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
 
     // ---- the veranda: floor, the sill at its edge, a post and the beam of the roof
     drawRect(Brush.verticalGradient(listOf(FLOOR_SHADE, FLOOR, FLOOR_LIT, FLOOR), floorTop, h), Offset(0f, floorTop), Size(w, h - floorTop))
-    // planks running towards the water, and the joints between them
-    // the planks run to the same horizon as the water outside (the far shore), so floor and lake share one perspective
-    val vx = w * 0.5f; val vy = h * 0.57f
+    // one perspective for the floor, the lake and the painting. The horizon is the far shore of the lake; the painted
+    // base is an ellipse 0.24 as deep as it is wide, which is a view about 14 degrees from above. With the base where it
+    // stands, that asks for a slightly wide lens: a focal length of 0.454 of the screen's height. Every circle on the
+    // floor (the rug, the shadows) then flattens by sin(atan(distance below the horizon / focal length)).
+    // where the painting stands: scaled to the screen, its base resting just above the card
+    val sc = min(h * 0.48f / (Glass.ART_BOTTOM - Glass.ART_TOP), w * 0.92f / (Glass.ART_RIGHT - Glass.ART_LEFT))
+    val ox = w * 0.5f - (Glass.ART_LEFT + Glass.ART_RIGHT) / 2 * sc
+    val oy = h * 0.705f - Glass.ART_BOTTOM * sc
+    val vx = w * 0.5f; val vy = h * HORIZON
+    val focal = (oy + Glass.BASE_Y * sc - vy) / BASE_TAN
+    fun flat(y: Float) = sin(kotlin.math.atan((y - vy).coerceAtLeast(1f) / focal))
     for (i in -6..6) {
         val bx = w * 0.5f + i * w * 0.16f
         val k = (floorTop - vy) / (h - vy)
         drawLine(FLOOR_SHADE.copy(alpha = 0.45f), Offset(vx + (bx - vx) * k, floorTop), Offset(bx, h), 1.2f * px)
     }
-    for ((i, jy) in listOf(0.70f, 0.80f, 0.92f).withIndex()) {
-        val y = h * jy
-        drawLine(FLOOR_SHADE.copy(alpha = 0.35f), Offset(w * (0.1f + 0.2f * i), y), Offset(w * (0.3f + 0.2f * i), y), 1 * px)
+    // the ends of the boards, closer together towards the horizon as they are further away
+    for (n in 1..9) {
+        val y = vy + (h - vy) * 0.95f / n
+        if (y < floorTop + 4 * px) break
+        for (j in 0 until 3) {
+            val x0 = w * (((n * 0.37f + j * 0.33f) % 1f))
+            drawLine(FLOOR_SHADE.copy(alpha = 0.32f), Offset(x0, y), Offset(x0 + w * 0.16f * (y - vy) / (h - vy) + 6 * px, y), 1 * px)
+        }
     }
     // each plank its own tone, with a few lines of grain
     val planks = Random(31)
@@ -443,9 +464,6 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     books(w * 0.80f, h * 0.672f, w * 0.18f)
 
     // ---- the hourglass and its tree, a painting placed so its base stands on the mat
-    val sc = min(h * 0.48f / (Glass.ART_BOTTOM - Glass.ART_TOP), w * 0.92f / (Glass.ART_RIGHT - Glass.ART_LEFT))
-    val ox = w * 0.5f - (Glass.ART_LEFT + Glass.ART_RIGHT) / 2 * sc
-    val oy = h * 0.705f - Glass.ART_BOTTOM * sc
     fun sy(yImg: Float) = oy + yImg * sc
     val cx = ox + Glass.CX * sc
     val cy = sy(Glass.NECK)
@@ -464,25 +482,29 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     val appear = smooth(0f, 2.5f, t)
 
     // a round woven rug under it, flattened exactly like the painted base, so both are seen from the same height
-    val bx = ox + 650f * sc
-    val rug = Offset(bx, sy(1188f))
-    val rugRx = 500f * sc; val rugRy = rugRx * 0.12f
+    val bx = ox + Glass.BASE_X * sc
+    val rug = Offset(bx, sy(Glass.BASE_Y + 6f))
+    val rugRx = 500f * sc; val rugRy = rugRx * flat(rug.y)
     fun oval(c: Offset, rx: Float, ry: Float) = androidx.compose.ui.geometry.Rect(c.x - rx, c.y - ry, c.x + rx, c.y + ry)
     drawOval(Color.Black.copy(alpha = 0.18f), oval(rug + Offset(0f, 4 * px), rugRx * 1.02f, rugRy * 1.15f).topLeft, oval(rug, rugRx * 1.02f, rugRy * 1.15f).size)
-    for (i in 0 until 7) {
-        val f = 1f - i / 7f
+    // woven straw: a lit surface, then the coils of the weave, a darker binding at the edge
+    val whole = oval(rug, rugRx, rugRy)
+    drawOval(Brush.verticalGradient(listOf(Color(0xFFD8B97E), Color(0xFFB8935A)), whole.top, whole.bottom), whole.topLeft, whole.size)
+    for (i in 1 until 14) {
+        val f = 1f - i / 14f
         val o = oval(rug, rugRx * f, rugRy * f)
-        drawOval(if (i % 2 == 0) Color(0xFF5A6A88) else Color(0xFFC9CFDA), o.topLeft, o.size)
+        drawOval(Color(0xFF8C6A3C).copy(alpha = 0.28f), o.topLeft, o.size, style = Stroke(1.2f * px))
     }
-    drawOval(Color(0xFF2E3A52).copy(alpha = 0.55f), oval(rug, rugRx, rugRy).topLeft, oval(rug, rugRx, rugRy).size, style = Stroke(1.5f * px))
+    drawOval(Color(0xFF6E4E2C), whole.topLeft, whole.size, style = Stroke(5f * px))
+    drawOval(Color(0xFFE9D3A3).copy(alpha = 0.5f), oval(rug, rugRx * 0.985f, rugRy * 0.97f).topLeft, oval(rug, rugRx * 0.985f, rugRy * 0.97f).size, style = Stroke(1.2f * px))
     // shadows that hold it on the rug: a long soft one cast away from the light, and a dark one where the base touches
     fun softOval(c: Offset, rx: Float, ry: Float, alpha: Float) {
         scale(1f, ry / rx, c) {
             drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = alpha), Color.Black.copy(alpha = alpha * 0.5f), Color.Transparent), c, rx), rx, c)
         }
     }
-    softOval(Offset(bx - 120f * sc, sy(1222f)), 520f * sc, 60f * sc, 0.30f)
-    softOval(Offset(bx, sy(1212f)), 350f * sc, 36f * sc, 0.75f)
+    softOval(Offset(bx - 130f * sc, sy(Glass.BASE_Y + 20f)), 560f * sc, 560f * sc * flat(sy(Glass.BASE_Y + 20f)), 0.30f)
+    softOval(Offset(bx, sy(Glass.BASE_Y + 4f)), 350f * sc, 350f * sc * flat(sy(Glass.BASE_Y + 4f)), 0.75f)
     with(sway) { draw(ox, oy, sc, art.width * sc, art.height * sc, t) }
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
