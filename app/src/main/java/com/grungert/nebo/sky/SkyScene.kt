@@ -69,11 +69,18 @@ class DayClock(mode: String) {
     var mode: String = mode
         set(v) { field = v; if (v != "clock" && v != "cycle") hold = v.toFloatOrNull() }
     private var hold: Float? = mode.toFloatOrNull()
-    var hour: Float = hold ?: DayCycle.clockHour(); private set
+    /** The scene hour (see [Astro.sceneHour]): following the clock, the sun rises and sets when it really does. */
+    var hour: Float = hold ?: Astro.sceneHourNow(); private set
+    /** The real moon's phase, 0 new .. 0.5 full; it changes too slowly to need more than a look now and then. */
+    var moonPhase: Float = Astro.moonPhase(); private set
+    private var looked = 0f
+    private var real = Astro.sceneHourNow()
 
     fun step(dt: Float) {
+        looked += dt
+        if (looked > 20f) { looked = 0f; moonPhase = Astro.moonPhase(); real = Astro.sceneHourNow() }
         if (mode == "cycle") { hour = (hour + dt * 24f / 180f) % 24f; return }
-        val target = if (mode == "clock") DayCycle.clockHour() else hold ?: DayCycle.clockHour()
+        val target = hold ?: real
         var diff = (((target - hour) % 24f) + 24f) % 24f  // always travel forward through the day
         if (diff > 23.95f) diff = 0f
         hour = if (diff < 0.002f) target else (hour + minOf(diff, maxOf(0.6f, diff * 0.8f) * dt)) % 24f
@@ -156,12 +163,13 @@ fun SkyScene(
                 state.pal = Seasons.apply(DayCycle.paletteAt(h), seasonNow, weatherNow)
                 state.season = seasonNow; state.weather = weatherNow
                 val through = Seasons.sunThrough(weatherNow)
-                state.light = DayCycle.lightDir(h)
+                state.light = DayCycle.lightDir(h, day.moonPhase)
                 state.dt = dt
                 skyView.renderer.frame = SkyFrame(
                     state.time, engine.drift, engine.morph, engine.windPhase, engine.walk, engine.breath,
-                    if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h),
-                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h) * through, state.light, state.dim, Seasons.cover(weatherNow), state.drop, state.lake,
+                    if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h, day.moonPhase),
+                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h, day.moonPhase) * through, state.light, state.dim, Seasons.cover(weatherNow), state.drop, state.lake,
+                    day.moonPhase,
                 )
                 skyView.requestRender()
                 lightCb(state.pal, DayCycle.sunAmount(h) * through)

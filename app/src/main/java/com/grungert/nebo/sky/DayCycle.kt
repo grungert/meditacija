@@ -62,9 +62,26 @@ object DayCycle {
     /** Position on the sky arc in uv space (x 0..1 left to right, y 0 at the horizon). */
     private fun arc(s: Float) = floatArrayOf(0.08f + 0.84f * s, -0.06f + sin(PI * s).toFloat())
     fun sunPos(h: Float) = arc((h - 5.8f) / 13.8f)
-    fun moonPos(h: Float) = arc((((h - 19.4f) % 24f) + 24f) % 24f / 11f)
     fun sunAmount(h: Float) = smooth(5.5f, 6.6f, h) * (1f - smooth(19.3f, 20.2f, h))
-    fun moonAmount(h: Float) = clamp01(1f - smooth(5.2f, 6.3f, h) + smooth(19.6f, 20.8f, h))
+
+    /**
+     * The moon rises about 50 minutes later each day: with the sun when it is new, as the sun sets when it is full,
+     * around midnight at last quarter. In scene hours, so it keeps that order on the scene's own day.
+     */
+    fun moonRise(phase: Float) = ((19.4f + (phase - 0.5f) * 24f) % 24f + 24f) % 24f
+    /** How far along its arc the moon is, 0 rising .. 1 setting; above 1 it is below the horizon. */
+    private fun moonArc(h: Float, phase: Float) = (((h - moonRise(phase)) % 24f) + 24f) % 24f / 11f
+    fun moonPos(h: Float, phase: Float = 0.5f) = arc(moonArc(h, phase))
+    /**
+     * How strongly the moon shows: while it is above the horizon, paler by day, and not at all in the days around new
+     * moon, when the little that is lit stands next to the sun.
+     */
+    fun moonAmount(h: Float, phase: Float = 0.5f): Float {
+        val s = moonArc(h, phase)
+        if (s >= 1f) return 0f
+        val up = smooth(0f, 0.05f, s) * (1f - smooth(0.95f, 1f, s))
+        return up * (1f - 0.8f * sunAmount(h)) * smooth(0.01f, 0.08f, Astro.moonLit(phase))
+    }
 
     fun periodName(h: Float): String = when {
         h < 5.4f -> "Noć"
@@ -81,10 +98,10 @@ object DayCycle {
     }
 
     /** Direction towards the light for the cloud and tree shading. */
-    fun lightDir(h: Float): FloatArray {
+    fun lightDir(h: Float, phase: Float = 0.5f): FloatArray {
         fun dir(p: FloatArray) = floatArrayOf((p[0] - 0.5f) * 1.4f, max(-0.3f, p[1] - 0.3f) + 0.15f, 0.35f)
         val sun = dir(sunPos(h))
-        val moon = dir(moonPos(h))
+        val moon = dir(moonPos(h, phase))
         val a = sunAmount(h)
         val v = mix(moon, sun, if (a > 0.001f) clamp01(a * 1.5f) else 0f)
         val l = kotlin.math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).coerceAtLeast(1e-4f)

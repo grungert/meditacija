@@ -12,6 +12,7 @@ uniform vec3 uSh, uMd, uLt, uRim;
 uniform vec3 uSunCol, uGrassTop, uGrassBot;
 uniform vec2 uSunPos, uMoonPos;   // in uv space
 uniform float uSunAmt, uMoonAmt, uStars;
+uniform float uMoonPhase;         // 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter
 uniform float uCover;             // extra cloud cover for rain, snow and fog
 uniform float uDim;               // 0 normal, 1 fully dark (eyes closed)
 uniform vec3 uLight;              // normalised direction towards the sun or moon
@@ -180,10 +181,17 @@ vec3 scene(vec2 p) {
   float dm = length(dvm);
   if (uMoonAmt > 0.01) {
     float disc = smoothstep(0.036, 0.033, dm);
-    float lit = smoothstep(0.030, 0.037, length(dvm - vec2(0.014, 0.008)));
-    vec3 moonCol = vec3(0.98, 0.96, 0.88) * mix(0.30, 1.0, lit) * (0.92 + 0.08 * noise(p * 140.0));
-    col = mix(col, moonCol, disc * uMoonAmt);
-    col += vec3(0.55, 0.65, 0.90) * (exp(-dm * 8.0) * 0.22 + exp(-dm * 30.0) * 0.20) * uMoonAmt;
+    // the phase: the lit part is bounded by the limb on one side and the terminator, an ellipse, on the other;
+    // growing on the right as it waxes and shrinking from the right as it wanes, as seen from the north
+    vec2 q = dvm / 0.0345;
+    float rim = sqrt(max(0.0, 1.0 - q.y * q.y));
+    float k = cos(6.2831853 * uMoonPhase) * rim;
+    float lit = uMoonPhase < 0.5 ? smoothstep(-0.07, 0.07, q.x - k) : smoothstep(-0.07, 0.07, -k - q.x);
+    float full = 0.5 - 0.5 * cos(6.2831853 * uMoonPhase);   // how much of the face is lit
+    // the dark part keeps a faint earthshine
+    vec3 moonCol = vec3(0.98, 0.96, 0.88) * mix(0.10, 1.0, lit) * (0.92 + 0.08 * noise(p * 140.0));
+    col = mix(col, moonCol, disc * uMoonAmt * mix(0.35, 1.0, lit));
+    col += vec3(0.55, 0.65, 0.90) * (exp(-dm * 8.0) * 0.22 + exp(-dm * 30.0) * 0.20) * uMoonAmt * (0.25 + 0.75 * full);
   }
 
   // sun disc and rays

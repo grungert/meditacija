@@ -31,7 +31,8 @@ object WidgetArt {
         val c = Canvas(bmp)
         val w = wPx.toFloat(); val h = hPx.toFloat()
         val u = density
-        val hour = settings.timeMode.toFloatOrNull() ?: DayCycle.clockHour()
+        val hour = settings.timeMode.toFloatOrNull() ?: com.grungert.nebo.sky.Astro.sceneHourNow()
+        val phase = com.grungert.nebo.sky.Astro.moonPhase()
         val season = Seasons.season(settings.seasonMode)
         val weather = Seasons.weather(settings.weatherMode, season)
         val pal = Seasons.apply(DayCycle.paletteAt(hour), season, weather)
@@ -71,7 +72,7 @@ object WidgetArt {
             c.drawCircle(x, y, radius, paint)
         }
         disc(DayCycle.sunPos(hour), DayCycle.sunAmount(hour) * through, pal.sun, 13 * u, 6f)
-        disc(DayCycle.moonPos(hour), DayCycle.moonAmount(hour) * through, floatArrayOf(0.98f, 0.96f, 0.88f), 10 * u, 4f)
+        disc(DayCycle.moonPos(hour, phase), DayCycle.moonAmount(hour, phase) * through, floatArrayOf(0.98f, 0.96f, 0.88f), 10 * u, 4f)
 
         // two painted cumulus: lobes in the shadow tone, lit lobes over them towards the top
         fun cloud(cx: Float, cy: Float, s: Float, seed: Int) {
