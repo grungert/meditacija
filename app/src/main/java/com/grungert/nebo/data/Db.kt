@@ -23,6 +23,10 @@ data class Session(
     val marks: List<BodyMark> = emptyList(),
     /** Where the mind went most often during a clouds session, as the person said afterwards. */
     val wander: List<String> = emptyList(),
+    /** A wave (urge surfing): the pull that was watched, and how strong it was before and after, 1..10. */
+    val urge: String? = null,
+    val urgeBefore: Int? = null,
+    val urgeAfter: Int? = null,
 )
 
 /** One touch on the body during a scan: the region, and where on the figure (0..1 of its width and height). */
@@ -100,7 +104,8 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
             type TEXT NOT NULL, planned_sec INTEGER NOT NULL, actual_sec INTEGER NOT NULL DEFAULT 0, pattern TEXT NOT NULL,
-            walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT, marks TEXT, wander TEXT)""")
+            walk INTEGER NOT NULL DEFAULT 0, thoughts INTEGER NOT NULL DEFAULT 0, koan_id TEXT, marks TEXT, wander TEXT,
+            urge TEXT, urge_before INTEGER, urge_after INTEGER)""")
         db.execSQL("""CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
             session_id INTEGER, prompt_id INTEGER, audio_path TEXT, text TEXT, transcript TEXT, transcript_model TEXT,
             moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0, points TEXT)""")
@@ -119,6 +124,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         if (oldVersion < 5) {
             db.execSQL("ALTER TABLE sessions ADD COLUMN marks TEXT")
             db.execSQL("ALTER TABLE sessions ADD COLUMN wander TEXT")
+        }
+        if (oldVersion < 6) {
+            db.execSQL("ALTER TABLE sessions ADD COLUMN urge TEXT")
+            db.execSQL("ALTER TABLE sessions ADD COLUMN urge_before INTEGER")
+            db.execSQL("ALTER TABLE sessions ADD COLUMN urge_after INTEGER")
         }
     }
 
@@ -164,6 +174,15 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         writableDatabase.update("sessions", ContentValues().apply { put("wander", wander.joinToString(",").ifEmpty { null }) }, "id=?", arrayOf(id.toString()))
     }
 
+    /** The pull watched in a wave and how strong it was as the wave began, or (with [after]) as it ended. */
+    fun setSessionUrge(id: Long, urge: String, before: Int) {
+        writableDatabase.update("sessions", ContentValues().apply { put("urge", urge); put("urge_before", before) }, "id=?", arrayOf(id.toString()))
+    }
+
+    fun setSessionUrgeAfter(id: Long, after: Int) {
+        writableDatabase.update("sessions", ContentValues().apply { put("urge_after", after) }, "id=?", arrayOf(id.toString()))
+    }
+
     fun session(id: Long): Session? =
         readableDatabase.rawQuery("SELECT * FROM sessions WHERE id=?", arrayOf(id.toString())).use { c -> if (c.moveToNext()) c.toSession() else null }
 
@@ -186,6 +205,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         plannedSec = int("planned_sec"), actualSec = int("actual_sec"), pattern = str("pattern")!!,
         walk = int("walk") == 1, thoughts = int("thoughts"), koanId = str("koan_id"),
         marks = BodyMark.fromJson(str("marks")), wander = csv(str("wander")),
+        urge = str("urge"), urgeBefore = intOrNull("urge_before"), urgeAfter = intOrNull("urge_after"),
     )
 
     // ---------- entries ----------
@@ -302,8 +322,9 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
     private fun Cursor.int(n: String) = getInt(getColumnIndexOrThrow(n))
     private fun Cursor.str(n: String): String? = getColumnIndexOrThrow(n).let { if (isNull(it)) null else getString(it) }
     private fun Cursor.longOrNull(n: String): Long? = getColumnIndexOrThrow(n).let { if (isNull(it)) null else getLong(it) }
+    private fun Cursor.intOrNull(n: String): Int? = getColumnIndexOrThrow(n).let { if (isNull(it)) null else getInt(it) }
     private fun csv(s: String?) = s?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
 }
 
 /** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
-const val SCHEMA = 5
+const val SCHEMA = 6

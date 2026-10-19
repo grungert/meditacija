@@ -14,7 +14,7 @@ import java.util.Locale
 val KIND_LABEL = mapOf("before" to "prije sesije", "after" to "poslije sesije", "esm" to "zapažanje na poziv", "note" to "zapažanje", "week" to "sedmični pregled")
 val TYPE_LABEL = mapOf(
     "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci misli", "silence" to "Tišina", "points" to "4 tačke",
-    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas",
 )
 
 /** Plain text, oldest first, easy to read or to send for a look at the patterns. */
@@ -55,7 +55,8 @@ object Export {
                         (if (ev.type == "breath" || ev.type == "walk") ", ritam ${ev.pattern}" else "") +
                         (if (ev.walk) ", šetnja" else "") + (if (ev.thoughts > 0) ", oblaka misli: ${ev.thoughts}" else "") +
                         (if (ev.marks.isNotEmpty()) ", napetost: " + ev.marks.map { it.region }.distinct().joinToString(", ") else "") +
-                        (if (ev.wander.isNotEmpty()) ", um je odlazio u: " + ev.wander.joinToString(", ") else ""))
+                        (if (ev.wander.isNotEmpty()) ", um je odlazio u: " + ev.wander.joinToString(", ") else "") +
+                        (if (ev.urge != null) ", poriv: " + ev.urge.removePrefix("da ") + (ev.urgeBefore?.let { " $it" } ?: "") + (ev.urgeAfter?.let { " → $it" } ?: "") else ""))
                     library.byId(ev.koanId)?.let { sb.appendLine("  koan: ${it.title ?: it.text.take(60)}") }
                 }
                 is Entry -> {

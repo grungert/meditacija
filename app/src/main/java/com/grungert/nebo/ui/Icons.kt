@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** A small hand-drawn line icon set, drawn on a 24-unit grid with round strokes. */
-enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share, Pause, Stop, Close, Trash, Points, Heart, Body, Urge, Hourglass, Stars }
+enum class NeboIcon { Back, Journal, Stats, Settings, Mic, Play, Star, StarFilled, Cloud, Steps, Bell, Moon, Sun, EyeClosed, Similar, Breath, Silence, Week, Pen, Check, Search, Share, Pause, Stop, Close, Trash, Points, Heart, Body, Urge, Hourglass, Stars, Wave }
 
 @Composable
 fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Modifier) {
@@ -123,6 +123,11 @@ fun Icon(icon: NeboIcon, color: Color, size: Dp = 22.dp, modifier: Modifier = Mo
                 drawPath(path { m(7.5f, 3.5f); q(7.5f, 9.5f, 12f, 12f); q(16.5f, 9.5f, 16.5f, 3.5f) }, color, style = st)
                 drawPath(path { m(7.5f, 20.5f); q(7.5f, 14.5f, 12f, 12f); q(16.5f, 14.5f, 16.5f, 20.5f) }, color, style = st)
                 drawPath(path { m(9.6f, 20.5f); q(12f, 16.5f, 14.4f, 20.5f); close() }, color)
+            }
+            NeboIcon.Wave -> {
+                // two swells, the upper one with its crest
+                drawPath(path { m(3f, 10f); q(6f, 5.5f, 9f, 10f); q(12f, 14.5f, 15f, 10f); q(18f, 5.5f, 21f, 10f) }, color, style = st)
+                drawPath(path { m(3f, 16f); q(6f, 12f, 9f, 16f); q(12f, 20f, 15f, 16f); q(18f, 12f, 21f, 16f) }, color, style = st)
             }
             NeboIcon.Stars -> {
                 // a small constellation: four stars joined by lines

@@ -87,12 +87,14 @@ val SESSION_TYPES = listOf(
     SessionType("points", "4 tačke", "Misli, emocije, tijelo i nagoni, jedno po jedno, pa sve zajedno.", NeboIcon.Points),
     SessionType("hourglass", "Pješčani sat", "Tri minute: široko, pa samo dah, pa cijelo tijelo. Za usred dana.", NeboIcon.Hourglass, short = "3 minuta"),
     SessionType("bodyscan", "Skeniranje tijela", "Svjetlo putuje od stopala do tjemena. Dodirni gdje osjećaš napetost.", NeboIcon.Body, short = "Tijelo"),
+    SessionType("urge", "Talas", "Kad te nešto vuče: posmatraš poriv kako raste i opada, a ne ideš za njim.", NeboIcon.Wave),
 )
 
 /** Lengths offered for a kind of session; the breathing space has none to choose. */
 private fun lengthsFor(type: String) = when (type) {
     "hourglass" -> emptyList()
     "bodyscan" -> listOf(5, 10, 15, 20, 0)
+    "urge" -> listOf(3, 5, 10)   // a wave has a beginning, a crest and an end
     else -> listOf(3, 5, 10, 15, 20, 0)
 }
 
@@ -234,12 +236,13 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
                         contentAlignment = Alignment.Center) { Icon(NeboIcon.Settings, Ink.text, 20.dp) }
                 }
 
-                // or one tap for a kind of session, four to a row, and the microphone for a note
+                // or one tap for a kind of session, five to a row, and the microphone for a note at the end
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (row in SESSION_TYPES.chunked(4)) Row(Modifier.fillMaxWidth()) {
-                        for (t in row) IconButton(t.icon, t.short, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 50.dp)
-                        if (row.size < 4) IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 50.dp)
-                        repeat(3 - row.size) { Box(Modifier.weight(1f)) }
+                    val items: List<SessionType?> = SESSION_TYPES + null
+                    for (row in items.chunked(5)) Row(Modifier.fillMaxWidth()) {
+                        for (t in row) if (t != null) IconButton(t.icon, t.short, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 48.dp)
+                            else IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 48.dp)
+                        repeat(5 - row.size) { Box(Modifier.weight(1f)) }
                     }
                 }
             }

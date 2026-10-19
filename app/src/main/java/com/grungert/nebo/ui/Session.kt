@@ -206,6 +206,13 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     val wander = remember { mutableStateListOf<String>() }
     var endNote by remember { mutableStateOf<String?>(null) }
     val asksWander = cfg.type == "thoughts"
+    // the wave: what pulls and how strongly, asked before the time starts and again at the end
+    val asksWave = cfg.type == "urge"
+    var waveUrge by remember { mutableStateOf<String?>(null) }
+    var waveBefore by remember { mutableIntStateOf(6) }
+    var waveAfter by remember { mutableIntStateOf(6) }
+    var waveStarted by remember { mutableStateOf(!asksWave) }
+    var waveRated by remember { mutableStateOf(false) }
 
     fun pause(on: Boolean) {
         if (ended) return
@@ -225,6 +232,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         left = true
         val id = sessionId
         if (id != null && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
+        if (id != null && asksWave && waveStarted && waveRated) { val a = waveAfter; app.scope.launch(Dispatchers.IO) { app.db.setSessionUrgeAfter(id, a) } }
         go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
     }
 
@@ -253,8 +261,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (cfg.type == "bodyscan") endNote = withContext(Dispatchers.IO) { scanNote(touched.map { it.region }.distinct(), app.db.sessions()) }
             delay(1500)
             endReady = true
-            // after the clouds the ending waits for an answer (or a skip); otherwise it moves on by itself
-            if (!asksWander) { delay(7000); proceed() }
+            // after the clouds and the wave the ending waits for an answer; otherwise it moves on by itself
+            if (!asksWander && !(asksWave && waveStarted)) { delay(7000); proceed() }
         }
     }
 
@@ -262,7 +270,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         view.keepScreenOn = true
         // by the lake, if that is where the person sits; the walk always goes through the meadow
         // the hourglass stands on a veranda by the water, so it always has the lake behind it
-        host.lake = (app.settings.lakeScene || cfg.type == "hourglass") && cfg.type != "walk"
+        // and the wave is a sea of its own over the water
+        host.lake = (app.settings.lakeScene || cfg.type == "hourglass" || cfg.type == "urge") && cfg.type != "walk"
         val e = host.engine
         e.walkOn = cfg.type == "walk"
         e.paced = cfg.paced
@@ -289,7 +298,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         var stageAt = -1
         var lastGust = 1f; var lastChime = -100f
         host.onFrame = { dt ->
-            if (!ended && !paused) {
+            if (!ended && !paused && waveStarted) {
                 elapsed += dt
                 lastTouch += dt
                 host.breath.phase = when (e.phase) { Phase.IN -> 1; Phase.OUT -> 2; else -> 0 }
@@ -302,6 +311,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                     "points" -> pointsStage(elapsed, planned)
                     "hourglass" -> hourglassStage(elapsed)
                     "bodyscan" -> scanStage(elapsed, planned).first
+                    "urge" -> waveStage(elapsed, planned)
                     else -> -1
                 }
                 if (cfg.type == "hourglass" && soundOn) {
@@ -345,7 +355,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 app.db.insertSession(Session(startedAt = System.currentTimeMillis(), type = cfg.type, plannedSec = planned,
                     pattern = cfg.pattern, walk = cfg.type == "walk")).also { id -> cfg.beforeEntryId?.let { app.db.linkEntryToSession(it, id) } }
             }
-            Bell.ring()
+            if (!asksWave) Bell.ring()   // the wave rings when it starts, after its question
         }
         // the meadow falls silent while the app is in the background
         val obs = LifecycleEventObserver { _, ev ->
@@ -501,6 +511,27 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             }
         }
 
+        // the wave: first what pulls and how strongly, then the sea rising and falling, and what each part asks
+        if (cfg.type == "urge" && !ended) {
+            if (!waveStarted) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                WaveIntro(waveUrge, waveBefore, { waveUrge = it }, { waveBefore = it }) {
+                    waveStarted = true; waveAfter = waveBefore; lastTouch = 0f
+                    val id = sessionId; val u = waveUrge!!; val b = waveBefore
+                    if (id != null) app.scope.launch(Dispatchers.IO) { app.db.setSessionUrge(id, u, b) }
+                    app.scope.launch { Bell.ring() }
+                }
+            } else {
+                WaveView(elapsed, planned)
+                val st = waveStage(elapsed, planned)
+                AnimatedContent(st, transitionSpec = { fadeIn(tween(1500)) togetherWith fadeOut(tween(1500)) }, label = "wave",
+                    modifier = Modifier.align(Alignment.Center)) { s ->
+                    val (name, title, line) = WAVE_STAGES[s]
+                    val part = planned / 5f
+                    StageCard(title, line, Color(0xFF8FD3E8), ((elapsed - s * part) / part).coerceIn(0f, 1f), label = "${name.uppercase()} · ${s + 1} OD 5")
+                }
+            }
+        }
+
         if (cfg.type == "thoughts") {
             AnimatedVisibility(elapsed < 9f && !ended, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.Center)) {
                 Text("Kad primijetiš da je misao odlutala,\ndodirni nebo i pusti je.", style = HeadStyle.copy(fontSize = 24.sp),
@@ -515,7 +546,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
 
         // drawn above the eyes-closed darkness, so the question is there for the first breaths
         val weekQuestion = remember { app.library.byId(app.settings.activeWeekKoan())?.question }
-        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type !in listOf("thoughts", "bodyscan", "hourglass") && !ended, enter = fadeIn(), exit = fadeOut(),
+        if (weekQuestion != null) AnimatedVisibility(elapsed in 1.5f..12f && cfg.type !in listOf("thoughts", "bodyscan", "hourglass", "urge") && !ended, enter = fadeIn(), exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp)) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.screenPadding()) {
                 Text("PITANJE SEDMICE", style = LabelStyle)
@@ -532,6 +563,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                             style = NumberStyle.copy(fontSize = 44.sp, fontWeight = FontWeight.Light, letterSpacing = 1.sp))
                         Text(when {
                             cfg.type == "thoughts" -> "oblaka: $thoughts"
+                            cfg.type == "urge" && waveUrge != null -> "talas: " + waveUrge!!.removePrefix("da ")
                             cfg.type == "bodyscan" && marks.isNotEmpty() ->
                                 marks.map { it.first.region }.distinct().size.let { n -> "napetost: $n " + plural(n, "mjesto", "mjesta", "mjesta") }
                             planned > 0 -> "preostalo od ${planned / 60} min"
@@ -562,7 +594,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             if (on) host.breath.start() else host.breath.stop()
         }, onClose = { ambienceOpen = false; lastTouch = 0f; host.dark = cfg.eyesClosed && !paused })
 
-        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (endReady && !asksWander) proceed() },
+        if (ended) Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null) { if (endReady && !asksWander && !(asksWave && waveStarted)) proceed() },
             contentAlignment = Alignment.Center) {
             val shown by animateFloatAsState(if (endReady) 1f else 0f, tween(1800), label = "end")
             Column(Modifier.alpha(shown).fillMaxWidth().softShade().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -582,7 +614,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                             GlassButton("Dalje", { proceed() }, Modifier.weight(1f), strong = true, enabled = endReady)
                         }
                     }
-                } else Text("Dodirni za nastavak", style = SmallStyle)
+                } else if (asksWave && waveStarted) WaveRating(waveBefore, waveAfter, { waveAfter = it; waveRated = true }, { waveRated = true; proceed() }, endReady)
+                else Text("Dodirni za nastavak", style = SmallStyle)
             }
         }
     }

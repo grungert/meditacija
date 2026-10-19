@@ -180,7 +180,13 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
                 GlassButton("Probaj: ${face.practiceName}", {
                     player.stop()
                     val base = ctx.lastConfig()
-                    go(Screen.Session(base.copy(type = face.practice, minutes = if (face.practice == "bodyscan" && base.minutes !in listOf(5, 10, 15, 20)) 10 else base.minutes,
+                    // a length that suits the practice: a body scan needs time, a wave a few minutes
+                    val minutes = when {
+                        face.practice == "bodyscan" && base.minutes !in listOf(5, 10, 15, 20) -> 10
+                        face.practice == "urge" && base.minutes !in listOf(3, 5, 10) -> 5
+                        else -> base.minutes
+                    }
+                    go(Screen.Session(base.copy(type = face.practice, minutes = minutes,
                         checkInBefore = false, eyesClosed = false)))
                 }, Modifier.fillMaxWidth(), strong = true, sub = face.practiceWhy)
             }

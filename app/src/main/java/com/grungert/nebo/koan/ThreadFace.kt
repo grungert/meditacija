@@ -135,7 +135,7 @@ object ThreadFaces {
         // a practice that fits what the thread holds most
         val heavyShare = seen.count { s -> s.moods.any { it in HEAVY } } / n.toFloat()
         val (practice, name, why) = when (dominant) {
-            FourPointsReader.URGES -> Triple("hourglass", "Pješčani sat", "Tri minute između poriva i onoga što uradiš.")
+            FourPointsReader.URGES -> Triple("urge", "Talas", "Da posmatraš poriv kako raste i opada, a ne ideš za njim.")
             FourPointsReader.BODY -> Triple("bodyscan", "Skeniranje tijela", "Da vidiš gdje ovo nosiš u tijelu.")
             FourPointsReader.THOUGHTS -> Triple("thoughts", "Oblaci", "Da misli vidiš kao oblake koji dolaze i prolaze.")
             FourPointsReader.EMOTIONS -> if (heavyShare >= 0.5f) Triple("points", "4 tačke", "Da vidiš kako emocija pomjera tijelo i misli.")

@@ -324,6 +324,8 @@ private fun SessionRow(row: Session, koanTitle: String?) {
         Column(Modifier.weight(1f)) {
             Text("${TYPE_LABEL[row.type] ?: row.type} · " + (if (row.actualSec < 60) "${row.actualSec} s" else "${row.actualSec / 60} min") + (if (row.thoughts > 0) " · oblaka ${row.thoughts}" else ""),
                 style = BodyStyle.copy(fontSize = 15.sp, shadow = null))
+            if (row.urge != null) Text("poriv: " + row.urge.removePrefix("da ") + (row.urgeBefore?.let { " · $it" } ?: "") + (row.urgeAfter?.let { " → $it" } ?: ""),
+                style = SmallStyle.copy(color = Ink.accent, shadow = null))
             if (koanTitle != null) Text(koanTitle, style = SmallStyle.copy(color = Ink.accent, shadow = null))
         }
         Text(timeFmt.format(Date(row.startedAt)), style = SmallStyle.copy(shadow = null))
@@ -481,6 +483,21 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     }
                 }
             }
+            if (d.waves.isNotEmpty()) Panel {
+                SectionLabel("Talasi")
+                val all = d.waves.sumOf { it.count }
+                val before = d.waves.sumOf { (it.before * it.count).toDouble() } / all
+                val after = d.waves.sumOf { (it.after * it.count).toDouble() } / all
+                // whole numbers stay whole: "sa 8 na 3", and "sa 7,5 na 4" only when it is a half
+                fun num(x: Double) = if (kotlin.math.abs(x - kotlin.math.round(x)) < 0.05) "%d".format(kotlin.math.round(x).toInt()) else "%.1f".format(x).replace('.', ',')
+                Text("Poriv je u prosjeku pao sa ${num(before)} na ${num(after)}, za $all ${plural(all, "talas", "talasa", "talasa")}.",
+                    style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
+                for (w in d.waves.take(5)) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(w.urge.removePrefix("da "), style = BodyStyle.copy(fontSize = 14.sp, shadow = null), modifier = Modifier.weight(1f))
+                    Text("${w.count}× · %.0f → %.0f".format(w.before, w.after), style = SmallStyle.copy(shadow = null))
+                }
+                Text("Talas ne traži da poriv nestane, samo da ga vidiš kako prolazi.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+            }
             Panel {
                 SectionLabel("Gdje nosiš napetost")
                 if (d.tension.isEmpty()) Text("Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.",
@@ -611,6 +628,8 @@ class StatsData(
     val habits: List<Pair<String, Int>> = emptyList(),
     val times: Map<MindHabits.Time, Int> = emptyMap(),
     val wander: List<Pair<String, Int>> = emptyList(),
+    /** Waves ridden, per pull: how many, and how strong on average before and after. */
+    val waves: List<WaveSummary> = emptyList(),
 )
 
 /** Where tension was named: each scan counts a part once, each note once for each part its body point names. */
@@ -693,6 +712,7 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         habits = MindHabits.HABITS.map { h -> h.id to mind.count { h.id in MindHabits.habits(it) } }.filter { it.second > 0 }.sortedByDescending { it.second },
         times = mind.mapNotNull { MindHabits.time(it) }.groupingBy { it }.eachCount(),
         wander = sessions.flatMap { it.wander }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
+        waves = waveSummaries(sessions),
     )
 }
 

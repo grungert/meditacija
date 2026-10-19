@@ -25,7 +25,7 @@ class ThreadFaceTest {
             note(4, 4, 22, "Ležim i skrolujem", listOf("nemirno"), urge),
         ), now)
         assertEquals(FourPointsReader.URGES, face.dominant)
-        assertEquals("hourglass", face.practice)
+        assertEquals("urge", face.practice)
         assertTrue(face.sentence, face.sentence.startsWith("Najčešće uveče") && "poriv „da uzmem telefon“" in face.sentence)
         assertEquals(ThreadPhase.RETURNING, face.phase)
     }
