@@ -137,6 +137,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         "after" -> "Šta primjećuješ?" to "Šta se pojavilo dok si sjedio? Riječ ili dvije su dovoljne."
         "esm" -> "Kako si sada?" to "Šta je u tebi upravo sada? Nema pogrešnog odgovora."
         "week" -> "Tvoja sedmica" to "Prije nego što ti pokažem obrasce: šta ti primjećuješ u ovoj sedmici?"
+        "evening" -> "Kako je prošao dan?" to "Šta je danas bilo dobro? Šta je bilo teško? I šta sutra želiš drugačije?"
         else -> "Zapažanje" to "Šta primjećuješ u sebi upravo sada?"
     }
 
@@ -241,8 +242,9 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 .screenPadding().padding(top = 8.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
+            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week" || sc.kind == "evening") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
             Text(prompt, style = BodyStyle.copy(color = Ink.soft))
+            if (sc.kind == "evening") DaySummary()
 
             // speaking: one big button, the live wave of the voice, the time
             Column(
@@ -490,6 +492,34 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                 }
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** What today already holds, so the evening look back does not start from nothing: sessions, notes and their moods. */
+@Composable
+private fun DaySummary() {
+    val app = LocalContext.current.app
+    var day by remember { mutableStateOf<Triple<List<com.grungert.nebo.data.Session>, Int, List<Pair<String, Int>>>?>(null) }
+    LaunchedEffect(Unit) {
+        day = withContext(Dispatchers.IO) {
+            val from = com.grungert.nebo.esm.Esm.midnight().timeInMillis
+            val notes = app.db.entries(from).filter { it.kind != "evening" }
+            Triple(app.db.sessions(from), notes.size, notes.flatMap { it.moods }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second })
+        }
+    }
+    val (sessions, notes, moods) = day ?: return
+    if (sessions.isEmpty() && notes == 0) return
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.surface.copy(alpha = 0.7f)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("DANAS", style = LabelStyle.copy(shadow = null))
+        val min = sessions.sumOf { it.actualSec } / 60
+        Text(listOfNotNull(
+            if (sessions.isNotEmpty()) "${sessions.size} ${plural(sessions.size, "sesija", "sesije", "sesija")}" + (if (min > 0) " · $min min" else "") else null,
+            if (notes > 0) "$notes ${plural(notes, "zapis", "zapisa", "zapisa")}" else null,
+        ).joinToString(" · "), style = BodyStyle.copy(shadow = null))
+        if (moods.isNotEmpty()) ChipRow {
+            for ((m, n) in moods.take(6)) Chip(if (n > 1) "$m ×$n" else m, false, {}, dot = MOOD_COLORS[m])
         }
     }
 }

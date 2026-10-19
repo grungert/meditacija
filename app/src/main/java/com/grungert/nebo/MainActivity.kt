@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
         val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
+        if (intent?.getBooleanExtra(Esm.EXTRA_EVENING, false) == true) screen = Screen.CheckIn("evening")
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
         if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty

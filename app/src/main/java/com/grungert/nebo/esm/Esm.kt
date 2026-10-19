@@ -41,6 +41,8 @@ object Esm {
     private const val ACTION_FIFTY = "com.grungert.nebo.FIFTY"
     const val EXTRA_FIFTY = "fifty_fifty"
     const val EXTRA_HOURGLASS = "hourglass"
+    const val EXTRA_EVENING = "evening_review"
+    private const val ACTION_EVENING = "com.grungert.nebo.EVENING"
     private const val FIFTY_CHANNEL = "pedeset"
     private val FIFTY_LINES = listOf(
         "Pola pažnje u tijelu, pola napolju. Stopala na podu, i zvukovi oko tebe.",
@@ -92,6 +94,7 @@ object Esm {
         val db = ctx.app.db
         scheduleWeek(ctx, am)
         scheduleDaily(ctx, am)
+        scheduleEvening(ctx, am)
         scheduleReminder(ctx, am)
         scheduleFifty(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
@@ -169,6 +172,19 @@ object Esm {
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
         arm(am, c.timeInMillis, pi)
     }
+
+    /** Each evening at the chosen hour: a look back at the day. */
+    private fun scheduleEvening(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_EVENING, 0)
+        val s = ctx.app.settings
+        if (!s.eveningReview) { am.cancel(pi); return }
+        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.eveningHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
+        arm(am, c.timeInMillis, pi)
+    }
+
+    /** True when today's evening look back has been written. */
+    fun eveningDone(ctx: Context): Boolean = ctx.app.db.entries(midnight().timeInMillis).any { it.kind == "evening" }
 
     /** Plans the day's 50-50 moments at random within the chosen hours (or tomorrow's, when today's are over) and arms the next. */
     private fun scheduleFifty(ctx: Context, am: AlarmManager) {
@@ -332,6 +348,14 @@ object Esm {
                         .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
                 }
             }
+            ACTION_EVENING -> if (s.eveningReview && !eveningDone(ctx)) {
+                val open = PendingIntent.getActivity(ctx, 7, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_EVENING, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                ctx.getSystemService(NotificationManager::class.java).notify(EVENING_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification).setContentTitle("Kako je prošao dan?")
+                    .setContentText("Šta je bilo dobro, šta teško, i šta sutra drugačije.").setContentIntent(open).setAutoCancel(true)
+                    .setTimeoutAfter(4 * 60 * 60_000L).build())
+            }
             ACTION_FIFTY -> if (s.fiftyOn) notifyFifty(ctx)
             ACTION_SILENCE -> {
                 s.esmSilencedDay = today()
@@ -346,6 +370,7 @@ object Esm {
     private const val DAILY_NOTIFICATION_ID = 9
     private const val REMIND_NOTIFICATION_ID = 10
     private const val FIFTY_NOTIFICATION_ID = 12
+    private const val EVENING_NOTIFICATION_ID = 13
 
     private fun notify(ctx: Context, promptId: Long) {
         val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)

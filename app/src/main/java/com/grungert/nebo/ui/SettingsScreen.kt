@@ -63,6 +63,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     var fiftyTo by remember { mutableIntStateOf(s.fiftyTo) }
     var daily by remember { mutableStateOf(s.dailyQuestion) }
     var dailyHour by remember { mutableIntStateOf(s.dailyHour) }
+    var evening by remember { mutableStateOf(s.eveningReview) }
+    var eveningHour by remember { mutableIntStateOf(s.eveningHour) }
     var refresh by remember { mutableIntStateOf(0) }
 
     val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -180,6 +182,16 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                 }, sub = "Pitanje iz koana koji nosiš ove sedmice, ili iz biblioteke.")
                 if (daily) ChipRow {
                     for (h in listOf(6, 7, 8, 9, 10)) Chip("$h h", dailyHour == h, { dailyHour = h; s.dailyHour = h; app.scope.launch { Esm.refresh(context) } })
+                }
+                SwitchRow("Večernji pregled", evening, {
+                    evening = it; s.eveningReview = it
+                    if (it && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    app.scope.launch { Esm.refresh(context) }
+                }, sub = "Uveče, minut-dva: šta je bilo dobro, šta teško, i šta sutra drugačije.")
+                if (evening) ChipRow {
+                    for (h in listOf(19, 20, 21, 22)) Chip("$h h", eveningHour == h, { eveningHour = h; s.eveningHour = h; app.scope.launch { Esm.refresh(context) } })
                 }
             }
 

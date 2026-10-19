@@ -158,6 +158,13 @@ class Settings(private val context: Context) {
     var dailyHour: Int
         get() = p.getInt("dailyHour", 8)
         set(v) = p.edit { putInt("dailyHour", v) }
+    /** An evening look back at the day, at the chosen hour. */
+    var eveningReview: Boolean
+        get() = p.getBoolean("eveningReview", false)
+        set(v) = p.edit { putBoolean("eveningReview", v) }
+    var eveningHour: Int
+        get() = p.getInt("eveningHour", 21)
+        set(v) = p.edit { putInt("eveningHour", v) }
 
     /** Bumped when the way themes are found changes, so every note is tagged again once. */
     var themesVersion: Int

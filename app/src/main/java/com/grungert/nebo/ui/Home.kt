@@ -146,6 +146,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var weekSessions by remember { mutableIntStateOf(0) }
     var weekNotes by remember { mutableIntStateOf(0) }
     var reviewHeld by remember { mutableIntStateOf(0) }   // notes and sessions in the week a review would look back on
+    var eveningDue by remember { mutableStateOf(false) }
     var silenced by remember { mutableStateOf(s.esmSilencedDay == Esm.today()) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -156,6 +157,12 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             val from = Esm.reviewWeekStart().timeInMillis
             val to = (Esm.reviewWeekStart().apply { add(Calendar.WEEK_OF_YEAR, 1) }).timeInMillis
             reviewHeld = context.app.db.entries(from).count { it.createdAt < to } + context.app.db.sessions(from).count { it.startedAt < to }
+            // the evening look back: from an hour before its time (or eight in the evening), when the day held something
+            val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+            val start = if (s.eveningReview) s.eveningHour - 1 else 20
+            val today = Esm.midnight().timeInMillis
+            eveningDue = hour >= start && !Esm.eveningDone(context) &&
+                (s.eveningReview || context.app.db.sessions(today).isNotEmpty() || context.app.db.entries(today).isNotEmpty())
         }
     }
     val dow = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
@@ -211,6 +218,17 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
         Spacer(Modifier.height(if (weekKoan != null) 90.dp else 200.dp))
         AnimatedVisibility(shown, enter = fadeIn() + slideInVertically { it / 8 }) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (eveningDue) Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
+                        .clickable(role = Role.Button) { go(Screen.CheckIn("evening")) }.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(NeboIcon.Moon, Ink.accent, 22.dp) }
+                    Column(Modifier.weight(1f)) {
+                        Text("Večernji pregled", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+                        Text("Šta je danas bilo dobro, a šta teško", style = SmallStyle.copy(shadow = null))
+                    }
+                }
                 if (reviewDue) Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
                         .clickable(role = Role.Button) { go(Screen.CheckIn("week")) }.padding(16.dp),
