@@ -54,17 +54,27 @@ object MindHabits {
         "čeka me", "rok", "roka", "rokovi", "bojim se da će", "plašim se da će", "brinem da", "brine me kako",
         "budućnost*", "šta će biti", "kako ću",
     )
+    // only words that put the mind in this moment; "sad" and "osjećam" stand in almost every note and say nothing of where the mind is
     private val NOW = listOf(
-        "sada", "sad", "upravo", "ovog trena", "u ovom trenutku", "ovdje", "dišem", "primjećujem", "osjećam", "čujem",
-        "slušam", "gledam",
+        "upravo", "ovog trena", "u ovom trenutku", "ovdje i sada", "sada i ovdje", "sada sam", "sada osjećam",
+        "ovdje sam", "dišem", "primjećujem", "čujem", "slušam", "gledam",
     )
 
-    private val cache = HashMap<String, Regex>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
     private fun pattern(stem: String) = cache.getOrPut(stem) {
         val body = stem.trimEnd('*').split(' ').joinToString("\\s+") { Regex.escape(it) }
         Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
     }
     private fun count(text: String, stems: List<String>) = stems.sumOf { pattern(it).findAll(text).count() }
+
+    /**
+     * The words of a note to read the mind in: what was said, plus the thoughts point where it adds something. The
+     * thoughts read from the words are pieces of those same words, and counting them twice would tip the balance.
+     */
+    fun mindOf(e: com.grungert.nebo.data.Entry): String {
+        val extra = e.points.thoughts.split(Regex("[.\\n]+")).map { it.trim() }.filter { it.isNotEmpty() && !e.words.contains(it, ignoreCase = true) }
+        return (listOf(e.words) + extra).joinToString("\n")
+    }
 
     /** "Kao i uvijek" is a turn of phrase, not a verdict on life. */
     private fun clean(text: String) = text.replace(Regex("kao i uvijek|kao i obično", RegexOption.IGNORE_CASE), " ")

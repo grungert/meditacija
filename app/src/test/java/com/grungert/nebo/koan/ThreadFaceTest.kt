@@ -22,11 +22,22 @@ class ThreadFaceTest {
             note(1, 30, 21, "Moram još da odgovorim na poruke", listOf("nemirno"), urge),
             note(2, 20, 20, "Opet skrolujem do kasno", listOf("nemirno"), urge),
             note(3, 9, 21, "Vuče me telefon prije spavanja", listOf("umorno"), urge),
+            note(4, 4, 22, "Ležim i skrolujem", listOf("nemirno"), urge),
         ), now)
         assertEquals(FourPointsReader.URGES, face.dominant)
         assertEquals("hourglass", face.practice)
         assertTrue(face.sentence, face.sentence.startsWith("Najčešće uveče") && "poriv „da uzmem telefon“" in face.sentence)
         assertEquals(ThreadPhase.RETURNING, face.phase)
+    }
+
+    @Test
+    fun thinEvidenceSaysNothingAboutUsually() {
+        // three evenings could be chance: no "najčešće"
+        val three = ThreadFaces.of(listOf(note(1, 30, 21, "Posao"), note(2, 20, 20, "Posao opet"), note(3, 9, 21, "Posao i dalje")), now)
+        assertTrue(three.sentence, !three.sentence.startsWith("Najčešće"))
+        // a mood in two notes of twenty is not what comes with the thread
+        val many = (1..20L).map { i -> note(i, i.toInt(), 9 + (i % 3).toInt() * 4, "Posao", if (i <= 2) listOf("tužno") else emptyList()) }
+        assertTrue(ThreadFaces.of(many, now).sentence, "tug" !in ThreadFaces.of(many, now).sentence)
     }
 
     @Test

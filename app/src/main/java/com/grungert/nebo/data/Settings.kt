@@ -163,6 +163,10 @@ class Settings(private val context: Context) {
     var themesVersion: Int
         get() = p.getInt("themesVersion", 0)
         set(v) = p.edit { putInt("themesVersion", v) }
+    /** Whether the notes' themes were found with the meaning model; once it arrives, they are found again with it. */
+    var themesByMeaning: Boolean
+        get() = p.getBoolean("themesByMeaning", false)
+        set(v) = p.edit { putBoolean("themesByMeaning", v) }
 
     // backups
     /** A folder (document tree) chosen for the weekly automatic copy, or null. */

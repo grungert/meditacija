@@ -57,8 +57,12 @@ private fun notes(n: Int) = "$n " + plural(n, "zapis", "zapisa", "zapisa")
 @Composable
 fun ThreadsList(go: (Screen) -> Unit) {
     val app = LocalContext.current.app
-    var threads by remember { mutableStateOf<List<InsightThread>?>(null) }
-    LaunchedEffect(Unit) { threads = app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() }) }
+    var threads by remember { mutableStateOf<List<Pair<InsightThread, ThreadFace>>?>(null) }
+    // each thread's face reads every one of its notes, so it is worked out here, off the main thread, not while drawing
+    LaunchedEffect(Unit) {
+        val found = app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() })
+        threads = withContext(Dispatchers.Default) { found.map { it to ThreadFaces.of(it.entries) } }
+    }
     val t = threads
     when {
         t == null -> Text("Tražim šta se vraća…", style = BodyStyle.copy(color = Ink.soft), modifier = Modifier.padding(top = 24.dp))
@@ -72,7 +76,7 @@ fun ThreadsList(go: (Screen) -> Unit) {
                     GlassButton("Vidi ih kao sazviježđa", { go(Screen.Constellations) }, Modifier.fillMaxWidth(), icon = NeboIcon.Stars)
                 }
             }
-            items(t) { th -> ThreadCard(th) { go(Screen.Thread(th.entries.map { it.id }, th.title)) } }
+            items(t) { (th, face) -> ThreadCard(th, face) { go(Screen.Thread(th.entries.map { it.id }, th.title)) } }
         }
     }
 }
@@ -97,8 +101,7 @@ private fun PhasePill(face: ThreadFace) {
 private fun lit(face: ThreadFace) = face.strength.mapValues { it.value >= 0.2f }
 
 @Composable
-private fun ThreadCard(th: InsightThread, onOpen: () -> Unit) {
-    val face = remember(th) { ThreadFaces.of(th.entries) }
+private fun ThreadCard(th: InsightThread, face: ThreadFace, onOpen: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.surface)
             .clickable(role = Role.Button, onClickLabel = "Otvori nit", onClick = onOpen).padding(18.dp),
@@ -135,7 +138,12 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
     val app = LocalContext.current.app
     val player = remember { NotePlayer() }
     var entries by remember { mutableStateOf<List<Entry>?>(null) }
-    LaunchedEffect(sc) { entries = withContext(Dispatchers.IO) { sc.ids.mapNotNull { app.db.entry(it) }.sortedBy { it.createdAt } } }
+    var loadedFace by remember { mutableStateOf<ThreadFace?>(null) }
+    LaunchedEffect(sc) {
+        val list = withContext(Dispatchers.IO) { sc.ids.mapNotNull { app.db.entry(it) }.sortedBy { it.createdAt } }
+        loadedFace = withContext(Dispatchers.Default) { ThreadFaces.of(list) }
+        entries = list
+    }
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(
@@ -148,7 +156,7 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
             if (list.isEmpty()) { Text("Ove bilješke više ne postoje.", style = BodyStyle); return@Column }
             val first = list.first()
             val last = list.last()
-            val face = remember(list) { ThreadFaces.of(list) }
+            val face = loadedFace ?: return@Column
             Text("${notes(list.size)} · ${dayLabel(first.createdAt)} → ${dayLabel(last.createdAt)}", style = SmallStyle)
             // the face of the thread: its four points, when it comes and with what, where it is, and a practice for it
             Panel {

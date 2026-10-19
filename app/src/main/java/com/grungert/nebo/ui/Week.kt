@@ -118,7 +118,7 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
         val query = listOfNotNull(reflection?.words, themes.take(3).joinToString(", ") { THEME_NAMES[it.first] ?: it.first }).joinToString(". ")
         val nextKoan = app.recommender.pick(query, emptyList(), afterSession = true, koansOnly = true).item
         val fmt = SimpleDateFormat("d. MMMM", Locale.forLanguageTag("sr-Latn-ME"))
-        val mind = thisWeek.map { it.words + "\n" + it.points.thoughts }
+        val mind = thisWeek.map { com.grungert.nebo.koan.MindHabits.mindOf(it) }
         val habits = com.grungert.nebo.koan.MindHabits.HABITS.map { h -> h.id to mind.count { h.id in com.grungert.nebo.koan.MindHabits.habits(it) } }
             .filter { it.second > 0 }.sortedByDescending { it.second }
         val times = mind.mapNotNull { com.grungert.nebo.koan.MindHabits.time(it) }.groupingBy { it }.eachCount()

@@ -152,16 +152,22 @@ class FourPointsState(initial: FourPoints = FourPoints()) {
     var recognised by mutableStateOf<List<String>>(emptyList())
     /** Where they were read from: the person's words, or the places touched in a body scan. */
     var fromScan by mutableStateOf(false)
+    /** The body labels the scan brought; they stay whatever the words say. */
+    var scanBody: List<String> = emptyList()
 
     fun toPoints() = FourPoints(thoughts.trim(), body.toList(), urges.toList())
 
-    /** Adds what was read from the words, never taking away what the person chose. */
+    /**
+     * The points as the words say them now. Until the person changes something by hand ([touched], after which this is
+     * not called), everything here came from the words, so it is simply read again: a word typed and then deleted takes
+     * back what it brought, and the thoughts follow the whole text rather than its first few words.
+     */
     fun fillFrom(r: FourPointsReader.Reading, moods: SnapshotStateList<String>) {
-        if (thoughts.isBlank()) thoughts = r.thoughts
-        r.moods.forEach { if (it !in moods) moods += it }
-        r.body.forEach { if (it !in body) body += it }
-        r.urges.forEach { if (it !in urges) urges += it }
-        recognised = (if (fromScan) recognised + r.found else r.found).distinct()
+        thoughts = r.thoughts
+        moods.clear(); moods.addAll(r.moods)
+        body.clear(); body.addAll((scanBody + r.body).distinct())
+        urges.clear(); urges.addAll(r.urges)
+        recognised = ((if (fromScan) listOf(FourPointsReader.BODY) else emptyList()) + r.found).distinct()
     }
 }
 

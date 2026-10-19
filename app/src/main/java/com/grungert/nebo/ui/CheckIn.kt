@@ -128,6 +128,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         val labels = touched.map { it.region }.distinct().mapNotNull { bodyRegion(it)?.label?.ifBlank { null } }
         if (labels.isEmpty()) return@LaunchedEffect
         labels.forEach { if (it !in points.body) points.body += it }
+        points.scanBody = labels
         points.recognised = listOf(com.grungert.nebo.koan.FourPointsReader.BODY); points.fromScan = true
         scanned = true
     }
@@ -200,10 +201,13 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         // on the app's scope and the main thread: leaving the screen while the note is being saved does not lose it
         app.scope.launch(Dispatchers.Main) {
             val typed = text.trim().ifBlank { null }
-            // written words get their four points read too, unless the person has filled them in; the model is not
-            // waited on for long, the note matters more than its points
-            if (typed != null && !points.touched && points.recognised.isEmpty())
-                kotlinx.coroutines.withTimeoutOrNull(4000) { app.recommender.readFourPoints(typed) }?.let { points.fillFrom(it, moods) }
+            // the points are read once more from the final words (typed, and heard when the field holds something else),
+            // unless the person has filled them in; the model is not waited on for long, the note matters more than its points
+            val said = listOfNotNull(typed, heard?.takeIf { !fieldFromVoice && it.isNotBlank() }).joinToString(". ")
+            if (said.isNotBlank() && !points.touched)
+                kotlinx.coroutines.withTimeoutOrNull(4000) { app.recommender.readFourPoints(said) }?.let { points.fillFrom(it, moods) }
+            // words all deleted again: what they had brought goes with them
+            else if (!points.touched) points.fillFrom(com.grungert.nebo.koan.FourPointsReader.Reading("", emptyList(), emptyList(), emptyList()), moods)
             // when the field holds the transcript, the corrected version becomes the transcript;
             // without one yet, the recording is transcribed in the background after saving
             val transcript = if (fieldFromVoice) typed ?: "" else heard
@@ -374,7 +378,8 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
             entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
         p.item?.let { seen += it.id }
         pick = p
-        if (entry != null && p.themes.isNotEmpty()) withContext(Dispatchers.IO) { app.db.updateEntry(entry.copy(themes = p.themes), com.grungert.nebo.data.Col.THEMES) }
+        // the note's themes are found from its own words by the tagging that ran when it was saved; the pick's themes
+        // also read the points summary ("Tijelo: …"), which would put presence into every note with a body point
     }
 
     fun keep(next: Screen = Screen.Home) {

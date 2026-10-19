@@ -38,9 +38,11 @@ class NeboApp : Application() {
             com.grungert.nebo.widget.NeboWidget.refresh(this@NeboApp)   // the day of the week koan moves on
             transcriber.drain()
             recommender.warmUp()
-            val retag = settings.themesVersion < THEMES_VERSION
+            // again for every note when the way of finding themes changed, or when the meaning model has arrived since
+            val meaning = recommender.usesMeaning
+            val retag = settings.themesVersion < THEMES_VERSION || (meaning && !settings.themesByMeaning)
             recommender.tagNotes(force = retag)
-            if (retag) settings.themesVersion = THEMES_VERSION
+            if (retag) { settings.themesVersion = THEMES_VERSION; settings.themesByMeaning = meaning }
             recommender.warmSearch()
             com.grungert.nebo.data.Backup.autoIfDue(this@NeboApp)
         }
@@ -49,7 +51,7 @@ class NeboApp : Application() {
     }
 }
 
-/** 2: whole-word keywords plus themes by meaning. */
-private const val THEMES_VERSION = 2
+/** 2: whole-word keywords plus themes by meaning. 3: tighter words, negation, themes from the words only. */
+private const val THEMES_VERSION = 3
 
 val Context.app: NeboApp get() = applicationContext as NeboApp

@@ -45,7 +45,7 @@ object ThreadFaces {
 
     private fun seen(e: Entry): Seen {
         val read = if (e.points.isEmpty) FourPointsReader.read(e.words) else null
-        val habits = MindHabits.habits(e.words + "\n" + e.points.thoughts)
+        val habits = MindHabits.habits(MindHabits.mindOf(e))
         return Seen(
             thoughts = e.points.thoughts.isNotBlank() || read?.thoughts?.isNotBlank() == true || habits.isNotEmpty(),
             moods = (e.moods + (read?.moods ?: emptyList())).distinct(),
@@ -59,11 +59,11 @@ object ThreadFaces {
         in 5..11 -> 0; in 12..16 -> 1; in 17..21 -> 2; else -> 3
     }
 
-    /** The most common value, when it shows in at least two notes or in at least 40% of them. */
+    /** The most common value, when it shows in at least two notes and in at least 40% of them: two of twenty is not "usually". */
     private fun <T> common(items: List<List<T>>): T? {
         val n = items.size
         return items.flatMap { it.distinct() }.groupingBy { it }.eachCount().maxByOrNull { it.value }
-            ?.takeIf { it.value >= 2 || it.value >= 0.4f * n }?.key
+            ?.takeIf { it.value >= 2 && it.value >= 0.4f * n }?.key
     }
 
     private fun joinAnd(items: List<String>) = when (items.size) {
@@ -95,9 +95,9 @@ object ThreadFaces {
         val parts = notes.groupingBy { part(it.createdAt) }.eachCount().maxByOrNull { it.value }
         val days = notes.groupingBy { Calendar.getInstance().apply { timeInMillis = it.createdAt }.get(Calendar.DAY_OF_WEEK) }.eachCount().maxByOrNull { it.value }
         val whenParts = listOfNotNull(
-            // a weekday needs more to go on than a part of the day: two Thursdays out of three is chance
+            // two Thursdays, or two evenings, out of three is chance: "najčešće" needs four notes at least
             days?.takeIf { notes.size >= 4 && it.value >= 0.6f * notes.size }?.let { WEEKDAY[it.key] },
-            parts?.takeIf { notes.size >= 3 && it.value >= 0.6f * notes.size }?.let { PART[it.key] },
+            parts?.takeIf { notes.size >= 4 && it.value >= 0.6f * notes.size }?.let { PART[it.key] },
         )
         // what comes with it
         val with = listOfNotNull(

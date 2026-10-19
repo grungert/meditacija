@@ -13,36 +13,46 @@ object FourPointsReader {
     const val BODY = "tijelo"
     const val URGES = "nagoni"
 
-    /** Labels the person can pick, each with the word stems that bring it. A trailing * matches any ending. */
+    /**
+     * Labels the person can pick, each with the word stems that bring it. A trailing * matches any ending.
+     * Only words that mean the body: "vrata" are a door, "hvala od srca" is not a racing heart, "topla kafa" is no
+     * warmth in the body.
+     */
     val BODY_LABELS = listOf(
         "stisnut stomak" to listOf("stomak*", "želud*", "mučnin*", "utrob*"),
-        "napeta ramena" to listOf("ramen*", "vrat*", "leđ*"),
+        "napeta ramena" to listOf("ramen*", "vrat", "vratu", "vratom", "leđ*"),
         "stezanje u grudima" to listOf("grud*", "prsa", "prsima", "stez*", "steže"),
-        "lupanje srca" to listOf("srce", "srca", "lupa", "lupanje", "puls*"),
+        "lupanje srca" to listOf("lupa mi srce", "srce mi lupa", "srce lupa", "lupanje srca", "srce mi tuče", "ubrzano srce", "puls*"),
         "knedla u grlu" to listOf("knedl*", "grlo", "grlu"),
-        "plitak dah" to listOf("dah", "daha", "diš*", "disanje", "disati", "guš*", "vazduh*"),
-        "stegnuta vilica" to listOf("vilic*", "zub*", "škrgut*"),
-        "pritisak u glavi" to listOf("glavobolj*", "sljepoočnic*", "pritisak u glavi", "boli me glava"),
-        "toplina" to listOf("topl*", "toplin*", "vruć*", "vrućin*"),
-        "drhtanje" to listOf("drht*", "tres*"),
-        "težina u tijelu" to listOf("težin*", "otežal*", "olovn*"),
-        "opušteno tijelo" to listOf("opušten*", "mekan*", "olakšan*", "lagano tijelo"),
+        "plitak dah" to listOf("dah", "daha", "diš*", "disanje", "disati", "gušim se", "guši me", "nedostaje mi vazduh*", "fali mi vazduh*", "nemam vazduh*"),
+        "stegnuta vilica" to listOf("vilic*", "stisnut* zub*", "stežem zube", "škrgut*"),
+        "pritisak u glavi" to listOf("glavobolj*", "sljepoočnic*", "pritisak u glavi", "boli me glava", "glava mi je teška", "teška glava"),
+        "toplina" to listOf("toplin*", "toplo mi je", "vrućin*", "vruće mi je", "talas topline"),
+        "drhtanje" to listOf("drht*", "tresem se", "tresu mi se"),
+        "težina u tijelu" to listOf("težina u tijelu", "težinu u", "otežal*", "olovn*", "teško tijelo", "teške noge", "teške ruke"),
+        "opušteno tijelo" to listOf("opušten*", "lagano tijelo", "olakšan*", "ramena se spuštaju", "ramena se konačno spuštaju"),
     )
+    /**
+     * The same for urges. Stems marked with a leading ~ say what the pull is for, but only count when the words also say
+     * there is a pull ([URGE_CUES]): "pričala sam telefonom s mamom" or "slatko sam spavao" are no urge, "vuče me telefon"
+     * and "dođe mi da pojedem nešto slatko" are.
+     */
     val URGE_LABELS = listOf(
-        "da uzmem telefon" to listOf("telefon*", "mobil*", "skrol*", "instagram*", "društvene mreže", "poruke"),
+        "da uzmem telefon" to listOf("~telefon*", "~mobil*", "~poruke", "skrol*", "instagram*", "tiktok*", "društvene mreže", "ka telefonu"),
         "da pobjegnem" to listOf("pobjeg*", "bjež*", "da odem", "sakrij*", "izbjeg*"),
-        "da jedem" to listOf("da jedem", "da pojedem", "slatk*", "slatkiš*", "grickal*", "čokolad*"),
+        "da jedem" to listOf("da jedem", "da pojedem", "~slatk*", "~slatkiš*", "~grickal*", "~čokolad*"),
         "da zapalim" to listOf("cigaret*", "da zapalim", "pušim", "pušenj*"),
-        "da se raspravljam" to listOf("viknem", "vičem", "svađ*", "raspravl*", "odbrusim"),
+        "da se raspravljam" to listOf("da viknem", "da odbrusim", "~viknem", "~vičem", "~svađ*", "~raspravl*", "~odbrusim"),
         "da odustanem" to listOf("odustan*", "odustaj*"),
-        "da sve kontrolišem" to listOf("kontrol*", "da sredim sve", "isplaniram"),
-        "da legnem" to listOf("da legnem", "da odspavam", "u krevet"),
-        "da popijem" to listOf("alkohol*", "pivo", "popijem", "vino", "rakij*"),
-        "da kupim nešto" to listOf("da kupim", "kupovin*", "naručim"),
+        "da sve kontrolišem" to listOf("da sve kontroliš*", "sve pod kontrolom", "~kontroliš*", "da sredim sve", "isplaniram"),
+        "da legnem" to listOf("da legnem", "da odspavam", "~u krevet"),
+        "da popijem" to listOf("da popijem", "~alkohol*", "~pivo", "~popijem", "~vino", "~rakij*"),
+        "da kupim nešto" to listOf("da kupim", "~kupovin*", "naručim"),
     )
     /** Words that say a piece is about a pull to act, even when the act itself is not on the list. */
     private val URGE_CUES = listOf("vuče me", "dođe mi da", "hoću da", "htio bih", "htjela bih", "želim da", "imam potrebu",
-        "jedva čekam da", "ne mogu da odolim", "najradije bih", "poriv*", "nagon*")
+        "jedva čekam da", "ne mogu da odolim", "najradije bih", "poriv*", "nagon*", "ruka sama", "ruka ide", "dođe mi", "žudim",
+        "ne mogu bez", "jedva se suzdrž*")
     private val THOUGHT_CUES = listOf("mislim", "misl*", "razmišlj*", "pitam se", "šta ako", "što ako", "trebalo bi", "trebao bih",
         "trebala bih", "moram", "neće", "nikad", "uvijek", "sjećam se", "sjetio", "sjetila", "planiram", "brinem da", "bojim se da",
         "ne znam da li", "kažem sebi", "u glavi", "po glavi", "zašto", "da li ću")
@@ -63,8 +73,27 @@ object FourPointsReader {
         val body = stem.trimEnd('*').split(' ').joinToString("\\s+") { Regex.escape(it) }
         return Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
     }
-    private val cache = HashMap<String, Regex>()
-    private fun has(text: String, stems: List<String>) = stems.any { s -> cache.getOrPut(s) { pattern(s) }.containsMatchIn(text) }
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+    /** Words that turn what follows around: "nisam ljut", "ne brinem", "nije me strah", "bez straha". */
+    private val NEGATIONS = setOf("ne", "nisam", "nije", "nismo", "niste", "nisu", "nisi", "nimalo", "bez", "ni")
+
+    /** True when one of the two words just before [at] negates what stands there. */
+    fun negated(text: String, at: Int): Boolean =
+        text.substring(0, at).lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }.takeLast(2).any { it in NEGATIONS }
+
+    /**
+     * True when a stem is in the words. [negatable] stems (feelings and the body) do not count after a negation;
+     * a ~stem counts only when the text also speaks of a pull to act.
+     */
+    private fun has(text: String, stems: List<String>, negatable: Boolean = false, cued: Boolean = false) = stems.any { s0 ->
+        if (s0.startsWith("~") && !cued) return@any false
+        val s = s0.removePrefix("~")
+        val re = cache.getOrPut(s) { pattern(s) }
+        if (negatable) re.findAll(text).any { !negated(text, it.range.first) } else re.containsMatchIn(text)
+    }
+
+    private fun cueIn(text: String) = has(text, URGE_CUES)
 
     /** What was found in the words. */
     data class Reading(val thoughts: String, val moods: List<String>, val body: List<String>, val urges: List<String>) {
@@ -83,19 +112,21 @@ object FourPointsReader {
      * using the meaning model when it is on the phone.
      */
     fun read(text: String, byMeaning: ((String) -> String?)? = null): Reading {
-        val body = BODY_LABELS.filter { has(text, it.second) }.map { it.first }.toMutableList()
-        val urges = URGE_LABELS.filter { has(text, it.second) }.map { it.first }.toMutableList()
-        val moods = MOOD_STEMS.filter { has(text, it.value) }.keys.toList()
+        val cued = cueIn(text)
+        val body = BODY_LABELS.filter { has(text, it.second, negatable = true) }.map { it.first }.toMutableList()
+        val urges = URGE_LABELS.filter { has(text, it.second, cued = cued) }.map { it.first }.toMutableList()
+        val moods = MOOD_STEMS.filter { has(text, it.value, negatable = true) }.keys.toList()
         val thoughts = ArrayList<String>()
         for (p in pieces(text)) {
-            val isBody = BODY_LABELS.any { has(p, it.second) }
-            val isUrge = URGE_LABELS.any { has(p, it.second) } || has(p, URGE_CUES)
-            val isMood = MOOD_STEMS.values.any { has(p, it) }
+            val isBody = BODY_LABELS.any { has(p, it.second, negatable = true) }
+            val labelled = URGE_LABELS.any { has(p, it.second, cued = cued) }
+            val isUrge = labelled || cueIn(p)
+            val isMood = MOOD_STEMS.values.any { has(p, it, negatable = true) }
             val isThought = has(p, THOUGHT_CUES)
             when {
                 isThought -> thoughts += p
                 // a pull to act that is not on the list keeps its own words
-                isUrge && URGE_LABELS.none { has(p, it.second) } -> urges += p.take(60)
+                isUrge && !labelled -> urges += p.take(60)
                 isBody || isUrge || isMood -> {}
                 else -> when (byMeaning?.invoke(p)) {
                     THOUGHTS -> thoughts += p

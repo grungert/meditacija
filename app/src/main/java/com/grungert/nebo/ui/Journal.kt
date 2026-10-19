@@ -232,7 +232,9 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
 /** A note found by the words of a search, in any of their forms, or by a mood. */
 private fun byWords(e: Entry, q: String): Boolean {
     val stems = SearchWords.stems(q)
-    return (if (stems.isEmpty()) e.words.lowercase().contains(q) else SearchWords.matches(e.words, stems)) || e.moods.any { it.contains(q) }
+    // a mood matches from its start: "mir" finds "mirno", never "nemirno"
+    val m = q.trim().lowercase()
+    return (if (stems.isEmpty()) e.words.lowercase().contains(q) else SearchWords.matches(e.words, stems)) || (m.length >= 3 && e.moods.any { it.startsWith(m) })
 }
 
 /**
@@ -388,7 +390,7 @@ fun SimilarScreen(sc: Screen.Similar, go: (Screen) -> Unit) {
             val r = result
             when {
                 r == null -> Text("Tražim po značenju…", style = BodyStyle)
-                r.isEmpty() -> Text("Još nema dovoljno bilješki za poređenje. Kako budeš zapisivao, ovdje će se pokazivati ranija slična stanja.", style = BodyStyle)
+                r.isEmpty() -> Text("Nijedna ranija bilješka nije baš bliska ovoj. Kako budeš zapisivao, ovdje će se pokazivati ranija slična stanja.", style = BodyStyle)
                 else -> {
                     Text(if (app.recommender.usesMeaning) "Najbliže po značenju, od najsličnijeg:" else "Bilješke s istim temama ili raspoloženjem:", style = SmallStyle)
                     for ((e, score) in r) EntryCard(e, player, onStar = {}, onSimilar = null,
@@ -487,7 +489,9 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     BodyMap(d.tension, Modifier.width(132.dp).height(146.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val ranked = d.tension.entries.sortedByDescending { it.value }
-                        bodyRegion(ranked.first().key)?.let { Text("Najčešće je nosiš ${it.where}.", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null)) }
+                        // "most often" only when one place leads, and has been named more than once
+                        if (ranked.first().value >= 2 && ranked.getOrNull(1)?.value != ranked.first().value)
+                            bodyRegion(ranked.first().key)?.let { Text("Najčešće je nosiš ${it.where}.", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null)) }
                         val top = ranked.first().value.coerceAtLeast(1)
                         for ((id, n) in ranked.take(5)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(9.dp).clip(CircleShape).background(TENSION.copy(alpha = 0.35f + 0.65f * n / top)))
@@ -506,8 +510,10 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     Text("Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.",
                         style = SmallStyle.copy(shadow = null))
                 if (d.times.isNotEmpty()) {
-                    val (top, _) = d.times.maxBy { it.value }.toPair()
-                    Text("Posljednjih 30 dana um je najčešće bio ${top.label}: ${top.about}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
+                    // a sentence only when one time clearly leads, over at least three notes; the bar always shows the mix
+                    val ranked = d.times.entries.sortedByDescending { it.value }
+                    if (d.times.values.sum() >= 3 && ranked.getOrNull(1)?.value != ranked[0].value)
+                        Text("Posljednjih 30 dana um je najčešće bio ${ranked[0].key.label}: ${ranked[0].key.about}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
                     TimeBar(d.times)
                 }
                 for ((id, n) in d.habits) MindHabits.habit(id)?.let { h ->
@@ -560,12 +566,23 @@ private fun TimeBar(times: Map<MindHabits.Time, Int>) {
             if (n > 0) Box(Modifier.weight(n.toFloat()).fillMaxHeight().background(colors.getValue(t)))
         }
     }
+    val pct = percents(MindHabits.Time.entries.map { times[it] ?: 0 })
     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        for (t in MindHabits.Time.entries) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        for ((i, t) in MindHabits.Time.entries.withIndex()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             Box(Modifier.size(8.dp).clip(CircleShape).background(colors.getValue(t)))
-            Text("${t.label} ${(times[t] ?: 0) * 100 / total}%", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+            Text("${t.label} ${pct[i]}%", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
         }
     }
+}
+
+/** Whole percentages that add up to 100: each part rounded down, the points left over going to the largest remainders. */
+fun percents(counts: List<Int>): List<Int> {
+    val total = counts.sum()
+    if (total == 0) return counts.map { 0 }
+    val exact = counts.map { it * 100.0 / total }
+    val out = exact.map { it.toInt() }.toMutableList()
+    exact.indices.sortedByDescending { exact[it] - out[it] }.take(100 - out.sum()).forEach { out[it]++ }
+    return out
 }
 
 /** An icon, a label, a thin bar for the value and the value itself. */
@@ -607,16 +624,23 @@ fun tensionCounts(sessions: List<Session>, entries: List<Entry>): Map<String, In
 /** An emotion and what most often comes with it in the body and as an urge, across the notes that name them. */
 class PointLink(val mood: String, val body: String?, val urge: String?, val times: Int)
 
-/** For each emotion seen at least twice: the body sensation and the urge that most often came with it. */
+/**
+ * For each emotion: the body sensation and the urge that most often came with it, and how many notes held that whole
+ * chain together (never just how many notes had the emotion). A body and an urge that each came twice but never in the
+ * same note are not shown as one chain: the stronger of the two stands alone.
+ */
 fun pointLinks(entries: List<Entry>): List<PointLink> {
     val withPoints = entries.filter { it.moods.isNotEmpty() && (it.points.body.isNotEmpty() || it.points.urges.isNotEmpty()) }
     return withPoints.flatMap { e -> e.moods.map { it to e } }.groupBy({ it.first }, { it.second })
         .filter { it.value.size >= 2 }
-        .map { (mood, es) ->
-            fun top(pick: (Entry) -> List<String>) = es.flatMap(pick).groupingBy { it }.eachCount().maxByOrNull { it.value }?.takeIf { it.value >= 2 }?.key
-            PointLink(mood, top { it.points.body }, top { it.points.urges }, es.size)
+        .mapNotNull { (mood, es) ->
+            fun top(pick: (Entry) -> List<String>) = es.flatMap(pick).groupingBy { it }.eachCount().maxByOrNull { it.value }?.takeIf { it.value >= 2 }
+            val b = top { it.points.body }; val u = top { it.points.urges }
+            fun together(body: String?, urge: String?) = es.count { e -> (body == null || body in e.points.body) && (urge == null || urge in e.points.urges) }
+            var body = b?.key; var urge = u?.key
+            if (body != null && urge != null && together(body, urge) < 2) { if (b!!.value >= u!!.value) urge = null else body = null }
+            if (body == null && urge == null) null else PointLink(mood, body, urge, together(body, urge))
         }
-        .filter { it.body != null || it.urge != null }
         .sortedByDescending { it.times }.take(5)
 }
 
@@ -630,10 +654,12 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         firstDayOfWeek = Calendar.MONDAY
         set(Calendar.DAY_OF_WEEK, Calendar.MONDAY); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }
-    val week = 7 * 86_400_000L
     val thisWeek = cal.timeInMillis
-    val weeks = (7 downTo 0).map { k -> (sessions.filter { it.startedAt in (thisWeek - k * week) until (thisWeek - (k - 1) * week) }.sumOf { it.actualSec } + 59) / 60 }
-    val labels = (7 downTo 0).map { k -> SimpleDateFormat("d.M.", Locale.ROOT).format(Date(thisWeek - k * week)) }
+    // week starts step by the calendar: a week with a clock change is 167 or 169 hours, and its Monday stays a Monday
+    fun weekStart(k: Int) = (cal.clone() as Calendar).apply { add(Calendar.WEEK_OF_YEAR, -k) }.timeInMillis
+    fun inWeek(t: Long, k: Int) = t >= weekStart(k) && t < weekStart(k - 1)
+    val weeks = (7 downTo 0).map { k -> (sessions.filter { inWeek(it.startedAt, k) }.sumOf { it.actualSec } + 59) / 60 }
+    val labels = (7 downTo 0).map { k -> SimpleDateFormat("d.M.", Locale.ROOT).format(Date(weekStart(k))) }
     // minutes rounded up, so a short sit still shows
     val parts = IntArray(4).also { a -> sessions.forEach { a[dayPart(it.startedAt)] += it.actualSec } }.map { (it + 59) / 60 }
     val types = sessions.groupingBy { it.type }.eachCount().toList().sortedByDescending { it.second }
@@ -651,15 +677,16 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
     val fired = prompts.filter { it.firedAt != null }
     val esm = entries.filter { it.kind == "esm" }
     val month = entries.filter { it.createdAt >= System.currentTimeMillis() - 30 * 86_400_000L }
-    val mind = month.map { it.words + "\n" + it.points.thoughts }
+    val mind = month.map { com.grungert.nebo.koan.MindHabits.mindOf(it) }
     return StatsData(
-        weekMinutes = weeks.last(), weekSessions = sessions.count { it.startedAt >= thisWeek }, weekNotes = entries.count { it.createdAt >= thisWeek }, weeks = weeks, weekLabels = labels,
+        // the bars round each week up so a short sit still shows; the week's own number counts like Home and the week review
+        weekMinutes = sessions.filter { it.startedAt >= thisWeek }.sumOf { it.actualSec } / 60, weekSessions = sessions.count { it.startedAt >= thisWeek }, weekNotes = entries.count { it.createdAt >= thisWeek }, weeks = weeks, weekLabels = labels,
         dayParts = parts, types = types, themes = themeCount.toList().sortedByDescending { it.second }.take(8),
         shifts = shifts.toList().sortedByDescending { it.second }.take(6),
         promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null }, links = pointLinks(entries),
         esmByPart = IntArray(4).also { a -> esm.forEach { a[dayPart(it.createdAt)]++ } }.toList(),
         moodWeeks = (7 downTo 0).map { k ->
-            entries.filter { it.createdAt in (thisWeek - k * week) until (thisWeek - (k - 1) * week) }.flatMap { it.moods }.groupingBy { it }.eachCount()
+            entries.filter { inWeek(it.createdAt, k) }.flatMap { it.moods }.groupingBy { it }.eachCount()
         },
         tension = tensionCounts(sessions, entries),
         scans = sessions.count { it.type == "bodyscan" },

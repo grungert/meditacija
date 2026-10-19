@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -143,8 +144,9 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
                 val hPx = with(density) { maxHeight.toPx() }
                 val all = entries
                 val th = threads ?: emptyList()
-                val stars = remember(all, th, wPx, hPx) {
-                    if (all == null || wPx <= 0f) emptyList() else layoutSky(all, th, wPx, hPx)
+                // placing and colouring every note reads each one's words: done off the main thread
+                val stars by produceState(emptyList<Star>(), all, th, wPx, hPx) {
+                    value = if (all == null || wPx <= 0f) emptyList() else withContext(Dispatchers.Default) { layoutSky(all, th, wPx, hPx) }
                 }
                 val total = stars.size.coerceAtLeast(1)
                 Canvas(Modifier.fillMaxSize().pointerInput(stars) {
@@ -243,6 +245,9 @@ private fun layoutSky(all: List<Entry>, threads: List<InsightThread>, w: Float, 
     val radius = SLOT_RADIUS * w
     val centers = SLOTS.map { Offset(it.x * w, it.y * h) }
     for ((i, th) in threads.withIndex()) {
+        // a figure holds a thread's latest fourteen notes; the older ones belong to it too, so they are not scattered
+        // as lone stars that would open on their own
+        th.entries.forEach { inThread[it.id] = i }
         val notes = th.entries.sortedBy { it.createdAt }.takeLast(14)
         val pts = figureOf(notes, centers[i], radius, 0.9f)
         for ((k, e) in notes.withIndex()) {

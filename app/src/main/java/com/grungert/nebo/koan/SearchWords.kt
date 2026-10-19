@@ -25,7 +25,7 @@ object SearchWords {
     fun stems(query: String): List<String> =
         query.lowercase().split(Regex("[^\\p{L}]+")).filter { it.length >= 3 && it !in STOP }.map { stem(it) }.distinct()
 
-    private val cache = HashMap<String, Regex>()
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
 
     /**
      * True when every stem begins a word of the text. A stem that lost a fleeting a ("posl" from "posao") must be
@@ -33,7 +33,8 @@ object SearchWords {
      */
     fun matches(text: String, stems: List<String>): Boolean = stems.isNotEmpty() && stems.all { st ->
         cache.getOrPut(st) {
-            val tail = if (st.endsWith("l") && st.length >= 3 && st[st.length - 2] !in "aeiou") "(?:[aeiou]|(?![\\p{L}]))" else ""
+            // ...but never "poslije" (after), which only looks like a form of "posao"
+            val tail = if (st.endsWith("l") && st.length >= 3 && st[st.length - 2] !in "aeiou") "(?!ije)(?:[aeiou]|(?![\\p{L}]))" else ""
             Regex("(?<![\\p{L}])" + Regex.escape(st) + tail, RegexOption.IGNORE_CASE)
         }.containsMatchIn(text)
     }

@@ -101,27 +101,30 @@ object Lexicon {
     // "imam" as mama or "poslije" as posao.
     private val words = mapOf(
         "nemir" to listOf("nemir*", "nervoz*", "napet*", "uznemir*", "stres*", "žurb*", "žurim", "jurim", "juri", "anksio*", "brig*", "brin*"),
-        "tuga" to listOf("tug*", "tužn*", "tužan", "plak*", "plač*", "suz*", "žal*", "nedostaj*", "gubit*", "izgubi*", "praznin*"),
+        "tuga" to listOf("tug*", "tužn*", "tužan", "plak*", "plač*", "suz*", "žalim", "žalost*", "žao mi je", "nedostaj*", "gubit*", "izgubi*", "praznin*"),
         "ljutnja" to listOf("ljut*", "bijes*", "iritir*", "nervira*", "smeta mi", "frustrir*"),
         "umor" to listOf("umor*", "iscrp*", "pospan*", "nemam snage", "težak dan", "izmoren*", "premoren*"),
-        "strah" to listOf("strah*", "plaš*", "bojim", "boji", "panik*", "uplaš*", "nesigur*"),
-        "sumnja" to listOf("sumnj*", "ne znam", "nisam siguran", "nisam sigurna", "dvoum*", "smisao", "smisla"),
-        "zudnja" to listOf("žudn*", "žudim", "želim", "hoću", "treba mi", "vezan*", "privrž*", "telefon*", "još malo", "ne mogu bez"),
-        "kontrola" to listOf("kontrol*", "plan", "plana", "planu", "planov*", "planir*", "moram", "trebalo bi", "savrš*", "perfekc*"),
+        "strah" to listOf("strah*", "plaš*", "bojim", "boji se", "bojao", "bojala", "panik*", "uplaš*", "nesigur*"),
+        "sumnja" to listOf("sumnj*", "ne znam da li", "ne znam šta", "ne znam kako", "nisam siguran", "nisam sigurna", "dvoum*",
+            "nema smisla", "ima li smisla", "smisao života", "koji je smisao"),
+        "zudnja" to listOf("žudn*", "žudim", "želim još", "hoću još", "treba mi još", "privrž*", "vuče me", "zavisn*", "skrol*", "još malo", "ne mogu bez"),
+        "kontrola" to listOf("kontroliš*", "kontrolis*", "pod kontrolom", "kontrolu nad", "izgubio kontrolu", "izgubila kontrolu",
+            "moram sve", "sve mora", "da sve bude", "isplanir*", "savršen*", "perfekc*"),
         "samokritika" to listOf("kriv", "kriva", "krivic*", "sram*", "stid*", "glup*", "nisam dovolj*", "ne valjam", "kritikuj*", "osuđ*", "loš sam", "loša sam"),
-        "usamljenost" to listOf("usamlj*", "sam sam", "sama sam", "niko", "nikoga", "nikome", "izolov*", "odvojen*"),
+        "usamljenost" to listOf("usamlj*", "sam sam", "sama sam", "niko me", "me niko", "niko ne razumije", "nemam nikoga", "nikome ne", "izolov*", "odvojen*"),
         "zahvalnost" to listOf("zahval*", "hvala", "srećom"),
-        "radost" to listOf("radost*", "radujem", "raduje", "srećn*", "srećan", "sretn*", "sretan", "vesel*", "lijepo", "uživ*", "smijeh*", "smijao", "smijala", "nasmij*"),
+        "radost" to listOf("radost*", "radujem", "raduje", "srećn*", "srećan", "sretn*", "sretan", "vesel*", "lijepo mi je", "bilo je lijepo", "lijepo sam se", "uživ*", "smijeh*", "smijao", "smijala", "nasmij*"),
         "radoznalost" to listOf("radoznal*", "zanima*", "pitam se", "zanimljiv*", "istraž*"),
         "zbunjenost" to listOf("zbunj*", "zbrk*", "haos*", "ne razumijem", "pomiješ*", "pomješ*"),
         "smirenost" to listOf("miran", "mirna", "mirno", "mirnije", "smiren*", "spokoj*", "tišin*", "opušten*", "lagan*", "lakoć*"),
         "ego" to listOf("identitet*", "ko sam", "ponos*", "ego", "ega", "egu", "ugled*", "šta će drugi", "šta drugi"),
-        "prolaznost" to listOf("prolaz*", "smrt*", "starenj*", "vrijeme prolazi", "promjen*", "kraj", "kraja", "kraju"),
+        "prolaznost" to listOf("prolazn*", "sve prolazi", "vrijeme prolazi", "smrt*", "starenj*", "promjen*", "kraj svega"),
         "svakodnevica" to listOf("posao", "posla", "poslu", "poslom", "poslov*", "kuć*", "sudov*", "obavez*", "svakodnev*", "rutin*"),
         "odluka" to listOf("odluk*", "odluč*", "izbor*", "biram", "birati", "raskršć*"),
         "odnosi" to listOf("partner*", "prijatelj*", "porodic*", "majk*", "mama", "mami", "mamu", "mamom", "otac", "oca", "ocu", "tata", "tati", "tatu",
             "brat", "brata", "bratu", "bratom", "sestr*", "djec*", "dijete", "djetet*", "odnos*", "svađ*", "ljubav*", "kolega", "kolege", "kolegom", "kolegama", "muž*", "žen*", "djevojk*", "dečk*"),
-        "prisutnost" to listOf("sada", "ovdje", "dah", "daha", "dahom", "disanj*", "dišem", "tijel*", "prisut*", "sadašnj*"),
+        "prisutnost" to listOf("ovdje i sada", "sada i ovdje", "upravo sada", "ovdje sam", "u ovom trenutku", "ovaj trenutak",
+            "dah", "daha", "dahom", "disanj*", "dišem", "tijel*", "prisut*", "sadašnj*"),
     )
 
     private val patterns: Map<String, Regex> = words.mapValues { (_, list) ->
@@ -132,9 +135,14 @@ object Lexicon {
         Regex("(?<![\\p{L}])(?:$alts)(?![\\p{L}])")
     }
 
+    /** Themes that are feelings: after "nisam", "ne" or "bez" they are not there ("nisam ljut", "bez straha"). */
+    private val FEELINGS = setOf("nemir", "tuga", "ljutnja", "umor", "strah", "usamljenost", "samokritika", "radost", "smirenost", "zbunjenost", "zahvalnost")
+
     fun themes(text: String): List<String> {
         val t = text.lowercase()
-        return patterns.filter { (_, re) -> re.containsMatchIn(t) }.keys.toList()
+        return patterns.filter { (theme, re) ->
+            if (theme in FEELINGS) re.findAll(t).any { !FourPointsReader.negated(t, it.range.first) } else re.containsMatchIn(t)
+        }.keys.toList()
     }
 
     private val distress = listOf(
@@ -220,10 +228,12 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             val qv = e.embed(query)
             val scored = notes.map { it to Embedder.cosine(qv, passageVector(it, e)) }
             val mean = scored.map { it.second }.average().toFloat()
-            val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat().coerceAtLeast(1e-4f)
+            // a journal whose notes all score alike has no note that stands out: the spread is taken as at least 0.01,
+            // and a note must also be 0.02 above the rest outright
+            val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat().coerceAtLeast(0.01f)
             val open = scored.filter { it.first.id !in exclude }.sortedByDescending { it.second }
             val best = open.firstOrNull()?.second ?: return@withLock emptyList()
-            open.filter { (_, s) -> (s - mean) / sd >= 1.5f && s >= best - 0.025f }.take(k).map { (n, s) -> n to (s - mean) / sd }
+            open.filter { (_, s) -> (s - mean) / sd >= 1.5f && s - mean >= 0.02f && s >= best - 0.025f }.take(k).map { (n, s) -> n to (s - mean) / sd }
         }
     }
 
@@ -258,18 +268,25 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     }
 
     /**
-     * Earlier notes closest in meaning to this one, most similar first. Without the meaning model,
-     * notes that share themes or moods (Jaccard overlap) stand in.
+     * Earlier notes closest in meaning to this one, most similar first, and only those that are close: e5 rates any two
+     * notes in our language around 0.8, so a note must stand clearly above how close the others are, or there is
+     * nothing to show. Without the meaning model, notes that share themes or moods (Jaccard overlap) stand in.
      */
     suspend fun similar(target: com.grungert.nebo.data.Entry, all: List<com.grungert.nebo.data.Entry>, k: Int = 4):
         List<Pair<com.grungert.nebo.data.Entry, Float>> = withContext(Dispatchers.Default) {
         lock.withLock {
-            val pool = all.filter { it.id != target.id && it.words.isNotBlank() }
+            val pool = all.filter { it.id != target.id && it.words.isNotBlank() && it.createdAt < target.createdAt }
             if (target.words.isBlank() || pool.isEmpty()) return@withLock emptyList()
             val e = embedderOrNull()
             if (e != null) {
                 val tv = entryVector(target, e)
-                pool.map { it to Embedder.cosine(tv, entryVector(it, e)) }.sortedByDescending { it.second }.take(k)
+                val scored = pool.map { it to Embedder.cosine(tv, entryVector(it, e)) }
+                val mean = scored.map { it.second }.average().toFloat()
+                val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat()
+                // with few notes there is no "usual" to measure against, so they must be close outright
+                val close = if (scored.size < 5) scored.filter { it.second >= 0.86f }
+                    else scored.filter { (it.second - mean) >= maxOf(0.012f, 0.8f * sd) }
+                close.sortedByDescending { it.second }.take(k)
             } else {
                 fun tags(x: com.grungert.nebo.data.Entry) = (Lexicon.themes(x.words) + x.moods + x.themes).toSet()
                 val tt = tags(target)
@@ -294,7 +311,11 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         if (notes.size < 2) return@withContext emptyList()
         val groups: List<List<com.grungert.nebo.data.Entry>> = lock.withLock {
             val e = embedderOrNull()
-            if (e == null || notes.size < 4) notes.groupBy { it.themes.firstOrNull() }.filterKeys { it != null }.values.toList()
+            if (e == null || notes.size < 4) {
+                // each note joins the thread of its theme that most notes share (not simply its first theme)
+                val counts = notes.flatMap { it.themes }.groupingBy { it }.eachCount()
+                notes.groupBy { n -> n.themes.maxByOrNull { counts[it] ?: 0 } }.filterKeys { it != null }.values.toList()
+            }
             else {
                 val v = notes.map { entryVector(it, e) }
                 val n = notes.size
@@ -328,7 +349,8 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 clusters.map { c -> c.map { notes[it] } }
             }
         }
-        fun day(t: Long) = t / 86_400_000L
+        // the day on the person's own clock: half past midnight and ten in the evening are not the same day in UTC
+        fun day(t: Long) = (t + java.util.TimeZone.getDefault().getOffset(t)) / 86_400_000L
         groups.filter { g -> g.size >= 2 && g.map { day(it.createdAt) }.toSet().size >= 2 }
             .map { g ->
                 val chrono = g.sortedBy { it.createdAt }
@@ -336,7 +358,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 InsightThread(chrono, theme, THEME_NAMES[theme]?.replaceFirstChar { it.uppercase() }
                     ?: chrono.last().words.split(Regex("\\s+")).take(5).joinToString(" ") + "…")
             }
-            .sortedWith(compareByDescending<InsightThread> { it.entries.last().createdAt / 86_400_000L }.thenByDescending { it.entries.size })
+            .sortedWith(compareByDescending<InsightThread> { day(it.entries.last().createdAt) }.thenByDescending { it.entries.size })
     }
 
     /**
