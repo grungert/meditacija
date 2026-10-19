@@ -483,6 +483,26 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     }
                 }
             }
+            d.helps?.let { h ->
+                Panel {
+                    SectionLabel("Šta mi pomaže")
+                    if (h.kinds.isEmpty()) {
+                        Text("Kad uz sesiju zapišeš kako si prije i poslije, ovdje se vidi šta ti stvarno pomaže.", style = BodyStyle.copy(shadow = null))
+                        Text("Sesija sa oba zapisa: ${h.pairs}. Za prvi zaključak treba ${com.grungert.nebo.koan.WhatHelps.ENOUGH} iste vrste. " +
+                            "Bilješke prije i poslije uključuješ u podešavanju sesije.", style = SmallStyle.copy(shadow = null))
+                    } else {
+                        for (k in h.kinds.take(4)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(SESSION_TYPES.firstOrNull { it.id == k.type }?.icon ?: NeboIcon.Breath, Ink.accent, 18.dp)
+                            Text("Poslije ${AFTER_TYPE[k.type] ?: k.type} si ${k.lighter} od ${k.count} puta bio lakše.",
+                                style = BodyStyle.copy(fontSize = 15.sp, shadow = null), modifier = Modifier.weight(1f))
+                        }
+                        h.partFor?.let { (t, better, worse) ->
+                            Text("${TYPE_LABEL[t] ?: t} ti više pomaže ${PART_WHEN[better]} nego ${PART_WHEN[worse]}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
+                        }
+                        Text("Iz bilješki prije i poslije sesije: koliko je raspoloženje poslije bilo lakše.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+                    }
+                }
+            }
             if (d.waves.isNotEmpty()) Panel {
                 SectionLabel("Talasi")
                 val all = d.waves.sumOf { it.count }
@@ -592,6 +612,13 @@ private fun TimeBar(times: Map<MindHabits.Time, Int>) {
     }
 }
 
+/** "Poslije …": each kind of session after the word "after". */
+private val AFTER_TYPE = mapOf(
+    "breath" to "disanja", "walk" to "šetnje", "thoughts" to "oblaka", "silence" to "tišine", "points" to "4 tačke",
+    "hourglass" to "pješčanog sata", "bodyscan" to "skeniranja tijela", "urge" to "talasa", "rain" to "RAIN-a",
+)
+private val PART_WHEN = listOf("ujutru", "danju", "uveče", "noću")
+
 /** Whole percentages that add up to 100: each part rounded down, the points left over going to the largest remainders. */
 fun percents(counts: List<Int>): List<Int> {
     val total = counts.sum()
@@ -630,6 +657,8 @@ class StatsData(
     val wander: List<Pair<String, Int>> = emptyList(),
     /** Waves ridden, per pull: how many, and how strong on average before and after. */
     val waves: List<WaveSummary> = emptyList(),
+    /** What helps: sessions with a note before and after, and what they show. */
+    val helps: com.grungert.nebo.koan.WhatHelps.Finding? = null,
 )
 
 /** Where tension was named: each scan counts a part once, each note once for each part its body point names. */
@@ -713,6 +742,7 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         times = mind.mapNotNull { MindHabits.time(it) }.groupingBy { it }.eachCount(),
         wander = sessions.flatMap { it.wander }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
         waves = waveSummaries(sessions),
+        helps = com.grungert.nebo.koan.WhatHelps.find(sessions, entries),
     )
 }
 

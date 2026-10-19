@@ -147,6 +147,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var weekNotes by remember { mutableIntStateOf(0) }
     var reviewHeld by remember { mutableIntStateOf(0) }   // notes and sessions in the week a review would look back on
     var eveningDue by remember { mutableStateOf(false) }
+    var helps by remember { mutableStateOf<String?>(null) }   // the kind of session that most often left things lighter
     var silenced by remember { mutableStateOf(s.esmSilencedDay == Esm.today()) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -160,6 +161,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             // the evening look back: from an hour before its time (or eight in the evening), when the day held something
             val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
             val start = if (s.eveningReview) s.eveningHour - 1 else 20
+            helps = com.grungert.nebo.koan.WhatHelps.suggestion(com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), context.app.db.entries()))
             val today = Esm.midnight().timeInMillis
             eveningDue = hour >= start && !Esm.eveningDone(context) &&
                 (s.eveningReview || context.app.db.sessions(today).isNotEmpty() || context.app.db.entries(today).isNotEmpty())
@@ -202,6 +204,11 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             if (weekMinutes > 0) "$weekMinutes min ove sedmice" else null,
             if (weekNotes > 0) "$weekNotes ${plural(weekNotes, "zapis", "zapisa", "zapisa")}" else null,
         ).joinToString(" · "), style = SmallStyle.copy(fontSize = 15.sp), modifier = Modifier.padding(top = 4.dp))
+        // what most often helps, from the person's own notes before and after; offered, never pressed
+        helps?.takeIf { it != last.type }?.let { h -> SESSION_TYPES.firstOrNull { it.id == h } }?.let { t ->
+            Text("Probaj danas: ${t.name} · najčešće ti pomaže", style = SmallStyle.copy(color = Ink.accent, fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { startType(t.id) }.padding(vertical = 4.dp))
+        }
 
         if (weekKoan != null) {
             Spacer(Modifier.height(18.dp))
