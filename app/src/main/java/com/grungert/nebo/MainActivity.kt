@@ -43,7 +43,9 @@ import com.grungert.nebo.ui.lastConfig
 sealed class Screen {
     data object Home : Screen()
     data object Setup : Screen()
-    data class CheckIn(val kind: String, val config: SessionConfig? = null, val sessionId: Long? = null, val promptId: Long? = null) : Screen()
+    data class CheckIn(val kind: String, val config: SessionConfig? = null, val sessionId: Long? = null, val promptId: Long? = null,
+        /** For a note coming back the day after a hard one: that note. */
+        val follows: Long? = null) : Screen()
     data class Session(val config: SessionConfig) : Screen()
     data class Koan(val sessionId: Long?, val entryId: Long?) : Screen()
     data object Journal : Screen()
@@ -118,6 +120,7 @@ class MainActivity : ComponentActivity() {
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
         if (intent?.getBooleanExtra(Esm.EXTRA_EVENING, false) == true) screen = Screen.CheckIn("evening")
+        intent?.getLongExtra(Esm.EXTRA_FOLLOW, -1L)?.takeIf { it > 0 }?.let { screen = Screen.CheckIn("followup", follows = it) }
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
         if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty

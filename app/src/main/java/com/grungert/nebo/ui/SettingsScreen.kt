@@ -64,6 +64,7 @@ fun SettingsScreen(go: (Screen) -> Unit) {
     var daily by remember { mutableStateOf(s.dailyQuestion) }
     var dailyHour by remember { mutableIntStateOf(s.dailyHour) }
     var evening by remember { mutableStateOf(s.eveningReview) }
+    var followUp by remember { mutableStateOf(s.followUp) }
     var eveningHour by remember { mutableIntStateOf(s.eveningHour) }
     var refresh by remember { mutableIntStateOf(0) }
 
@@ -183,6 +184,10 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                 if (daily) ChipRow {
                     for (h in listOf(6, 7, 8, 9, 10)) Chip("$h h", dailyHour == h, { dailyHour = h; s.dailyHour = h; app.scope.launch { Esm.refresh(context) } })
                 }
+                SwitchRow("Povratak sutradan", followUp, {
+                    followUp = it; s.followUp = it
+                    app.scope.launch { Esm.refresh(context) }
+                }, sub = "Dan poslije teške bilješke, jedno pitanje: kako je sada?")
                 SwitchRow("Večernji pregled", evening, {
                     evening = it; s.eveningReview = it
                     if (it && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

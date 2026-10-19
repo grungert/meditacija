@@ -112,6 +112,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val player = remember { NotePlayer() }
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Entry?>(null) }
+    var followed by remember { mutableStateOf<Map<Long, Entry>>(emptyMap()) }   // the hard notes that next-day notes answer
     LaunchedEffect(editing) { host.sheetOpen = editing != null }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
 
@@ -122,6 +123,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                 (filter != 1 || e.starred) && (q.isEmpty() || byWords(e, q))
             }
             val sessions = if (filter == 1 || filter == 2 || q.isNotEmpty()) emptyList() else app.db.sessions()
+            followed = entries.mapNotNull { it.follows }.mapNotNull { app.db.entry(it) }.associateBy { it.id }
             val out = ArrayList<Any>()
             var lastLabel = ""
             for ((t, item) in (sessions.map { it.startedAt to it } + entries.map { it.createdAt to it }).sortedByDescending { it.first }) {
@@ -182,7 +184,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                     when (row) {
                         is String -> Text(row, style = HeadStyle.copy(fontSize = 18.sp), modifier = Modifier.padding(top = 18.dp, bottom = 2.dp))
                         is Session -> SessionRow(row, app.library.byId(row.koanId)?.title)
-                        is Entry -> EntryCard(row, player, onStar = {
+                        is Entry -> EntryCard(row, player, followed = row.follows?.let { followed[it] }, onStar = {
                             scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred), Col.STARRED) }; reload++ }
                         }, onSimilar = { go(Screen.Similar(row.id)) }, onEdit = { player.stop(); editing = row })
                     }
@@ -334,7 +336,8 @@ private fun SessionRow(row: Session, koanTitle: String?) {
 
 /** One note: a stripe in its mood's colour, the words large, small actions underneath. */
 @Composable
-internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null, onEdit: (() -> Unit)? = null) {
+internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null, onEdit: (() -> Unit)? = null,
+    followed: Entry? = null) {
     val stripe = row.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.hairline
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(24.dp)).background(Ink.surface)) {
         Box(Modifier.width(5.dp).fillMaxHeight().background(stripe))
@@ -345,6 +348,13 @@ internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSim
                 Box(Modifier.size(36.dp).clip(CircleShape).clickable(onClickLabel = if (row.starred) "Ukloni oznaku uvida" else "Označi kao uvid", onClick = onStar),
                     contentAlignment = Alignment.Center) {
                     Icon(if (row.starred) NeboIcon.StarFilled else NeboIcon.Star, if (row.starred) Ink.accent else Ink.faint, 19.dp)
+                }
+            }
+            // a note from the day after a hard one carries that one with it: yesterday, then today
+            followed?.let { y ->
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ink.surfaceHigh).padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Juče" + (if (y.moods.isNotEmpty()) " · " + y.moods.joinToString(", ") else ""), style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+                    if (y.words.isNotBlank()) Text("„" + y.words.take(140) + (if (y.words.length > 140) "…" else "") + "“", style = SmallStyle.copy(color = Ink.text, shadow = null))
                 }
             }
             val words = row.words

@@ -60,6 +60,8 @@ data class Entry(
     val starred: Boolean = false,
     /** The four points of the moment: thoughts, body and urges (the emotions are the moods). */
     val points: FourPoints = FourPoints(),
+    /** The note this one comes back to, the day after a hard one. */
+    val follows: Long? = null,
 ) {
     /** What the person said, preferring their own typed words, then the transcript. */
     val words: String get() = listOfNotNull(text?.takeIf { it.isNotBlank() }, transcript?.takeIf { it.isNotBlank() }).joinToString("\n")
@@ -108,7 +110,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
             urge TEXT, urge_before INTEGER, urge_after INTEGER)""")
         db.execSQL("""CREATE TABLE entries(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL, kind TEXT NOT NULL,
             session_id INTEGER, prompt_id INTEGER, audio_path TEXT, text TEXT, transcript TEXT, transcript_model TEXT,
-            moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0, points TEXT)""")
+            moods TEXT, themes TEXT, koan_id TEXT, starred INTEGER NOT NULL DEFAULT 0, points TEXT, follows INTEGER)""")
         db.execSQL("""CREATE TABLE prompts(id INTEGER PRIMARY KEY AUTOINCREMENT, scheduled_at INTEGER NOT NULL, fired_at INTEGER,
             answered_entry_id INTEGER, dismissed INTEGER NOT NULL DEFAULT 0)""")
         db.execSQL("""CREATE TABLE embeddings(item_id TEXT PRIMARY KEY, model TEXT NOT NULL, text_hash INTEGER NOT NULL, vec BLOB NOT NULL)""")
@@ -130,6 +132,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
             db.execSQL("ALTER TABLE sessions ADD COLUMN urge_before INTEGER")
             db.execSQL("ALTER TABLE sessions ADD COLUMN urge_after INTEGER")
         }
+        if (oldVersion < 7) db.execSQL("ALTER TABLE entries ADD COLUMN follows INTEGER")
     }
 
     /** +1 when a koan or message spoke to the person, -1 for "not now". */
@@ -260,14 +263,14 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         put("created_at", createdAt); put("kind", kind); put("session_id", sessionId); put("prompt_id", promptId)
         put("audio_path", audioPath); put("text", text); put("transcript", transcript); put("transcript_model", transcriptModel)
         put("moods", moods.joinToString(",")); put("themes", themes.joinToString(",")); put("koan_id", koanId)
-        put("starred", if (starred) 1 else 0); put("points", points.toJson())
+        put("starred", if (starred) 1 else 0); put("points", points.toJson()); put("follows", follows)
     }
 
     private fun Cursor.toEntry() = Entry(
         id = long("id"), createdAt = long("created_at"), kind = str("kind")!!, sessionId = longOrNull("session_id"),
         promptId = longOrNull("prompt_id"), audioPath = str("audio_path")?.let { java.io.File(audioDir, java.io.File(it).name).path }, text = str("text"), transcript = str("transcript"),
         transcriptModel = str("transcript_model"), moods = csv(str("moods")), themes = csv(str("themes")), koanId = str("koan_id"),
-        starred = int("starred") == 1, points = FourPoints.fromJson(str("points")),
+        starred = int("starred") == 1, points = FourPoints.fromJson(str("points")), follows = longOrNull("follows"),
     )
 
     // ---------- prompts ----------
@@ -327,4 +330,4 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
 }
 
 /** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
-const val SCHEMA = 6
+const val SCHEMA = 7

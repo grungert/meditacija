@@ -158,6 +158,14 @@ class Settings(private val context: Context) {
     var dailyHour: Int
         get() = p.getInt("dailyHour", 8)
         set(v) = p.edit { putInt("dailyHour", v) }
+    /** The day after a hard note, a question: how is it now? */
+    var followUp: Boolean
+        get() = p.getBoolean("followUp", true)
+        set(v) = p.edit { putBoolean("followUp", v) }
+    /** The note last asked about, so it is asked about once. */
+    var followUpAsked: Long
+        get() = p.getLong("followUpAsked", 0)
+        set(v) = p.edit { putLong("followUpAsked", v) }
     /** An evening look back at the day, at the chosen hour. */
     var eveningReview: Boolean
         get() = p.getBoolean("eveningReview", false)

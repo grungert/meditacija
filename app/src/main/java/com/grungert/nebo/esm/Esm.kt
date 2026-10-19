@@ -42,6 +42,8 @@ object Esm {
     const val EXTRA_FIFTY = "fifty_fifty"
     const val EXTRA_HOURGLASS = "hourglass"
     const val EXTRA_EVENING = "evening_review"
+    const val EXTRA_FOLLOW = "follow_up"
+    private const val ACTION_FOLLOW = "com.grungert.nebo.FOLLOW"
     private const val ACTION_EVENING = "com.grungert.nebo.EVENING"
     private const val FIFTY_CHANNEL = "pedeset"
     private val FIFTY_LINES = listOf(
@@ -95,6 +97,7 @@ object Esm {
         scheduleWeek(ctx, am)
         scheduleDaily(ctx, am)
         scheduleEvening(ctx, am)
+        scheduleFollowUp(ctx, am)
         scheduleReminder(ctx, am)
         scheduleFifty(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
@@ -181,6 +184,23 @@ object Esm {
         val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.eveningHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
         if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
         arm(am, c.timeInMillis, pi)
+    }
+
+    /** Yesterday's hard note still waiting for its question today, if any (see [com.grungert.nebo.koan.FollowUp]). */
+    fun followUpNote(ctx: Context): com.grungert.nebo.data.Entry? {
+        if (!ctx.app.settings.followUp) return null
+        val today = midnight()
+        val from = midnight(-1).timeInMillis
+        return com.grungert.nebo.koan.FollowUp.pending(ctx.app.db.entries(from), today)
+    }
+
+    /** The day after a hard note, at the hour it was written (between 10 and 20 h), once. */
+    private fun scheduleFollowUp(ctx: Context, am: AlarmManager) {
+        val pi = pending(ctx, ACTION_FOLLOW, 0)
+        val note = followUpNote(ctx)
+        if (note == null || ctx.app.settings.followUpAsked == note.id) { am.cancel(pi); return }
+        val at = com.grungert.nebo.koan.FollowUp.askAt(note, midnight())
+        if (at > System.currentTimeMillis()) arm(am, at, pi) else am.cancel(pi)
     }
 
     /** True when today's evening look back has been written. */
@@ -348,6 +368,16 @@ object Esm {
                         .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
                 }
             }
+            ACTION_FOLLOW -> followUpNote(ctx)?.takeIf { s.followUpAsked != it.id }?.let { note ->
+                s.followUpAsked = note.id
+                val open = PendingIntent.getActivity(ctx, 8, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FOLLOW, note.id)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                val about = com.grungert.nebo.koan.FollowUp.about(note)
+                ctx.getSystemService(NotificationManager::class.java).notify(FOLLOW_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
+                    .setSmallIcon(R.drawable.ic_notification).setContentTitle("Kako je danas?")
+                    .setContentText(if (about != null) "Juče ti je bilo teško ($about)." else "Juče ti je bilo teško.")
+                    .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(6 * 60 * 60_000L).build())
+            }
             ACTION_EVENING -> if (s.eveningReview && !eveningDone(ctx)) {
                 val open = PendingIntent.getActivity(ctx, 7, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_EVENING, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -371,6 +401,7 @@ object Esm {
     private const val REMIND_NOTIFICATION_ID = 10
     private const val FIFTY_NOTIFICATION_ID = 12
     private const val EVENING_NOTIFICATION_ID = 13
+    private const val FOLLOW_NOTIFICATION_ID = 14
 
     private fun notify(ctx: Context, promptId: Long) {
         val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)

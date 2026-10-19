@@ -138,6 +138,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         "esm" -> "Kako si sada?" to "Šta je u tebi upravo sada? Nema pogrešnog odgovora."
         "week" -> "Tvoja sedmica" to "Prije nego što ti pokažem obrasce: šta ti primjećuješ u ovoj sedmici?"
         "evening" -> "Kako je prošao dan?" to "Šta je danas bilo dobro? Šta je bilo teško? I šta sutra želiš drugačije?"
+        "followup" -> "Kako je danas?" to "Juče ti je bilo teško. Kako je sada, sa tim? Šta se promijenilo, a šta je ostalo?"
         else -> "Zapažanje" to "Šta primjećuješ u sebi upravo sada?"
     }
 
@@ -216,7 +217,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             // a take whose text is still being worked out: that text is kept for the note, not worked out a second time
             val pending = if (audio != null && transcript == null) live else null
             val takeModel = model
-            val entry = Entry(createdAt = System.currentTimeMillis(), kind = sc.kind, sessionId = sc.sessionId, promptId = sc.promptId,
+            val entry = Entry(createdAt = System.currentTimeMillis(), kind = sc.kind, sessionId = sc.sessionId, promptId = sc.promptId, follows = sc.follows,
                 audioPath = audio?.absolutePath, text = if (fieldFromVoice) null else typed, moods = moods.toList(), points = points.toPoints(),
                 transcript = if (audio != null) transcript else null, transcriptModel = if (transcript != null) model else null)
             val id = withContext(Dispatchers.IO) {
@@ -242,9 +243,10 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 .screenPadding().padding(top = 8.dp, bottom = 110.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week" || sc.kind == "evening") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
+            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week" || sc.kind == "evening" || sc.kind == "followup") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
             Text(prompt, style = BodyStyle.copy(color = Ink.soft))
             if (sc.kind == "evening") DaySummary()
+            sc.follows?.let { Yesterday(it) }
 
             // speaking: one big button, the live wave of the voice, the time
             Column(
@@ -521,5 +523,19 @@ private fun DaySummary() {
         if (moods.isNotEmpty()) ChipRow {
             for ((m, n) in moods.take(6)) Chip(if (n > 1) "$m ×$n" else m, false, {}, dot = MOOD_COLORS[m])
         }
+    }
+}
+
+/** The hard note from yesterday, quoted, above today's answer to it. */
+@Composable
+private fun Yesterday(id: Long) {
+    val app = LocalContext.current.app
+    var note by remember { mutableStateOf<Entry?>(null) }
+    LaunchedEffect(id) { note = withContext(Dispatchers.IO) { app.db.entry(id) } }
+    val n = note ?: return
+    PaperCard {
+        Text("JUČE · " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(n.createdAt)) +
+            (if (n.moods.isNotEmpty()) " · " + n.moods.joinToString(", ") else ""), style = PaperSmall)
+        if (n.words.isNotBlank()) Text("„" + n.words.take(220) + (if (n.words.length > 220) "…" else "") + "“", style = PaperText.copy(fontSize = 17.sp))
     }
 }
