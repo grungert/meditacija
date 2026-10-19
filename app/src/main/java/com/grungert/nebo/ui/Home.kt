@@ -145,6 +145,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var weekMinutes by remember { mutableIntStateOf(0) }
     var weekSessions by remember { mutableIntStateOf(0) }
     var weekNotes by remember { mutableIntStateOf(0) }
+    var reviewHeld by remember { mutableIntStateOf(0) }   // notes and sessions in the week a review would look back on
     var silenced by remember { mutableStateOf(s.esmSilencedDay == Esm.today()) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -152,11 +153,14 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             weekMinutes = ss.sumOf { it.actualSec } / 60
             weekSessions = ss.size
             weekNotes = context.app.db.entries(weekStart()).size
+            val from = Esm.reviewWeekStart().timeInMillis
+            val to = (Esm.reviewWeekStart().apply { add(Calendar.WEEK_OF_YEAR, 1) }).timeInMillis
+            reviewHeld = context.app.db.entries(from).count { it.createdAt < to } + context.app.db.sessions(from).count { it.startedAt < to }
         }
     }
     val dow = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
     val reviewDue = (dow == Calendar.SATURDAY || dow == Calendar.SUNDAY || dow == Calendar.MONDAY) &&
-        s.weekReviewed != Esm.weekKey() && (weekNotes + weekSessions) > 0
+        s.weekReviewed != Esm.weekKey(Esm.reviewWeekStart()) && reviewHeld > 0
     val last = context.lastConfig()
     val weekKoan = remember { context.app.library.byId(s.activeWeekKoan()) }
 

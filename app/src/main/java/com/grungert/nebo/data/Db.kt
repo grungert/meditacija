@@ -235,6 +235,12 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
             }.toList()
         }
 
+    fun prompt(id: Long): Prompt? =
+        readableDatabase.rawQuery("SELECT * FROM prompts WHERE id=?", arrayOf(id.toString())).use { c ->
+            if (c.moveToNext()) Prompt(c.long("id"), c.long("scheduled_at"), c.longOrNull("fired_at"),
+                c.longOrNull("answered_entry_id"), c.int("dismissed") == 1) else null
+        }
+
     fun deleteFuturePrompts(after: Long) {
         writableDatabase.delete("prompts", "scheduled_at>? AND fired_at IS NULL", arrayOf(after.toString()))
     }

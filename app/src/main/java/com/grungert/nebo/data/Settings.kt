@@ -1,6 +1,7 @@
 package com.grungert.nebo.data
 
 import android.content.Context
+import kotlinx.coroutines.launch
 import androidx.core.content.edit
 
 /** Small preferences that make the next session start the way the last one did. */
@@ -146,7 +147,8 @@ class Settings(private val context: Context) {
         weekKoanId?.takeIf { now - weekKoanSince in 0 until 7 * 86_400_000L }
     fun carryKoan(id: String?) {
         weekKoanId = id; weekKoanSince = System.currentTimeMillis()
-        com.grungert.nebo.widget.NeboWidget.refresh(context)
+        // drawing the widget's sky takes a moment; not on the thread that answers the tap
+        (context.applicationContext as com.grungert.nebo.NeboApp).scope.launch { com.grungert.nebo.widget.NeboWidget.refresh(context) }
     }
     /** Which day (1..7) of carrying the koan this is. */
     fun weekKoanDay(now: Long = System.currentTimeMillis()) = ((now - weekKoanSince) / 86_400_000L + 1).toInt()

@@ -90,11 +90,19 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
             reflection = withContext(Dispatchers.IO) { app.db.entry(reflection!!.id) }
         }
         waiting = false
-        val start = weekStart()
-        val week = 7 * 86_400_000L
-        val (all, sessions) = withContext(Dispatchers.IO) { app.db.entries() to app.db.sessions(start) }
-        val thisWeek = all.filter { it.createdAt >= start && it.id != reflection?.id }
-        val lastWeek = all.filter { it.createdAt in (start - week) until start }
+        // the week being looked back on (on a Monday, the one that just ended), and the one before it up to the same
+        // moment, so a Saturday look compares five and a half days with five and a half; weeks step by the calendar,
+        // so the week with a clock change is not cut an hour short
+        val startCal = Esm.reviewWeekStart()
+        val start = startCal.timeInMillis
+        val end = (startCal.clone() as java.util.Calendar).apply { add(java.util.Calendar.WEEK_OF_YEAR, 1) }.timeInMillis
+        val prevStart = (startCal.clone() as java.util.Calendar).apply { add(java.util.Calendar.WEEK_OF_YEAR, -1) }.timeInMillis
+        val now = System.currentTimeMillis()
+        val prevCut = if (now >= end) start else java.util.Calendar.getInstance().apply { add(java.util.Calendar.WEEK_OF_YEAR, -1) }.timeInMillis
+        val (all, sessions) = withContext(Dispatchers.IO) { app.db.entries() to app.db.sessions(start).filter { it.startedAt < end } }
+        // the week's own reflections are about the week, not part of it, on both sides of the comparison
+        val thisWeek = all.filter { it.createdAt in start until end && it.kind != "week" && it.id != reflection?.id }
+        val lastWeek = all.filter { it.createdAt in prevStart until prevCut && it.kind != "week" }
         val count = HashMap<String, Int>(); val prev = HashMap<String, Int>()
         thisWeek.forEach { e -> themesOf(e).forEach { count[it] = (count[it] ?: 0) + 1 } }
         lastWeek.forEach { e -> themesOf(e).forEach { prev[it] = (prev[it] ?: 0) + 1 } }
@@ -115,11 +123,11 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
         val times = mind.mapNotNull { com.grungert.nebo.koan.MindHabits.time(it) }.groupingBy { it }.eachCount()
         val time = times.maxByOrNull { it.value }?.takeIf { top -> times.count { it.value == top.value } == 1 }?.key
         data = WeekData(
-            reflection, fmt.format(Date(start)) + " – " + fmt.format(Date(start + week - 1)), themes, quotes, parts, moods,
+            reflection, fmt.format(Date(start)) + " – " + fmt.format(Date(end - 1)), themes, quotes, parts, moods,
             sessions.sumOf { it.actualSec } / 60, sessions.size, sessions.groupingBy { it.type }.eachCount().toList(), earlier, nextKoan,
             habits, time,
         )
-        app.settings.weekReviewed = Esm.weekKey()
+        app.settings.weekReviewed = Esm.weekKey(startCal)
     }
 
     Box(Modifier.fillMaxSize()) {

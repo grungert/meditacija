@@ -12,6 +12,8 @@ import com.grungert.nebo.MainActivity
 import com.grungert.nebo.R
 import com.grungert.nebo.app
 import java.util.Calendar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.random.Random
 
 /**
@@ -22,6 +24,7 @@ import kotlin.random.Random
  */
 object Esm {
     const val CHANNEL = "zapazanja"
+    private const val REMIND_CHANNEL = "podsjetnici"
     const val EXTRA_PROMPT = "prompt_id"
     const val EXTRA_WEEK = "week_review"
     private const val EXTRA_MOOD = "mood"
@@ -52,6 +55,9 @@ object Esm {
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Zapažanja tokom dana", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Nekoliko puta dnevno, u nasumično vrijeme: kako si sada?"
         })
+        nm.createNotificationChannel(NotificationChannel(REMIND_CHANNEL, "Podsjetnici", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "Vrijeme za tišinu, pitanje za danas i pogled na sedmicu."
+        })
         nm.createNotificationChannel(NotificationChannel(FIFTY_CHANNEL, "50-50", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Nekoliko puta dnevno: pola pažnje u tijelu, pola u svijetu oko tebe."
         })
@@ -59,7 +65,22 @@ object Esm {
 
     fun today(c: Calendar = Calendar.getInstance()) = c.get(Calendar.YEAR) * 10000 + (c.get(Calendar.MONTH) + 1) * 100 + c.get(Calendar.DAY_OF_MONTH)
 
-    /** Plans today's prompts if none exist yet, then arms the next alarm. Safe to call often. */
+    /** Local midnight, [days] days from today. Steps by the calendar, so a day with a clock change is 23 or 25 hours long. */
+    fun midnight(days: Int = 0, from: Calendar = Calendar.getInstance()): Calendar = (from.clone() as Calendar).apply {
+        add(Calendar.DAY_OF_YEAR, days); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+
+    /** That day at the given hour on the wall clock (never a raw count of milliseconds, which slips on clock-change days). */
+    private fun at(day: Calendar, hour: Int, minute: Int = 0): Long = (day.clone() as Calendar).apply {
+        if (hour >= 24) { add(Calendar.DAY_OF_YEAR, 1); set(Calendar.HOUR_OF_DAY, hour - 24) } else set(Calendar.HOUR_OF_DAY, hour)
+        set(Calendar.MINUTE, minute)
+    }.timeInMillis
+
+    /**
+     * Plans today's prompts if none exist yet, then arms the next alarm. Safe to call often, and from several places at
+     * once: a cold start runs it from the app and again from the receiver that woke it, so it is one at a time.
+     */
+    @Synchronized
     fun refresh(ctx: Context) {
         val s = ctx.app.settings
         val db = ctx.app.db
@@ -70,20 +91,23 @@ object Esm {
         scheduleFifty(ctx, am)
         if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
         val now = System.currentTimeMillis()
-        val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
-        val start = dayStart.timeInMillis + s.esmStartHour * 3_600_000L
-        val end = dayStart.timeInMillis + s.esmEndHour * 3_600_000L
-        val todays = db.prompts(dayStart.timeInMillis).filter { it.scheduledAt < dayStart.timeInMillis + 86_400_000L }
-        if (todays.isEmpty() && end > now + 30 * 60_000L) {
+        val dayStart = midnight()
+        val tomorrow = midnight(1).timeInMillis
+        val start = at(dayStart, s.esmStartHour)
+        val end = at(dayStart, s.esmEndHour)
+        val todays = db.prompts(dayStart.timeInMillis).filter { it.scheduledAt < tomorrow }
+        // the rest of the day's prompts, when none are waiting: all of them in the morning, or what is left of them
+        // after the person changed the window or the count during the day
+        val left = s.esmPerDay - todays.count { it.firedAt != null }
+        if (todays.none { it.firedAt == null } && left > 0 && end > now + 30 * 60_000L) {
             val from = maxOf(start, now + 10 * 60_000L)
-            for (t in randomTimes(from, end, s.esmPerDay)) db.insertPrompt(t)
+            for (t in randomTimes(from, end, left)) db.insertPrompt(t)
         }
         val next = db.prompts(now).firstOrNull { it.firedAt == null }
-        if (next != null) {
-            arm(am, next.scheduledAt, pending(ctx, ACTION_FIRE, next.id))
-        }
+        if (next != null) arm(am, next.scheduledAt, pending(ctx, ACTION_FIRE, next.id))
+        else am.cancel(pending(ctx, ACTION_FIRE, 0))
         // plan tomorrow a few minutes after midnight
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dayStart.timeInMillis + 86_400_000L + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, tomorrow + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
     }
 
     /** Fires at the time asked: exactly when the person allowed exact alarms, otherwise within ten minutes. */
@@ -119,14 +143,15 @@ object Esm {
         val s = ctx.app.settings
         if (!s.fiftyOn) { am.cancel(pi); s.fiftyPlanDay = 0; return }
         val now = System.currentTimeMillis()
+        // one plan is kept at a time: once tomorrow's is drawn, today is over and is not planned again
+        val tomorrowKey = today(midnight(1))
         fun plan(offset: Int): List<Long> {
-            val day = Calendar.getInstance().apply {
-                add(Calendar.DAY_OF_YEAR, offset); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-            }
+            val day = midnight(offset)
             val key = today(day)
             if (s.fiftyPlanDay == key) return s.fiftyPlan
-            val from = maxOf(day.timeInMillis + s.fiftyFrom * 3_600_000L, now + 10 * 60_000L)
-            val times = randomTimes(from, day.timeInMillis + s.fiftyTo * 3_600_000L, s.fiftyPerDay)
+            if (offset == 0 && s.fiftyPlanDay == tomorrowKey) return emptyList()
+            val from = maxOf(at(day, s.fiftyFrom), now + 10 * 60_000L)
+            val times = randomTimes(from, at(day, s.fiftyTo), s.fiftyPerDay)
             s.fiftyPlanDay = key; s.fiftyPlan = times
             return times
         }
@@ -162,10 +187,21 @@ object Esm {
         arm(am, c.timeInMillis, pi)
     }
 
+    /** The ISO week (Monday first) as yyyyww; the year is the week's own, so 28 Dec – 3 Jan is one week. */
     fun weekKey(c: Calendar = Calendar.getInstance()): Int {
         val k = c.clone() as Calendar
         k.firstDayOfWeek = Calendar.MONDAY; k.minimalDaysInFirstWeek = 4
-        return k.get(Calendar.YEAR) * 100 + k.get(Calendar.WEEK_OF_YEAR)
+        return k.weekYear * 100 + k.get(Calendar.WEEK_OF_YEAR)
+    }
+
+    /**
+     * Midnight of the Monday that starts the week a review looks back on. From Tuesday to Sunday that is this week;
+     * on Monday the week has only just begun, so it is the one that ended last night.
+     */
+    fun reviewWeekStart(now: Calendar = Calendar.getInstance()): Calendar = (now.clone() as Calendar).apply {
+        firstDayOfWeek = Calendar.MONDAY
+        if (get(Calendar.DAY_OF_WEEK) == Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, -1)
+        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }
 
     /** n random moments between from and to, at least 45 minutes apart where the window allows. */
@@ -189,8 +225,10 @@ object Esm {
         when (intent.action) {
             ACTION_FIRE -> {
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)
+                // a prompt taken away by a change in the settings, or already shown, stays quiet
+                val fresh = ctx.app.db.prompt(id)?.let { it.firedAt == null } == true
                 ctx.app.db.markPromptFired(id, System.currentTimeMillis())
-                if (s.esmEnabled && s.esmSilencedDay != today()) notify(ctx, id)
+                if (fresh && s.esmEnabled && s.esmSilencedDay != today()) notify(ctx, id)
             }
             ACTION_REPLY -> {
                 // answered straight from the notification: typed words, or one tap on a mood
@@ -198,17 +236,21 @@ object Esm {
                 val typed = android.app.RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_TEXT)?.toString()?.trim()
                 val mood = intent.getStringExtra(EXTRA_MOOD)
                 val db = ctx.app.db
+                val nm = ctx.getSystemService(NotificationManager::class.java)
+                // nothing typed and no mood tapped, or a prompt answered already (a second tap, a broadcast sent again): no note
+                if ((typed.isNullOrBlank() && mood == null) || (id > 0 && db.prompt(id)?.answeredEntryId != null)) {
+                    nm.cancel(NOTIFICATION_ID); return
+                }
                 val entryId = db.insertEntry(com.grungert.nebo.data.Entry(createdAt = System.currentTimeMillis(), kind = "esm",
                     promptId = id.takeIf { it > 0 }, text = typed?.ifBlank { null }, moods = listOfNotNull(mood)))
                 if (id > 0) db.markPromptAnswered(id, entryId)
-                val nm = ctx.getSystemService(NotificationManager::class.java)
-                nm.notify(NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification)
+                nm.notify(NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification).setOnlyAlertOnce(true)
                     .setContentTitle("Zapisano").setContentText("Hvala. Vrati se onome što si radio.").setTimeoutAfter(2500).build())
+                ctx.app.scope.launch { ctx.app.recommender.tagNotes() }   // its themes, now rather than at the next start
                 return
             }
             ACTION_REMIND, ACTION_SNOOZE -> {
-                val dayStart = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
-                val doneToday = ctx.app.db.sessions(dayStart.timeInMillis).isNotEmpty()
+                val doneToday = ctx.app.db.sessions(midnight().timeInMillis).isNotEmpty()
                 ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
                 if (s.reminderOn && !(s.reminderSkipIfDone && doneToday)) {
                     val open = PendingIntent.getActivity(ctx, 4, Intent(ctx, MainActivity::class.java)
@@ -218,7 +260,7 @@ object Esm {
                     // or just the three-minute breathing space, for a full day
                     val short = PendingIntent.getActivity(ctx, 6, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_HOURGLASS, true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
+                    ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
                         .setSmallIcon(R.drawable.ic_notification).setContentTitle("Vrijeme za tišinu")
                         .setContentText("Nekoliko minuta disanja ispod neba?").setContentIntent(open).setAutoCancel(true)
                         .setTimeoutAfter(3 * 60 * 60_000L)
@@ -242,7 +284,7 @@ object Esm {
                 if (s.dailyQuestion && q != null) {
                     val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
+                    ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
                         .setSmallIcon(R.drawable.ic_notification).setContentTitle("Pitanje za danas").setContentText(q)
                         .setStyle(Notification.BigTextStyle().bigText(q + (item.title?.let { "\n— $it" } ?: "")))
                         .setContentIntent(open).setAutoCancel(true).build())
@@ -251,8 +293,8 @@ object Esm {
             ACTION_WEEK -> {
                 val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_WEEK, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                if (s.weekReviewed != weekKey()) {
-                    ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL)
+                if (s.weekReviewed != weekKey(reviewWeekStart())) {
+                    ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
                         .setSmallIcon(R.drawable.ic_notification).setContentTitle("Sedmica je iza tebe")
                         .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
                 }
@@ -291,13 +333,23 @@ object Esm {
     }
 }
 
-class EsmReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) = Esm.onAlarm(context, intent)
+/** Database, settings and alarms are work for a background thread; the receiver stays alive until it is done. */
+private fun BroadcastReceiver.inBackground(context: Context, work: () -> Unit) {
+    val result = goAsync()
+    context.app.scope.launch(Dispatchers.IO) { try { work() } finally { result.finish() } }
 }
+
+class EsmReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) = inBackground(context) { Esm.onAlarm(context, intent) }
+}
+
+private val REARM = setOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED, Intent.ACTION_TIME_CHANGED,
+    Intent.ACTION_TIMEZONE_CHANGED, AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        // after a reboot, or when exact alarms are allowed or taken away, everything is armed again
-        if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) Esm.refresh(context)
+        // after a reboot or an update, when exact alarms are allowed or taken away, or when the clock or the time zone
+        // changes (travel, a hand-set time), everything is armed again at the right wall-clock time
+        if (intent.action in REARM) inBackground(context) { Esm.refresh(context) }
     }
 }

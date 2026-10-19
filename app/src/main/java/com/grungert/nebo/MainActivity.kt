@@ -100,7 +100,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        handle(intent)
+        // only a fresh launch acts on the notification or widget that opened it: when the system recreates the activity
+        // (dark mode at sunset, a font change) or it comes back from Recents, the same intent arrives again, and must not
+        // start a second session or reopen a check-in
+        if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handle(intent)
         setContent { App() }
     }
 
@@ -109,7 +112,7 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    /** A tap on a random-moment notification opens the quick check-in. */
+    /** A tap on a random-moment notification opens the quick check-in. Once handled, the extras are dropped. */
     private fun handle(intent: Intent?) {
         val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
@@ -121,6 +124,7 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
         // "Zapiši" on the home-screen widget
         if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")
+        intent?.let { setIntent(Intent(it).replaceExtras(null as android.os.Bundle?)) }
     }
 
     @Composable

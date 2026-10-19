@@ -41,10 +41,11 @@ class NeboWidget : AppWidgetProvider() {
             val text = if (koan != null) koan.question ?: koan.title ?: koan.text else context.getString(R.string.widget_text_default)
             val density = context.resources.displayMetrics.density
             for (id in ids) {
-                // the widget's size in this orientation, as the launcher reports it
+                // the widget's size in portrait, as the launcher reports it: narrowest width with tallest height
+                // (the widest width goes with the lowest height, which is landscape)
                 val o = manager.getAppWidgetOptions(id)
-                val wDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH).takeIf { it > 0 } ?: 330
-                val hDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT).takeIf { it > 0 } ?: 160
+                val wDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).takeIf { it > 0 } ?: 330
+                val hDp = o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).takeIf { it > 0 } ?: 160
                 val k = minOf(density, 2.5f)   // keeps the picture within what a widget may carry
                 val sky = runCatching { WidgetArt.render(app.settings, (wDp * k).toInt(), (hDp * k).toInt(), k) }.getOrNull()
                 manager.updateAppWidget(id, views(context, label, text, sky))
