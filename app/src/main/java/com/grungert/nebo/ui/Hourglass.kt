@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import com.grungert.nebo.sky.Palette
@@ -386,7 +387,8 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     // ---- the veranda: floor, the sill at its edge, a post and the beam of the roof
     drawRect(Brush.verticalGradient(listOf(FLOOR_SHADE, FLOOR, FLOOR_LIT, FLOOR), floorTop, h), Offset(0f, floorTop), Size(w, h - floorTop))
     // planks running towards the water, and the joints between them
-    val vx = w * 0.5f; val vy = h * 0.25f
+    // the planks run to the same horizon as the water outside (the far shore), so floor and lake share one perspective
+    val vx = w * 0.5f; val vy = h * 0.57f
     for (i in -6..6) {
         val bx = w * 0.5f + i * w * 0.16f
         val k = (floorTop - vy) / (h - vy)
@@ -460,29 +462,37 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     val spread = smooth(126f, 172f, t)
     val appear = smooth(0f, 2.5f, t)
 
-    // the woven mat under it
-    val matY = sy(1185f)
-    val mat = Path().apply {
-        moveTo(cx - w * 0.34f, matY); lineTo(cx + w * 0.30f, matY)
-        lineTo(cx + w * 0.38f, matY + h * 0.07f); lineTo(cx - w * 0.42f, matY + h * 0.07f); close()
-    }
-    drawPath(mat, Brush.verticalGradient(listOf(Color(0xFF51617E), Color(0xFF7F8FAA)), matY, matY + h * 0.07f))
+    // the woven mat under it, in the floor's perspective, the base standing in its middle
+    val bx = ox + 650f * sc
+    val matBack = sy(1150f); val matFront = sy(1242f) + h * 0.03f
+    fun toFront(xBack: Float) = vx + (xBack - vx) * (matFront - vy) / (matBack - vy)
+    val bl = bx - 360f * sc; val br = bx + 360f * sc
+    val mat = Path().apply { moveTo(bl, matBack); lineTo(br, matBack); lineTo(toFront(br), matFront); lineTo(toFront(bl), matFront); close() }
+    drawPath(mat, Brush.verticalGradient(listOf(Color(0xFF51617E), Color(0xFF7F8FAA)), matBack, matFront))
     clipPath(mat) {
-        for (row in 0 until 5) for (col in 0 until 12) {
-            if ((row + col) % 2 == 0) continue
-            val fa = col / 12f; val fb = (col + 1) / 12f
-            val ya = matY + h * 0.014f * row; val yb = ya + h * 0.014f
-            val ka = row / 5f; val kb = (row + 1) / 5f
-            fun xAt(f: Float, k2: Float) = cx - w * (0.34f + 0.08f * k2) + w * (0.64f + 0.16f * k2) * f
-            val cell = Path().apply { moveTo(xAt(fa, ka), ya); lineTo(xAt(fb, ka), ya); lineTo(xAt(fb, kb), yb); lineTo(xAt(fa, kb), yb); close() }
-            drawPath(cell, Color(0xFFDCE3EE).copy(alpha = 0.22f))
+        val rows = 6; val cols = 12
+        fun at(f: Float, g: Float): Offset {
+            val y = matBack + (matFront - matBack) * g
+            val xl = bl + (toFront(bl) - bl) * g; val xr = br + (toFront(br) - br) * g
+            return Offset(xl + (xr - xl) * f, y)
         }
-        for (i in 0..16) {
-            val f = i / 16f
-            drawLine(Color.White.copy(alpha = 0.15f), Offset(cx - w * 0.34f + w * 0.64f * f, matY), Offset(cx - w * 0.42f + w * 0.80f * f, matY + h * 0.07f), 1 * px)
+        for (row in 0 until rows) for (col in 0 until cols) {
+            if ((row + col) % 2 == 0) continue
+            val a = at(col / cols.toFloat(), row / rows.toFloat()); val b = at((col + 1) / cols.toFloat(), row / rows.toFloat())
+            val c = at((col + 1) / cols.toFloat(), (row + 1) / rows.toFloat()); val d = at(col / cols.toFloat(), (row + 1) / rows.toFloat())
+            drawPath(Path().apply { moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(c.x, c.y); lineTo(d.x, d.y); close() }, Color(0xFFDCE3EE).copy(alpha = 0.22f))
+        }
+        for (i in 0..24) { val f = i / 24f; drawLine(Color.White.copy(alpha = 0.12f), at(f, 0f), at(f, 1f), 1 * px) }
+    }
+    drawPath(mat, Color(0xFF2E3A52).copy(alpha = 0.6f), style = Stroke(1.5f * px))
+    // shadows that hold it on the ground: a long soft one cast away from the light, and a dark one where the base touches
+    fun softOval(c: Offset, rx: Float, ry: Float, alpha: Float) {
+        scale(1f, ry / rx, c) {
+            drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = alpha), Color.Black.copy(alpha = alpha * 0.5f), Color.Transparent), c, rx), rx, c)
         }
     }
-    drawOval(Color.Black.copy(alpha = 0.22f), Offset(cx - w * 0.36f, sy(1205f)), Size(w * 0.62f, h * 0.035f))
+    softOval(Offset(bx - 170f * sc, sy(1238f)), 560f * sc, 70f * sc, 0.28f)
+    softOval(Offset(bx, sy(1230f)), 380f * sc, 36f * sc, 0.7f)
     with(sway) { draw(ox, oy, sc, art.width * sc, art.height * sc, t) }
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
