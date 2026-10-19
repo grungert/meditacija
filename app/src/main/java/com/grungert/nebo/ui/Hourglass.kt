@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -97,12 +99,14 @@ fun HourglassView(elapsed: Float, light: HourglassLight, modifier: Modifier = Mo
         Season.AUTUMN -> R.drawable.hourglass_autumn
         Season.WINTER -> R.drawable.hourglass_winter
     })
+    val mask = ImageBitmap.imageResource(R.drawable.hourglass_sway)
+    val sway = remember(art) { TreeSway(art, mask) }
     val grains = remember {
         val r = Random(7)
         List(70) { Grain(r.nextFloat() * 2 - 1, r.nextFloat(), r.nextFloat() * 6.28f, 0.6f + r.nextFloat() * 0.8f, 0.7f + r.nextFloat() * 0.9f, r.nextFloat()) }
     }
     // drawn in its own layer, so the evening can darken what is painted here without touching the sky behind
-    Canvas(modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) { scene(elapsed, grains, light, art) }
+    Canvas(modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) { scene(elapsed, grains, light, art, sway) }
 }
 
 /** A point on a cubic curve. */
@@ -298,6 +302,52 @@ private fun DrawScope.books(x: Float, y: Float, w: Float) {
 }
 
 /**
+ * The wind in the painted tree: an AGSL shader that draws the painting, moving each pixel a little by how far it is
+ * from the still parts (the sway mask: glass, caps, base and trunk are 0, the tips of the crowns 1). The crowns sway
+ * slowly in two rhythms with the odd gust, each part a little out of step with the next, and the leaves flutter
+ * finely; the trunk and the hourglass never move. Amplitudes are a few pixels, slow enough not to pull at attention.
+ */
+private class TreeSway(art: ImageBitmap, mask: ImageBitmap) {
+    private val shader = android.graphics.RuntimeShader(
+        """
+        uniform shader art;
+        uniform shader mask;
+        uniform float2 origin;
+        uniform float scale;
+        uniform float maskScale;
+        uniform float time;
+        half4 main(float2 frag) {
+            float2 p = (frag - origin) / scale;                  // a pixel of the painting
+            float m = mask.eval(p * maskScale).r;
+            float gust = 0.65 + 0.35 * sin(time * 0.21) * sin(time * 0.34 + 1.3);
+            float phase = p.x * 0.004 + p.y * 0.006;
+            float sway = sin(time * 0.85 + phase) * 0.7 + sin(time * 1.6 + phase * 2.3) * 0.3;
+            float2 d = float2(sway * 10.0 * gust, cos(time * 1.05 + phase) * 2.5 * gust) * m;
+            d += float2(sin(time * 3.6 + p.y * 0.08), cos(time * 3.1 + p.x * 0.09)) * 1.3 * m;
+            return art.eval(p - d);
+        }
+        """.trimIndent()
+    )
+    private val scaleFactor: Float
+
+    init {
+        shader.setInputShader("art", android.graphics.BitmapShader(art.asAndroidBitmap(), android.graphics.Shader.TileMode.DECAL, android.graphics.Shader.TileMode.DECAL))
+        shader.setInputShader("mask", android.graphics.BitmapShader(mask.asAndroidBitmap(), android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP))
+        scaleFactor = mask.width / art.width.toFloat()
+        shader.setFloatUniform("maskScale", scaleFactor)
+    }
+    private val brush = ShaderBrush(shader)
+
+    /** Draws the painting with its top-left at [ox], [oy], [sc] screen pixels to one of its own, at [time] seconds. */
+    fun DrawScope.draw(ox: Float, oy: Float, sc: Float, w: Float, h: Float, time: Float) {
+        shader.setFloatUniform("origin", ox, oy)
+        shader.setFloatUniform("scale", sc)
+        shader.setFloatUniform("time", time)
+        drawRect(brush, Offset(ox, oy), Size(w, h))
+    }
+}
+
+/**
  * The glass in the painting: its centre, the neck, where the sand can lie at the top and the bottom, and its inner
  * half-width row by row, all in the painting's pixels (measured on the summer one; the seasons share the glass).
  */
@@ -326,7 +376,7 @@ private object Glass {
     }
 }
 
-private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight, art: ImageBitmap) {
+private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight, art: ImageBitmap, sway: TreeSway) {
     val w = size.width; val h = size.height; val px = density
     val sunCol = rgb(light.pal.sun)
     val night = light.pal.stars
@@ -433,8 +483,7 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
         }
     }
     drawOval(Color.Black.copy(alpha = 0.22f), Offset(cx - w * 0.36f, sy(1205f)), Size(w * 0.62f, h * 0.035f))
-    drawImage(art, IntOffset.Zero, IntSize(art.width, art.height), IntOffset(ox.toInt(), oy.toInt()),
-        IntSize((art.width * sc).toInt(), (art.height * sc).toInt()))
+    with(sway) { draw(ox, oy, sc, art.width * sc, art.height * sc, t) }
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
     val dark = (0.62f * night + 0.18f * dusk * (1 - night)).coerceIn(0f, 0.7f)
