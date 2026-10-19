@@ -11,6 +11,11 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import com.grungert.nebo.R
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -85,12 +90,19 @@ class HourglassLight(val pal: Palette, val sun: Float, val season: Season)
  */
 @Composable
 fun HourglassView(elapsed: Float, light: HourglassLight, modifier: Modifier = Modifier) {
+    // the hourglass with its tree is a painting, one for each season; everything that moves is drawn over it
+    val art = ImageBitmap.imageResource(when (light.season) {
+        Season.SPRING -> R.drawable.hourglass_spring
+        Season.SUMMER -> R.drawable.hourglass_summer
+        Season.AUTUMN -> R.drawable.hourglass_autumn
+        Season.WINTER -> R.drawable.hourglass_winter
+    })
     val grains = remember {
         val r = Random(7)
         List(70) { Grain(r.nextFloat() * 2 - 1, r.nextFloat(), r.nextFloat() * 6.28f, 0.6f + r.nextFloat() * 0.8f, 0.7f + r.nextFloat() * 0.9f, r.nextFloat()) }
     }
     // drawn in its own layer, so the evening can darken what is painted here without touching the sky behind
-    Canvas(modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) { scene(elapsed, grains, light) }
+    Canvas(modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }) { scene(elapsed, grains, light, art) }
 }
 
 /** A point on a cubic curve. */
@@ -285,7 +297,36 @@ private fun DrawScope.books(x: Float, y: Float, w: Float) {
     drawLine(Color(0xFFD9B36A), Offset(x + w * 0.18f, y + h * 0.6f), Offset(x + w * 0.5f, y + h * 0.6f), 1.2f * px)
 }
 
-private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight) {
+/**
+ * The glass in the painting: its centre, the neck, where the sand can lie at the top and the bottom, and its inner
+ * half-width row by row, all in the painting's pixels (measured on the summer one; the seasons share the glass).
+ */
+private object Glass {
+    const val CX = 685f
+    const val NECK = 692f
+    const val TOP = 445f
+    const val BOTTOM = 985f
+    const val ART_TOP = 0f
+    const val ART_BOTTOM = 1242f
+    const val ART_LEFT = 167f
+    const val ART_RIGHT = 1077f
+    private val Y = floatArrayOf(400f, 420f, 440f, 460f, 480f, 500f, 520f, 540f, 560f, 580f, 600f, 620f, 640f, 660f, 680f, 692f, 700f, 720f, 740f,
+        760f, 780f, 800f, 820f, 840f, 860f, 880f, 900f, 920f, 940f, 960f, 980f, 990f)
+    private val HW = floatArrayOf(160f, 155f, 163f, 168f, 169f, 167f, 162f, 154f, 142f, 127f, 109f, 87f, 65f, 46f, 35f, 33f, 34f, 42f, 59f,
+        81f, 102f, 122f, 138f, 151f, 160f, 167f, 170f, 170f, 168f, 162f, 153f, 148f)
+
+    /** The inner half-width at a row of the painting: the outer edge less the glass itself. */
+    fun inner(y: Float): Float {
+        if (y <= Y.first()) return HW.first() - 12
+        if (y >= Y.last()) return HW.last() - 12
+        var i = 0
+        while (Y[i + 1] < y) i++
+        val f = (y - Y[i]) / (Y[i + 1] - Y[i])
+        return (HW[i] + (HW[i + 1] - HW[i]) * f - 12f).coerceAtLeast(3f)
+    }
+}
+
+private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight, art: ImageBitmap) {
     val w = size.width; val h = size.height; val px = density
     val sunCol = rgb(light.pal.sun)
     val night = light.pal.stars
@@ -341,7 +382,6 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     drawLine(WOOD_LINE.copy(alpha = 0.3f), Offset(w * 0.02f, h * 0.08f), Offset(w * 0.022f, floorTop), 1 * px)
     drawRect(Brush.verticalGradient(listOf(WOOD_SHADE, WOOD, WOOD_SHADE), 0f, h * 0.05f), Offset(0f, 0f), Size(w, h * 0.05f))
     windChime(w * 0.22f, h * 0.05f, h, t)
-    seasonBranch(w, h, light.season, t)
 
     // ---- the lantern, a bowl of tea and the books
     val lanternGlow = (0.25f + 0.75f * max(dusk, night)).coerceIn(0f, 1f)
@@ -349,19 +389,21 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     teaBowl(Offset(w * 0.10f, h * 0.705f), w * 0.075f, t)
     books(w * 0.80f, h * 0.672f, w * 0.18f)
 
-    // ---- the hourglass and its tree
-    val cx = w * 0.54f
-    val gh = min(h * 0.31f, w * 0.85f)
-    val gw = gh * 0.5f
+    // ---- the hourglass and its tree, a painting placed so its base stands on the mat
+    val sc = min(h * 0.48f / (Glass.ART_BOTTOM - Glass.ART_TOP), w * 0.92f / (Glass.ART_RIGHT - Glass.ART_LEFT))
+    val ox = w * 0.5f - (Glass.ART_LEFT + Glass.ART_RIGHT) / 2 * sc
+    val oy = h * 0.705f - Glass.ART_BOTTOM * sc
+    fun sy(yImg: Float) = oy + yImg * sc
+    val cx = ox + Glass.CX * sc
+    val cy = sy(Glass.NECK)
+    val topFull = sy(Glass.TOP)
+    val bottom = sy(Glass.BOTTOM)
+    val y0 = sy(410f); val y1 = bottom
+    val gh = y1 - y0
     val half = gh / 2
-    val y1 = h * 0.635f
-    val y0 = y1 - gh
-    val cy = y0 + half
-    val neck = gw * 0.045f
-    fun halfWidth(y: Float): Float {
-        val s = (abs(y - cy) / half).coerceIn(0f, 1f)
-        return neck + (gw / 2 - neck) * sin(s * PI.toFloat() / 2).pow(0.55f)
-    }
+    val gw = 2 * Glass.inner(480f) * sc
+    val neck = Glass.inner(Glass.NECK) * sc
+    fun halfWidth(y: Float) = Glass.inner((y - oy) / sc) * sc
     val k = (t / HOURGLASS_SECONDS).coerceIn(0f, 1f)          // how much sand has run
     val gather = smooth(60f, 66f, t) * (1 - smooth(120f, 128f, t))
     val rise = smooth(120f, 130f, t)
@@ -369,10 +411,10 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     val appear = smooth(0f, 2.5f, t)
 
     // the woven mat under it
-    val matY = y1 + h * 0.012f
+    val matY = sy(1185f)
     val mat = Path().apply {
-        moveTo(cx - w * 0.30f, matY); lineTo(cx + w * 0.32f, matY)
-        lineTo(cx + w * 0.40f, matY + h * 0.07f); lineTo(cx - w * 0.38f, matY + h * 0.07f); close()
+        moveTo(cx - w * 0.34f, matY); lineTo(cx + w * 0.30f, matY)
+        lineTo(cx + w * 0.38f, matY + h * 0.07f); lineTo(cx - w * 0.42f, matY + h * 0.07f); close()
     }
     drawPath(mat, Brush.verticalGradient(listOf(Color(0xFF51617E), Color(0xFF7F8FAA)), matY, matY + h * 0.07f))
     clipPath(mat) {
@@ -381,106 +423,18 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
             val fa = col / 12f; val fb = (col + 1) / 12f
             val ya = matY + h * 0.014f * row; val yb = ya + h * 0.014f
             val ka = row / 5f; val kb = (row + 1) / 5f
-            fun xAt(f: Float, k2: Float) = cx - w * (0.30f + 0.08f * k2) + w * (0.62f + 0.16f * k2) * f
+            fun xAt(f: Float, k2: Float) = cx - w * (0.34f + 0.08f * k2) + w * (0.64f + 0.16f * k2) * f
             val cell = Path().apply { moveTo(xAt(fa, ka), ya); lineTo(xAt(fb, ka), ya); lineTo(xAt(fb, kb), yb); lineTo(xAt(fa, kb), yb); close() }
             drawPath(cell, Color(0xFFDCE3EE).copy(alpha = 0.22f))
         }
         for (i in 0..16) {
             val f = i / 16f
-            drawLine(Color.White.copy(alpha = 0.18f), Offset(cx - w * 0.30f + w * 0.62f * f, matY), Offset(cx - w * 0.38f + w * 0.78f * f, matY + h * 0.07f), 1 * px)
-        }
-        for (j in 1..4) drawLine(Color(0xFF3B4760).copy(alpha = 0.35f), Offset(cx - w * 0.4f, matY + h * 0.014f * j), Offset(cx + w * 0.4f, matY + h * 0.014f * j), 1 * px)
-    }
-
-    drawOval(Color.Black.copy(alpha = 0.18f), Offset(cx - gw * 0.2f, matY), Size(gw * 1.6f, h * 0.03f))
-    // the round wooden base: its side, then its top
-    val baseRx = gw * 0.66f; val baseRy = h * 0.016f; val baseH = h * 0.022f
-    val baseTop = y1 + 2 * px
-    drawOval(Color.Black.copy(alpha = 0.28f), Offset(cx - baseRx * 1.08f, baseTop + baseH - baseRy * 0.4f), Size(baseRx * 2.16f, baseRy * 2.4f))
-    drawRect(Brush.horizontalGradient(listOf(WOOD_SHADE, WOOD, WOOD_LIT, WOOD, WOOD_SHADE), cx - baseRx, cx + baseRx), Offset(cx - baseRx, baseTop), Size(baseRx * 2, baseH))
-    drawOval(WOOD_SHADE, Offset(cx - baseRx, baseTop + baseH - baseRy), Size(baseRx * 2, baseRy * 2))
-    drawOval(Brush.verticalGradient(listOf(WOOD_LIT, WOOD), baseTop - baseRy, baseTop + baseRy), Offset(cx - baseRx, baseTop - baseRy), Size(baseRx * 2, baseRy * 2))
-    for (r in listOf(0.75f, 0.5f)) drawOval(WOOD_SHADE.copy(alpha = 0.25f), Offset(cx - baseRx * r, baseTop - baseRy * r), Size(baseRx * 2 * r, baseRy * 2 * r), style = Stroke(1 * px))
-
-    // the shelf over the glass: a curved slab the trunk grows into
-    val shelf = Path().apply {
-        moveTo(cx - gw * 0.55f, y0 - h * 0.024f)
-        quadraticTo(cx + gw * 0.2f, y0 - h * 0.04f, cx + gw * 0.72f, y0 - h * 0.02f)
-        quadraticTo(cx + gw * 0.80f, y0 - h * 0.006f, cx + gw * 0.68f, y0 + h * 0.003f)
-        quadraticTo(cx + gw * 0.1f, y0 - h * 0.004f, cx - gw * 0.5f, y0 + h * 0.008f)
-        close()
-    }
-    // the tree: rooted at the left of the base, rising beside the glass in a gentle curve and over into the shelf
-    val trunk = curve(Offset(cx - gw * 0.48f, baseTop + 2 * px), Offset(cx - gw * 0.95f, cy + half * 0.55f), Offset(cx - gw * 0.92f, y0 + half * 0.15f),
-        Offset(cx - gw * 0.40f, y0 - h * 0.012f), 40)
-    val trunkPath = limb(trunk) { f -> w * (0.075f - 0.03f * f) + w * 0.05f * (1 - f).pow(6) }   // a flare where it roots
-    // two roots gripping the base
-    for ((dx, len) in listOf(-0.75f to 0.22f, -0.2f to 0.18f)) {
-        val root = curve(trunk[2], Offset(cx + gw * (dx - 0.1f), baseTop - 4 * px), Offset(cx + gw * dx, baseTop), Offset(cx + gw * (dx + len), baseTop + 3 * px), 12)
-        drawPath(limb(root) { f -> w * 0.02f * (1 - 0.8f * f) }, WOOD)
-    }
-    // branches out of the trunk to the crowns of leaves
-    val crowns = listOf(
-        Offset(cx - gw * 1.25f, y0 - h * 0.035f) to w * 0.13f, Offset(cx - gw * 0.55f, y0 - h * 0.085f) to w * 0.15f,
-        Offset(cx + gw * 0.25f, y0 - h * 0.075f) to w * 0.12f, Offset(cx - gw * 1.45f, y0 + h * 0.06f) to w * 0.09f,
-    )
-    for ((i, cr) in crowns.withIndex()) {
-        val from = trunk[if (i == 3) 22 else 30 + i * 3]
-        val br = curve(from, Offset((from.x + cr.first.x) / 2, from.y - h * 0.02f), Offset(cr.first.x, (from.y + cr.first.y) / 2), cr.first, 16)
-        drawPath(limb(br) { f -> w * (0.024f - 0.016f * f) }, WOOD)
-    }
-    drawPath(shelf, Brush.verticalGradient(listOf(WOOD_LIT, WOOD, WOOD_SHADE), y0 - h * 0.04f, y0 + h * 0.008f))
-    drawPath(shelf, WOOD_LINE.copy(alpha = 0.5f), style = Stroke(1.1f * px))
-    drawPath(trunkPath, Brush.horizontalGradient(listOf(WOOD_SHADE, WOOD, WOOD_LIT, WOOD), cx - gw * 1.05f, cx - gw * 0.35f))
-    clipPath(trunkPath) {
-        // bark: long lines following the trunk
-        for (j in -2..2) {
-            val bark = Path()
-            for ((i, p) in trunk.withIndex()) {
-                val off = j * w * 0.011f * (1 - 0.4f * i / trunk.size)
-                if (i == 0) bark.moveTo(p.x + off, p.y) else bark.lineTo(p.x + off + sin(i * 0.7f + j) * 1.5f * px, p.y)
-            }
-            drawPath(bark, WOOD_LINE.copy(alpha = 0.28f), style = Stroke(1.1f * px))
+            drawLine(Color.White.copy(alpha = 0.15f), Offset(cx - w * 0.34f + w * 0.64f * f, matY), Offset(cx - w * 0.42f + w * 0.80f * f, matY + h * 0.07f), 1 * px)
         }
     }
-    for (ki in listOf(12, 26)) {
-        val kp = trunk[ki]
-        drawOval(WOOD_SHADE, Offset(kp.x - 5 * px, kp.y - 8 * px), Size(10 * px, 16 * px))
-        drawOval(WOOD_LIT.copy(alpha = 0.6f), Offset(kp.x - 5 * px, kp.y - 8 * px), Size(10 * px, 16 * px), style = Stroke(1.2f * px))
-    }
-    val rim = Path()
-    for ((i, p) in trunk.withIndex()) { val off = w * (0.03f - 0.012f * i / trunk.size); if (i == 0) rim.moveTo(p.x + off, p.y) else rim.lineTo(p.x + off, p.y) }
-    drawPath(rim, WOOD_LIT.copy(alpha = 0.5f), style = Stroke(2 * px, cap = StrokeCap.Round))
-    drawPath(trunkPath, WOOD_LINE.copy(alpha = 0.5f), style = Stroke(1.1f * px))
-    clipPath(shelf) {
-        for (j in 0 until 3) drawLine(WOOD_LINE.copy(alpha = 0.22f), Offset(cx - gw * 0.4f, y0 - h * (0.03f - 0.008f * j)), Offset(cx + gw * 0.7f, y0 - h * (0.022f - 0.007f * j)), 0.8f * px)
-    }
-    for ((i, cr) in crowns.withIndex()) crown(cr.first, cr.second, 3 + i * 7, light.season, t)
-    if (light.season == Season.WINTER) drawOval(Color.White.copy(alpha = 0.9f), Offset(cx - gw * 0.4f, y0 - h * 0.045f), Size(gw * 1.0f, h * 0.012f))
-    // moss where the tree meets the base, two pebbles and a sprout
-    val rnd = Random(21)
-    repeat(26) {
-        val mx = cx - gw * 0.75f + gw * 0.55f * rnd.nextFloat()
-        drawCircle((if (rnd.nextBoolean()) MOSS else MOSS_DEEP), (2f + 3f * rnd.nextFloat()) * px, Offset(mx, baseTop - 2 * px * rnd.nextFloat()))
-    }
-    repeat(10) { drawCircle(MOSS_LIT.copy(alpha = 0.8f), 1.6f * px, Offset(cx - gw * 0.7f + gw * 0.5f * rnd.nextFloat(), baseTop - 3 * px)) }
-    drawOval(Color(0xFFB9B4A8), Offset(cx + gw * 0.30f, baseTop - 5 * px), Size(13 * px, 8 * px))
-    drawOval(Color(0xFF8E8A80), Offset(cx + gw * 0.42f, baseTop - 4 * px), Size(10 * px, 6 * px))
-    leaf(Offset(cx + gw * 0.2f, baseTop - 3 * px), 9 * px, -70f, MOSS_LIT, MOSS_DEEP)
-    leaf(Offset(cx + gw * 0.2f, baseTop - 3 * px), 7 * px, -120f, MOSS, MOSS_DEEP)
-
-    // the glass, tinted a little by the sky
-    val glass = Path()
-    val steps = 48
-    for (i in 0..steps) { val y = y0 + gh * i / steps; val x = cx - halfWidth(y); if (i == 0) glass.moveTo(x, y) else glass.lineTo(x, y) }
-    for (i in steps downTo 0) { val y = y0 + gh * i / steps; glass.lineTo(cx + halfWidth(y), y) }
-    glass.close()
-    drawPath(glass, Brush.verticalGradient(listOf(rgb(light.pal.skyMid).copy(alpha = 0.22f), Color(0xFFDDEBFF).copy(alpha = 0.08f), rgb(light.pal.skyHor).copy(alpha = 0.18f)), y0, y1))
-
-    clipPath(glass) {
-        drawRect(Color.White.copy(alpha = 0.10f), Offset(cx + gw * 0.12f, y0), Size(gw * 0.07f, gh))
-        drawRect(Color.White.copy(alpha = 0.06f), Offset(cx + gw * 0.23f, y0), Size(gw * 0.03f, gh))
-    }
+    drawOval(Color.Black.copy(alpha = 0.22f), Offset(cx - w * 0.36f, sy(1205f)), Size(w * 0.62f, h * 0.035f))
+    drawImage(art, IntOffset.Zero, IntSize(art.width, art.height), IntOffset(ox.toInt(), oy.toInt()),
+        IntSize((art.width * sc).toInt(), (art.height * sc).toInt()))
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
     val dark = (0.62f * night + 0.18f * dusk * (1 - night)).coerceIn(0f, 0.7f)
@@ -520,7 +474,7 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
         }
     }
     if (k < 0.995f) {
-        val level = cy - half * 0.84f * (1 - k)
+        val level = cy - (cy - topFull) * (1 - k)
         val dip = 7 * px * (1 - k)
         val heap = Path()
         val hw = halfWidth(level) * 0.96f
@@ -532,8 +486,8 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
         sandFill(heap, level, cy, 0.6f)
     }
     if (k > 0.005f) {
-        val height = half * 0.62f * k.pow(0.8f)
-        val base = y1 - 2 * px
+        val height = (bottom - cy) * 0.62f * k.pow(0.8f)
+        val base = bottom
         val top = base - height
         val heap = Path()
         heap.moveTo(cx - halfWidth(base) * 0.96f, base)
@@ -547,7 +501,7 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
         sandFill(heap, top, base, 0.6f + 1.2f * rise)
     }
     if (k < 0.995f) {
-        val bottomTop = y1 - half * 0.62f * k.pow(0.8f) - 2 * px
+        val bottomTop = bottom - (bottom - cy) * 0.62f * k.pow(0.8f)
         val sw = (1.3f + 1.2f * gather) * px
         drawLine(SAND.copy(alpha = 0.22f * (0.6f + gather)), Offset(cx, cy), Offset(cx, bottomTop), sw * 6, StrokeCap.Round)
         drawLine(SAND_LIGHT, Offset(cx, cy - 2 * px), Offset(cx, bottomTop), sw, StrokeCap.Round)
@@ -558,25 +512,17 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
             r * 2f, Offset(cx, cy))
     }
 
-    // painted gleams on the glass
+    // a soft gleam over the sand, so it sits behind the glass rather than on it
     for (topBulb in listOf(true, false)) {
-        fun gleam(inset: Float, from: Float, to: Float, width: Float, alpha: Float) {
-            val g = Path()
-            for (i in 0..16) {
-                val f = from + (to - from) * i / 16f
-                val y = if (topBulb) cy - half * f else cy + half * f
-                val x = cx - halfWidth(y) * inset
-                if (i == 0) g.moveTo(x, y) else g.lineTo(x, y)
-            }
-            drawPath(g, Color.White.copy(alpha = alpha), style = Stroke(width * px, cap = StrokeCap.Round))
+        val g = Path()
+        for (i in 0..16) {
+            val f = 0.3f + 0.5f * i / 16f
+            val y = if (topBulb) cy - (cy - y0) * f else cy + (y1 - cy) * f
+            val x = cx - halfWidth(y) * 0.72f
+            if (i == 0) g.moveTo(x, y) else g.lineTo(x, y)
         }
-        gleam(0.80f, 0.25f, 0.85f, 6f, 0.10f)
-        gleam(0.80f, 0.32f, 0.70f, 2.2f, 0.45f)
-        gleam(0.62f, 0.55f, 0.66f, 1.6f, 0.35f)
-        val dy = if (topBulb) cy - half * 0.6f else cy + half * 0.6f
-        drawCircle(Color.White.copy(alpha = 0.4f), 2.2f * px, Offset(cx + halfWidth(dy) * 0.62f, dy))
+        drawPath(g, Color.White.copy(alpha = 0.22f), style = Stroke(3 * px, cap = StrokeCap.Round))
     }
-    drawPath(glass, Color(0xFF5B6E8C).copy(alpha = 0.45f), style = Stroke(1.2f * px))
 
     // ---- what drifts in the air: the season's petals, leaves or snow, and the motes of the three minutes
     val fall = Random(17)
@@ -595,7 +541,7 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
         }
     }
     for (g in grains) {
-        val level = cy - half * 0.84f * (1 - k)
+        val level = cy - (cy - topFull) * (1 - k)
         val yt = y0 + (level - y0) * (0.15f + 0.75f * g.v) + gh * 0.012f * sin(t * g.sp * 0.25f + g.ph * 1.3f)
         val xt = cx + halfWidth(yt) * 0.78f * (g.u + 0.05f * sin(t * g.sp * 0.3f + g.ph)).coerceIn(-1f, 1f)
         val q = (t * 0.12f * g.sp + g.v) % 1f
