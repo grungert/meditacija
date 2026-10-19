@@ -460,8 +460,6 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     // ---- the lantern, a bowl of tea and the books
     val lanternGlow = (0.25f + 0.75f * max(dusk, night)).coerceIn(0f, 1f)
     lantern(w * 0.03f, floorTop + h * 0.045f, w * 0.14f, h * 0.10f, lanternGlow)
-    teaBowl(Offset(w * 0.10f, h * 0.705f), w * 0.075f, t)
-    books(w * 0.80f, h * 0.672f, w * 0.18f)
 
     // ---- the hourglass and its tree, a painting placed so its base stands on the mat
     fun sy(yImg: Float) = oy + yImg * sc
@@ -486,7 +484,7 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
     val rug = Offset(bx, sy(Glass.BASE_Y + 6f))
     val rugRx = 500f * sc; val rugRy = rugRx * flat(rug.y)
     fun oval(c: Offset, rx: Float, ry: Float) = androidx.compose.ui.geometry.Rect(c.x - rx, c.y - ry, c.x + rx, c.y + ry)
-    drawOval(Color.Black.copy(alpha = 0.18f), oval(rug + Offset(0f, 4 * px), rugRx * 1.02f, rugRy * 1.15f).topLeft, oval(rug, rugRx * 1.02f, rugRy * 1.15f).size)
+    drawOval(Color.Black.copy(alpha = 0.16f), oval(rug + Offset(0f, 2 * px), rugRx * 1.01f, rugRy * 1.06f).topLeft, oval(rug, rugRx * 1.01f, rugRy * 1.06f).size)
     // woven straw: a lit surface, then the coils of the weave, a darker binding at the edge
     val whole = oval(rug, rugRx, rugRy)
     drawOval(Brush.verticalGradient(listOf(Color(0xFFD8B97E), Color(0xFFB8935A)), whole.top, whole.bottom), whole.topLeft, whole.size)
@@ -503,8 +501,10 @@ private fun DrawScope.scene(t: Float, grains: List<Grain>, light: HourglassLight
             drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = alpha), Color.Black.copy(alpha = alpha * 0.5f), Color.Transparent), c, rx), rx, c)
         }
     }
-    softOval(Offset(bx - 130f * sc, sy(Glass.BASE_Y + 20f)), 560f * sc, 560f * sc * flat(sy(Glass.BASE_Y + 20f)), 0.30f)
+    softOval(Offset(bx - 45f * sc, sy(Glass.BASE_Y + 10f)), 420f * sc, 420f * sc * flat(sy(Glass.BASE_Y + 10f)), 0.24f)
     softOval(Offset(bx, sy(Glass.BASE_Y + 4f)), 350f * sc, 350f * sc * flat(sy(Glass.BASE_Y + 4f)), 0.75f)
+    // the bowl of tea stands nearer than the rug, so it and its steam are drawn over it
+    teaBowl(Offset(w * 0.10f, h * 0.71f), w * 0.075f, t)
     with(sway) { draw(ox, oy, sc, art.width * sc, art.height * sc, t) }
 
     // ---- evening and night darken everything painted so far; the sky behind is not touched
