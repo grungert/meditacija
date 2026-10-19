@@ -73,6 +73,8 @@ data class SessionConfig(
     val checkInAfter: Boolean,
     val eyesClosed: Boolean = false,
     val ambient: Boolean = true,
+    /** The note written just before, to be joined to the session once it starts. */
+    val beforeEntryId: Long? = null,
 ) {
     val paced get() = type == "breath" || type == "walk"
     /** The planned length in seconds: the breathing space is always three minutes. */

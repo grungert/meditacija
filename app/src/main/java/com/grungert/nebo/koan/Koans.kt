@@ -197,9 +197,11 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
 
     /** Readies every note for search by meaning, once, so the first search does not wait for them. */
     suspend fun warmSearch() = withContext(Dispatchers.Default) {
-        lock.withLock {
-            val e = embedderOrNull() ?: return@withLock
-            for (x in db.entries()) if (x.words.isNotBlank()) passageVector(x, e)
+        for (id in db.entries().map { it.id }) lock.withLock {
+            val e = embedderOrNull() ?: return@withContext
+            // read again: a note deleted or rewritten meanwhile gets no stale vector
+            val x = db.entry(id) ?: return@withLock
+            if (x.words.isNotBlank()) passageVector(x, e)
         }
     }
 
@@ -234,13 +236,13 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
 
     /** Gives every note its themes, once; run again for everything when the way of finding themes changes. */
     suspend fun tagNotes(force: Boolean = false) = withContext(Dispatchers.Default) {
-        lock.withLock {
-            val e = embedderOrNull()
-            for (x in db.entries()) {
-                if (!force && x.themes.isNotEmpty()) continue
-                if (x.words.isBlank() && x.moods.isEmpty()) continue
-                db.updateEntry(x.copy(themes = themesFor(x, e)))
-            }
+        // the model is held one note at a time, so a save or a search waiting for it is never stuck behind the whole
+        // journal; each note is read again just before, so the themes follow its words as they are now
+        for (id in db.entries().map { it.id }) lock.withLock {
+            val x = db.entry(id) ?: return@withLock
+            if (!force && x.themes.isNotEmpty()) return@withLock
+            if (x.words.isBlank() && x.moods.isEmpty()) return@withLock
+            db.updateEntry(x.copy(themes = themesFor(x, embedderOrNull())), com.grungert.nebo.data.Col.THEMES)
         }
     }
 
@@ -248,12 +250,10 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
 
     /** Embeds the whole library once and caches it, so the first pick after a session is quick. */
     suspend fun warmUp() = withContext(Dispatchers.Default) {
-        lock.withLock {
-            val e = embedderOrNull() ?: return@withLock
-            for (item in library.items) {
-                val text = itemText(item)
-                if (db.embedding(item.id, Embedder.MODEL_ID, text.hashCode()) == null) db.putEmbedding(item.id, Embedder.MODEL_ID, text.hashCode(), e.embed(text))
-            }
+        for (item in library.items) lock.withLock {
+            val e = embedderOrNull() ?: return@withContext
+            val text = itemText(item)
+            if (db.embedding(item.id, Embedder.MODEL_ID, text.hashCode()) == null) db.putEmbedding(item.id, Embedder.MODEL_ID, text.hashCode(), e.embed(text))
         }
     }
 

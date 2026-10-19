@@ -25,6 +25,7 @@ class NeboApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.grungert.nebo.data.Backup.applyPending(this)   // a restored backup takes its place before anything opens
         db = Db(this)
         settings = Settings(this)
         models = ModelStore(this, settings)

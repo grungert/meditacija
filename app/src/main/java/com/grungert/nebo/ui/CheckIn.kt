@@ -44,6 +44,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -102,6 +103,19 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var expected by remember { mutableFloatStateOf(1f) }       // about how long the text will take, in seconds
     var waited by remember { mutableFloatStateOf(0f) }
     var heard by remember { mutableStateOf<String?>(null) }      // what the speech model heard in the current recording
+    var saving by remember { mutableStateOf(false) }            // once Sačuvaj is tapped, nothing else on the screen acts
+    var taking by remember { mutableStateOf<File?>(null) }       // the file being recorded into right now
+    val alive = remember { booleanArrayOf(true) }               // false once the screen is gone
+
+    // leaving the screen by any way (Back, the close button, a notification) stops the microphone, and a recording
+    // that was not saved goes with it, so it never lingers in the phone or in a backup
+    DisposableEffect(Unit) {
+        onDispose {
+            alive[0] = false
+            recorder.stop(); player.stop()
+            if (!saving) { taking?.delete(); audio?.delete() }
+        }
+    }
     var fieldFromVoice by remember { mutableStateOf(false) }     // the text field holds that transcript, maybe corrected
     var model by remember { mutableStateOf<String?>(null) }
 
@@ -128,13 +142,18 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
 
     fun startRecording() {
         val f = File(context.filesDir, "audio/${System.currentTimeMillis()}.wav")
-        recording = true; seconds = 0f; levels.clear()
+        recording = true; seconds = 0f; levels.clear(); taking = f
         app.transcriber.prepare()
         scope.launch {
-            val dur = recorder.record(f, MAX_SECONDS) { lv ->
-                scope.launch { levels.add(lv); if (levels.size > 56) levels.removeAt(0) }
+            val dur = try {
+                recorder.record(f, MAX_SECONDS) { lv ->
+                    scope.launch { levels.add(lv); if (levels.size > 56) levels.removeAt(0) }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                // the microphone is busy (a call, another app): nothing was recorded
+                -1f
             }
-            recording = false
+            recording = false; taking = null
             silent = recorder.peak < Recorder.SILENCE
             if (dur > 0.6f && !silent) {
                 audio?.delete(); audio = f; audioSeconds = dur
@@ -166,7 +185,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
 
     fun next(entryId: Long?) {
         when (sc.kind) {
-            "before" -> go(Screen.Session(sc.config!!))
+            "before" -> go(Screen.Session(sc.config!!.copy(beforeEntryId = entryId)))
             "after" -> go(Screen.Koan(sc.sessionId, entryId))
             "week" -> go(Screen.Week(entryId))
             else -> go(Screen.Koan(null, entryId))
@@ -174,12 +193,17 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     }
 
     fun save() {
+        if (saving) return
+        saving = true
         player.stop()
         if (recording) recorder.stop()
-        scope.launch {
+        // on the app's scope and the main thread: leaving the screen while the note is being saved does not lose it
+        app.scope.launch(Dispatchers.Main) {
             val typed = text.trim().ifBlank { null }
-            // written words get their four points read too, unless the person has filled them in
-            if (typed != null && !points.touched && points.recognised.isEmpty()) points.fillFrom(app.recommender.readFourPoints(typed), moods)
+            // written words get their four points read too, unless the person has filled them in; the model is not
+            // waited on for long, the note matters more than its points
+            if (typed != null && !points.touched && points.recognised.isEmpty())
+                kotlinx.coroutines.withTimeoutOrNull(4000) { app.recommender.readFourPoints(typed) }?.let { points.fillFrom(it, moods) }
             // when the field holds the transcript, the corrected version becomes the transcript;
             // without one yet, the recording is transcribed in the background after saving
             val transcript = if (fieldFromVoice) typed ?: "" else heard
@@ -193,7 +217,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             }
             if (audio != null) app.transcriber.drain()
             app.scope.launch { app.recommender.tagNotes() }
-            next(id)
+            if (alive[0]) next(id)
         }
     }
 
@@ -297,8 +321,9 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().screenPadding().padding(bottom = 16.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            GlassButton("Preskoči", { player.stop(); recorder.stop(); audio?.delete(); next(null) }, Modifier.weight(1f))
-            GlassButton("Sačuvaj", { save() }, Modifier.weight(2f), strong = true, enabled = !recording)
+            GlassButton("Preskoči", { if (!saving) { player.stop(); recorder.stop(); taking?.delete(); audio?.delete(); audio = null; next(null) } },
+                Modifier.weight(1f), enabled = !saving)
+            GlassButton(if (saving) "Čuvam…" else "Sačuvaj", { save() }, Modifier.weight(2f), strong = true, enabled = !recording && !saving)
         }
     }
 }
@@ -349,7 +374,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
             entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
         p.item?.let { seen += it.id }
         pick = p
-        if (entry != null) withContext(Dispatchers.IO) { app.db.updateEntry(entry.copy(themes = p.themes)) }
+        if (entry != null && p.themes.isNotEmpty()) withContext(Dispatchers.IO) { app.db.updateEntry(entry.copy(themes = p.themes), com.grungert.nebo.data.Col.THEMES) }
     }
 
     fun keep(next: Screen = Screen.Home) {
@@ -359,7 +384,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
                 val id = p?.item?.id
                 if (id != null) {
                     sc.sessionId?.let { app.db.setSessionKoan(it, id) }
-                    sc.entryId?.let { e -> app.db.entry(e)?.let { app.db.updateEntry(it.copy(koanId = id)) } }
+                    sc.entryId?.let { e -> app.db.entry(e)?.let { app.db.updateEntry(it.copy(koanId = id), com.grungert.nebo.data.Col.KOAN) } }
                 }
             }
             go(next)

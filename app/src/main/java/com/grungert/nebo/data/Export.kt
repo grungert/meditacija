@@ -77,7 +77,8 @@ object Export {
 
     /** Writes the export (threads included, which takes a moment) and opens the share sheet. */
     suspend fun share(context: Context, db: Db, library: KoanLibrary, threads: List<InsightThread>) {
-        val dir = File(context.cacheDir, "exports").also { it.mkdirs() }
+        // the journal in plain text: only the latest export is kept on the phone
+        val dir = File(context.cacheDir, "exports").also { d -> d.deleteRecursively(); d.mkdirs() }
         val f = File(dir, "nebo-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT).format(Date()) + ".txt")
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { f.writeText(text(db, library, threads)) }
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", f)

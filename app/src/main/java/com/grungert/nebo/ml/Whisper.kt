@@ -153,7 +153,8 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     suspend fun transcribeNow(file: File): String? = withContext(Dispatchers.Default) {
         lock.withLock {
             val choice = models.readyWhisper() ?: return@withLock null
-            val pcm = Recorder.readWav(file)
+            // the take may have been thrown away (a new take, Preskoči) while this one waited for the model
+            val pcm = (if (file.exists()) runCatching { Recorder.readWav(file) }.getOrNull() else null) ?: return@withLock null
             if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) return@withLock ""
             open(choice)?.let { heard(it, pcm) }
         }.also { releaseLater() }
@@ -168,9 +169,12 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
                 val engine = open(choice) ?: return@withLock
                 for (e in pending) {
                     val f = File(e.audioPath ?: continue)
-                    val text = heard(engine, if (f.exists()) Recorder.readWav(f) else FloatArray(0))
-                    db.updateEntry(e.copy(transcript = text, transcriptModel = choice.id))
-                    _done.value = e.id
+                    // a recording that is gone (deleted with its note meanwhile, or lost) is heard as silence
+                    val pcm = if (f.exists()) runCatching { Recorder.readWav(f) }.getOrDefault(FloatArray(0)) else FloatArray(0)
+                    val text = heard(engine, pcm)
+                    // only the transcript, and only if none arrived meanwhile: the note may have been starred, edited
+                    // or linked to a koan while this one was being heard
+                    if (db.setTranscript(e.id, text, choice.id)) _done.value = e.id
                 }
             }
             releaseLater()

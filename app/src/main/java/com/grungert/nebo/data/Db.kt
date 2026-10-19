@@ -84,10 +84,18 @@ data class FourPoints(
     }
 }
 
+/** The parts of a note that are changed after it is saved; each change writes only its own columns. */
+enum class Col(vararg val columns: String) {
+    TEXT("text"), TRANSCRIPT("transcript", "transcript_model"), MOODS("moods"), THEMES("themes"), KOAN("koan_id"),
+    STARRED("starred"), POINTS("points"), SESSION("session_id"),
+}
+
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
-class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
+class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) {
+    /** Recordings live here; a stored path is read by its file name, so a copy restored to another profile still finds them. */
+    private val audioDir = java.io.File(context.filesDir, "audio")
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at INTEGER NOT NULL, ended_at INTEGER,
@@ -129,8 +137,14 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
         }
 
     fun deleteEntry(id: Long) {
-        writableDatabase.delete("entries", "id=?", arrayOf(id.toString()))
-        writableDatabase.delete("embeddings", "item_id IN (?, ?)", arrayOf("entry:$id", "passage:$id"))
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("entries", "id=?", arrayOf(id.toString()))
+            db.delete("embeddings", "item_id IN (?, ?)", arrayOf("entry:$id", "passage:$id"))
+            db.update("prompts", ContentValues().apply { putNull("answered_entry_id") }, "answered_entry_id=?", arrayOf(id.toString()))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
     }
 
     // ---------- sessions ----------
@@ -153,6 +167,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
     fun session(id: Long): Session? =
         readableDatabase.rawQuery("SELECT * FROM sessions WHERE id=?", arrayOf(id.toString())).use { c -> if (c.moveToNext()) c.toSession() else null }
 
+    /** The note written before a session belongs to it, once the session exists. */
+    fun linkEntryToSession(entryId: Long, sessionId: Long) {
+        writableDatabase.update("entries", ContentValues().apply { put("session_id", sessionId) }, "id=? AND session_id IS NULL", arrayOf(entryId.toString()))
+    }
+
     fun setSessionKoan(id: Long, koanId: String) {
         writableDatabase.update("sessions", ContentValues().apply { put("koan_id", koanId) }, "id=?", arrayOf(id.toString()))
     }
@@ -172,9 +191,25 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
     // ---------- entries ----------
     fun insertEntry(e: Entry): Long = writableDatabase.insert("entries", null, e.values())
 
-    fun updateEntry(e: Entry) {
-        writableDatabase.update("entries", e.values(), "id=?", arrayOf(e.id.toString()))
+    /**
+     * Writes only the named parts of the note. Never the whole row: the copy in hand may be minutes old, and a whole-row
+     * write would undo a transcript, a star or an edit that arrived in the meantime.
+     */
+    fun updateEntry(e: Entry, vararg cols: Col) {
+        if (cols.isEmpty()) return
+        val keep = cols.flatMap { it.columns.toList() }.toSet()
+        val v = e.values().also { all -> for (k in all.keySet().toList()) if (k !in keep) all.remove(k) }
+        writableDatabase.update("entries", v, "id=?", arrayOf(e.id.toString()))
     }
+
+    /** A recording's text, written only while the note has none: what the person typed over it meanwhile is kept. */
+    fun setTranscript(id: Long, text: String, model: String): Boolean =
+        writableDatabase.update("entries", ContentValues().apply { put("transcript", text); put("transcript_model", model) },
+            "id=? AND transcript IS NULL", arrayOf(id.toString())) > 0
+
+    /** Whether the note is still there (a batch job holding an old list checks before caching anything for it). */
+    fun entryExists(id: Long): Boolean =
+        readableDatabase.rawQuery("SELECT 1 FROM entries WHERE id=?", arrayOf(id.toString())).use { it.moveToNext() }
 
     fun entry(id: Long): Entry? =
         readableDatabase.rawQuery("SELECT * FROM entries WHERE id=?", arrayOf(id.toString())).use { c -> if (c.moveToNext()) c.toEntry() else null }
@@ -210,7 +245,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
 
     private fun Cursor.toEntry() = Entry(
         id = long("id"), createdAt = long("created_at"), kind = str("kind")!!, sessionId = longOrNull("session_id"),
-        promptId = longOrNull("prompt_id"), audioPath = str("audio_path"), text = str("text"), transcript = str("transcript"),
+        promptId = longOrNull("prompt_id"), audioPath = str("audio_path")?.let { java.io.File(audioDir, java.io.File(it).name).path }, text = str("text"), transcript = str("transcript"),
         transcriptModel = str("transcript_model"), moods = csv(str("moods")), themes = csv(str("themes")), koanId = str("koan_id"),
         starred = int("starred") == 1, points = FourPoints.fromJson(str("points")),
     )
@@ -269,3 +304,6 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, 5) {
     private fun Cursor.longOrNull(n: String): Long? = getColumnIndexOrThrow(n).let { if (isNull(it)) null else getLong(it) }
     private fun csv(s: String?) = s?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
 }
+
+/** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
+const val SCHEMA = 5

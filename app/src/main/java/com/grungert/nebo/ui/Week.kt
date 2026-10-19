@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.grungert.nebo.Screen
 import com.grungert.nebo.app
+import com.grungert.nebo.data.Col
 import com.grungert.nebo.data.Entry
 import com.grungert.nebo.data.TYPE_LABEL
 import com.grungert.nebo.esm.Esm
@@ -153,7 +154,7 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
                 }
                 GlassButton(if (kept || r.starred) "Sačuvano među uvidima" else "Sačuvaj kao uvid", {
                     kept = true
-                    scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(r.copy(starred = true)) } }
+                    scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(r.copy(starred = true), Col.STARRED) } }
                 }, icon = if (kept || r.starred) NeboIcon.StarFilled else NeboIcon.Star, enabled = !(kept || r.starred))
             }
 

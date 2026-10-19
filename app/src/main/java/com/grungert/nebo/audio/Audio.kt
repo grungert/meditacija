@@ -43,8 +43,8 @@ class Recorder {
         var total = 0
         peak = 0f
         recording = true
-        rec.startRecording()
         try {
+            rec.startRecording()
             while (recording && total < maxSeconds * SAMPLE_RATE) {
                 val n = rec.read(buf, 0, buf.size)
                 if (n <= 0) continue
@@ -59,7 +59,7 @@ class Recorder {
             }
         } finally {
             recording = false
-            rec.stop(); rec.release()
+            runCatching { rec.stop() }; rec.release()
             writeWavHeader(raf, total)
             raf.close()
         }

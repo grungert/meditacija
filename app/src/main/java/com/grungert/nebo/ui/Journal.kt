@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import com.grungert.nebo.Screen
 import com.grungert.nebo.app
 import com.grungert.nebo.audio.NotePlayer
+import com.grungert.nebo.data.Col
 import com.grungert.nebo.data.Entry
 import com.grungert.nebo.data.Export
 import com.grungert.nebo.data.KIND_LABEL
@@ -182,7 +183,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                         is String -> Text(row, style = HeadStyle.copy(fontSize = 18.sp), modifier = Modifier.padding(top = 18.dp, bottom = 2.dp))
                         is Session -> SessionRow(row, app.library.byId(row.koanId)?.title)
                         is Entry -> EntryCard(row, player, onStar = {
-                            scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred)) }; reload++ }
+                            scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred), Col.STARRED) }; reload++ }
                         }, onSimilar = { go(Screen.Similar(row.id)) }, onEdit = { player.stop(); editing = row })
                     }
                 }
@@ -197,7 +198,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                         }
                         items(m) { (e, z) ->
                             EntryCard(e, player, onStar = {
-                                scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(e.copy(starred = !e.starred)) }; reload++ }
+                                scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(e.copy(starred = !e.starred), Col.STARRED) }; reload++ }
                             }, onSimilar = { go(Screen.Similar(e.id)) }, onEdit = { player.stop(); editing = e },
                                 footer = dayLabel(e.createdAt) + " · " + when { z >= 2.3f -> "vrlo blisko"; z >= 1.9f -> "blisko"; else -> "slično" })
                         }
@@ -206,10 +207,10 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
             }
         }
         editing?.let { e ->
-            EditEntry(e, onClose = { editing = null }, onSave = { changed ->
+            EditEntry(e, onClose = { editing = null }, onSave = { changed, cols ->
                 editing = null
                 scope.launch {
-                    withContext(Dispatchers.IO) { app.db.updateEntry(changed) }
+                    withContext(Dispatchers.IO) { app.db.updateEntry(changed, *cols) }
                     reload++
                     app.recommender.tagNotes()
                     reload++
@@ -239,7 +240,7 @@ private fun byWords(e: Entry, q: String): Boolean {
  * New words clear the themes, so the note is read again for what it is about.
  */
 @Composable
-private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, onDelete: () -> Unit) {
+private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry, Array<Col>) -> Unit, onDelete: () -> Unit) {
     var text by remember { mutableStateOf(e.words) }
     val moods = remember { androidx.compose.runtime.mutableStateListOf<String>().apply { addAll(e.moods) } }
     val points = remember { FourPointsState(e.points) }
@@ -275,12 +276,18 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry) -> Unit, on
                 GlassButton("Sačuvaj", {
                     val words = text.trim()
                     val changedWords = words != e.words.trim()
-                    onSave(when {
-                        !changedWords -> e.copy(moods = moods.toList(), themes = if (moods.toList() == e.moods) e.themes else emptyList())
+                    val base = arrayOf(Col.MOODS, Col.THEMES, Col.POINTS)
+                    val m = moods.toList()
+                    val (changed, cols) = when {
+                        // themes are left alone unless the moods changed; then they are found again
+                        !changedWords -> e.copy(moods = m, themes = emptyList()) to (if (m == e.moods) arrayOf(Col.MOODS, Col.POINTS) else base)
                         // corrected words of a recording become its transcript, as on the check-in screen
-                        e.audioPath != null -> e.copy(text = null, transcript = words, moods = moods.toList(), themes = emptyList())
-                        else -> e.copy(text = words.ifBlank { null }, moods = moods.toList(), themes = emptyList())
-                    }.copy(points = points.toPoints()))
+                        e.audioPath != null && e.transcript != null ->
+                            e.copy(text = null, transcript = words, moods = m, themes = emptyList()) to base + Col.TEXT + Col.TRANSCRIPT
+                        // a recording still waiting to be heard keeps waiting: the typed words go beside it
+                        else -> e.copy(text = words.ifBlank { null }, moods = m, themes = emptyList()) to base + Col.TEXT
+                    }
+                    onSave(changed.copy(points = points.toPoints()), cols)
                 }, strong = true)
             }
         }

@@ -243,12 +243,13 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         host.ambience.stop(slowly = true)
         host.breath.stop(slowly = true)
         app.scope.launch { Bell.ring() }
+        val id = sessionId
+        val touched = marks.map { it.first }
+        // written on the app's scope, so leaving at once does not lose it
+        val sec = elapsed.toInt(); val n = scenery.thoughtCount
+        val written = if (id != null) app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) } else null
         scope.launch {
-            val id = sessionId
-            val touched = marks.map { it.first }
-            if (id != null) withContext(Dispatchers.IO) {
-                app.db.finishSession(id, System.currentTimeMillis(), elapsed.toInt(), scenery.thoughtCount, touched)
-            }
+            written?.join()   // the note about this scan reads it back among the others
             if (cfg.type == "bodyscan") endNote = withContext(Dispatchers.IO) { scanNote(touched.map { it.region }.distinct(), app.db.sessions()) }
             delay(1500)
             endReady = true
@@ -339,11 +340,12 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
         word = if (cfg.paced) e.phase.label else ""
         scope.launch {
-            Bell.ring()
+            // the session is written first and the bell rings after, so even a session ended in its first second has a row
             sessionId = withContext(Dispatchers.IO) {
                 app.db.insertSession(Session(startedAt = System.currentTimeMillis(), type = cfg.type, plannedSec = planned,
-                    pattern = cfg.pattern, walk = cfg.type == "walk"))
+                    pattern = cfg.pattern, walk = cfg.type == "walk")).also { id -> cfg.beforeEntryId?.let { app.db.linkEntryToSession(it, id) } }
             }
+            Bell.ring()
         }
         // the meadow falls silent while the app is in the background
         val obs = LifecycleEventObserver { _, ev ->
@@ -359,6 +361,14 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         lifecycle.addObserver(obs)
         onDispose {
             lifecycle.removeObserver(obs)
+            // left before the end (Back, a notification): the time actually sat still counts, and so do the places touched;
+            // after the clouds, the chips picked before leaving are kept
+            val id = sessionId
+            if (id != null && !ended) {
+                val sec = elapsed.toInt(); val n = scenery.thoughtCount; val touched = marks.map { it.first }
+                app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) }
+            }
+            if (id != null && !left && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
             view.keepScreenOn = false
             host.ambience.stop()
             host.breath.stop()
