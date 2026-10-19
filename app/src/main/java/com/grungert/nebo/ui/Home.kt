@@ -1,11 +1,6 @@
 package com.grungert.nebo.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -255,7 +250,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
 /** The big round start button: a slowly breathing sphere of light. */
 @Composable
 private fun Orb(onClick: () -> Unit) {
-    val pulse by rememberInfiniteTransition(label = "orb").animateFloat(0f, 1f, infiniteRepeatable(tween(4000), RepeatMode.Reverse), label = "breath")
+    val pulse = com.grungert.nebo.sky.slowPulse(4000)
     Box(Modifier.size(72.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Kreni", onClick = onClick), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(72.dp)) {
             val r = size.minDimension / 2

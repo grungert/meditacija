@@ -127,7 +127,8 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
     }
     LaunchedEffect(Unit) {
         var last = withFrameNanos { it }
-        while (true) withFrameNanos { now -> t += ((now - last) / 1e9f).coerceIn(0f, 0.1f); last = now }
+        // stars twinkle slowly: the sky's pace (see skyFps)
+        while (true) com.grungert.nebo.sky.nextFrame(last, 30).let { now -> t += ((now - last) / 1e9f).coerceIn(0f, 0.1f); last = now }
     }
 
     Box(Modifier.fillMaxSize()) {

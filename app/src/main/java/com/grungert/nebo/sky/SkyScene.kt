@@ -25,6 +25,45 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+/**
+ * Frames a second for the sky. It moves slowly: clouds, light and grass look the same at 30 frames as at 120, while
+ * a 120 Hz phone drawing them 120 times a second spends about four times the battery and warms up on the lap. The walk
+ * moves the landscape past, so it gets 60; behind closed eyes the screen is dark and 10 is plenty.
+ */
+fun skyFps(walking: Boolean, dark: Float): Int = when {
+    dark > 0.98f -> 10
+    walking -> 60
+    else -> 30
+}
+
+/**
+ * Waits for the next frame, no sooner than 1/[fps] after [since] (a frame time in nanoseconds), and returns its time.
+ * The wait is a plain delay, so between frames nothing wakes; the frame itself still lands on a vsync.
+ */
+suspend fun nextFrame(since: Long, fps: Int): Long {
+    val wait = (1_000_000_000L / fps - (System.nanoTime() - since)) / 1_000_000L - 4   // a little early: the vsync rounds up
+    if (wait > 0) kotlinx.coroutines.delay(wait)
+    return withFrameNanos { it }
+}
+
+/**
+ * A value going smoothly 0 → 1 → 0 every 2·[periodMs], like an endlessly reversing tween, but stepped at the sky's
+ * 30 frames a second: an endless Compose animation would keep the whole window drawing at the screen's full rate.
+ */
+@Composable
+fun slowPulse(periodMs: Int): Float {
+    val v by androidx.compose.runtime.produceState(0f, periodMs) {
+        val start = withFrameNanos { it }
+        var last = start
+        while (true) {
+            last = nextFrame(last, 30)
+            val x = ((last - start) / 1e6f / periodMs) % 2f
+            value = (1f - kotlin.math.cos(Math.PI.toFloat() * x)) / 2f
+        }
+    }
+    return v
+}
+
 /** How the time of day moves: following the clock, cycling through a day in three minutes, or held at one hour. */
 class DayClock(mode: String) {
     var mode: String = mode
@@ -99,7 +138,9 @@ fun SkyScene(
     LaunchedEffect(engine, day) {
         var last = withFrameNanos { it }
         while (true) {
-            withFrameNanos { now ->
+            val fps = skyFps(engine.walkOn, state.dim)
+            skyView.frameRate(fps)
+            nextFrame(last, fps).let { now ->
                 val dt = ((now - last) / 1e9f).coerceIn(0f, 0.1f)
                 last = now
                 state.time += dt
@@ -122,6 +163,7 @@ fun SkyScene(
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h),
                     DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h) * through, state.light, state.dim, Seasons.cover(weatherNow), state.drop, state.lake,
                 )
+                skyView.requestRender()
                 lightCb(state.pal, DayCycle.sunAmount(h) * through)
                 frameCb(dt)
                 tick = now

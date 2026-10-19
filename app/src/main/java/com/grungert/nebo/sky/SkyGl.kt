@@ -113,11 +113,27 @@ class SkyRenderer(private val context: Context) : GLSurfaceView.Renderer {
 class SkyView(context: Context) : GLSurfaceView(context) {
     val renderer = SkyRenderer(context)
     private val scale = 0.55f
+    private var fps = 0
 
     init {
         setEGLContextClientVersion(2)
         setRenderer(renderer)
-        renderMode = RENDERMODE_CONTINUOUSLY
+        // drawn when the frame loop has a new sky (see skyFps), not at every refresh of the screen
+        renderMode = RENDERMODE_WHEN_DIRTY
+    }
+
+    /** Tells the display how often this surface changes, so a 120 Hz screen may step down for it. */
+    fun frameRate(value: Int) {
+        if (value == fps) return
+        val s = holder.surface
+        if (s == null || !s.isValid) return
+        fps = value
+        runCatching { s.setFrameRate(value.toFloat(), android.view.Surface.FRAME_RATE_COMPATIBILITY_DEFAULT) }
+    }
+
+    override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+        super.surfaceCreated(holder)
+        fps = 0   // a new surface has not heard the rate yet
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

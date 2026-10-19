@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import com.grungert.nebo.sky.nextFrame
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
@@ -42,7 +43,8 @@ fun LakeShore(host: SkyHost, modifier: Modifier = Modifier, visible: Float = 1f)
     var t by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {
         var last = withFrameNanos { it }
-        while (true) withFrameNanos { now -> t += ((now - last) / 1e9f).coerceIn(0f, 0.1f); last = now }
+        // the lake keeps the sky's pace (see skyFps)
+        while (true) nextFrame(last, com.grungert.nebo.sky.skyFps(host.engine.walkOn, 0f)).let { now -> t += ((now - last) / 1e9f).coerceIn(0f, 0.1f); last = now }
     }
     Canvas(modifier.fillMaxSize().alpha(visible)) {
         if (t < 0f) return@Canvas   // reading t redraws every frame

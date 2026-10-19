@@ -3,10 +3,6 @@ package com.grungert.nebo.ui
 import android.Manifest
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.geometry.CornerRadius
@@ -253,7 +249,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(Ink.surface).padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                val pulse by rememberInfiniteTransition(label = "rec").animateFloat(0f, 1f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "pulse")
+                val pulse = com.grungert.nebo.sky.slowPulse(900)
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
                     if (recording) Box(Modifier.size((104 + 26 * pulse).dp).clip(CircleShape).background(Ink.seal.copy(alpha = 0.22f)))
                     Box(

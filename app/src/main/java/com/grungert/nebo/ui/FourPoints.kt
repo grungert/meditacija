@@ -1,10 +1,6 @@
 package com.grungert.nebo.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
@@ -84,8 +80,7 @@ fun PointsConstellation(
     labels: Boolean = true, strength: Map<String, Float>? = null, nodeSize: androidx.compose.ui.unit.Dp? = null, onTap: ((String) -> Unit)? = null,
 ) {
     fun power(k: String) = strength?.get(k) ?: 1f
-    val glow = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { glow.animateTo(1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse)) }
+    val glow = com.grungert.nebo.sky.slowPulse(2600)
     BoxWithConstraints(modifier) {
         val node = nodeSize ?: if (labels) 52.dp else 26.dp
         val labelH = if (labels) 22.dp else 0.dp
@@ -104,13 +99,13 @@ fun PointsConstellation(
                 val path = Path().apply { moveTo(pa.x, pa.y); quadraticTo(ctrl.x, ctrl.y, pb.x, pb.y) }
                 val tone = if (lit) lerp(POINT_COLORS.getValue(a), POINT_COLORS.getValue(b), 0.5f) else Color.White
                 val both = minOf(power(a), power(b)).coerceIn(0.25f, 1f)
-                if (lit) drawPath(path, tone.copy(alpha = (0.18f + 0.12f * glow.value) * both), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
+                if (lit) drawPath(path, tone.copy(alpha = (0.18f + 0.12f * glow) * both), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
                 drawPath(path, tone.copy(alpha = if (lit) 0.85f * both else 0.13f), style = Stroke((if (lit) 1.6f else 1f).dp.toPx(), cap = StrokeCap.Round))
             }
             for (k in keys) {
                 if (!filled.getValue(k) && highlight != k) continue
                 val c = POINT_COLORS.getValue(k)
-                val r = node.toPx() * (if (highlight == k) 1.25f else 0.95f) * (0.9f + 0.1f * glow.value) * (0.7f + 0.5f * power(k).coerceIn(0f, 1f))
+                val r = node.toPx() * (if (highlight == k) 1.25f else 0.95f) * (0.9f + 0.1f * glow) * (0.7f + 0.5f * power(k).coerceIn(0f, 1f))
                 drawCircle(Brush.radialGradient(listOf(c.copy(alpha = 0.55f * power(k).coerceIn(0.35f, 1f)), c.copy(alpha = 0f)), pt(k), r), r, pt(k))
             }
         }
