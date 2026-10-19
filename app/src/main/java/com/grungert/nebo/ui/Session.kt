@@ -241,6 +241,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         val id = sessionId
         if (id != null && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
         if (id != null && asksWave && waveStarted && waveRated) { val a = waveAfter; app.scope.launch(Dispatchers.IO) { app.db.setSessionUrgeAfter(id, a) } }
+        // a wave that never began has nothing to look back on
+        if (asksWave && !waveStarted) { go(Screen.Home); return }
         // RAIN has already been its own note: straight on to what it might want to read
         val note = rainEntry
         if (note != null) { app.scope.launch(Dispatchers.Main) { go(Screen.Koan(id, note.await())) }; return }
@@ -393,7 +395,9 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             // left before the end (Back, a notification): the time actually sat still counts, and so do the places touched;
             // after the clouds, the chips picked before leaving are kept
             val id = sessionId
-            if (id != null && !ended) {
+            // a wave left at its first question never began: no row for it
+            if (id != null && asksWave && !waveStarted) { app.scope.launch(Dispatchers.IO) { app.db.deleteSession(id) } }
+            else if (id != null && !ended) {
                 val sec = elapsed.toInt(); val n = scenery.thoughtCount; val touched = marks.map { it.first }
                 app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) }
             }

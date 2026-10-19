@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -178,9 +179,10 @@ private val CUSHION = Color(0xFF3B2E52)
 
 /**
  * The figure of light on its cushion: a soft shade behind, the round cushion and its shadow, a pale glow around the
- * body, a fill that is brightest at the heart, and a thin bright outline drawn later.
+ * body, a fill that is brightest at the heart, and a thin bright outline drawn later. With [t] running, a few soft
+ * lights drift slowly inside the body and the light along the spine breathes.
  */
-private fun DrawScope.figureBase(box: Rect, path: Path, fill: Float, breath: Float = 0.5f) {
+private fun DrawScope.figureBase(box: Rect, path: Path, fill: Float, breath: Float = 0.5f, t: Float = 0f) {
     val c = Offset(box.center.x, box.top + box.height * 0.5f)
     scale(1f, 1.05f, c) {
         drawCircle(Brush.radialGradient(listOf(INK.copy(alpha = 0.55f), INK.copy(alpha = 0.24f), Color.Transparent), c, box.width * 0.72f), box.width * 0.72f, c)
@@ -199,12 +201,55 @@ private fun DrawScope.figureBase(box: Rect, path: Path, fill: Float, breath: Flo
     }
     // an aura: the outline drawn wide and faint, several times
     for ((w, a) in listOf(30f to 0.035f, 18f to 0.05f, 9f to 0.08f)) drawPath(path, Color(0xFFDCE6FF).copy(alpha = a * (0.8f + 0.4f * breath)), style = Stroke(w * density))
+    // a body of night blue under the light, so clouds behind it do not show through and seem to stand in front
+    drawPath(path, Brush.verticalGradient(listOf(Color(0xFF243466).copy(alpha = 0.96f), Color(0xFF1A2550).copy(alpha = 0.97f)), box.top, box.bottom))
     drawPath(path, Brush.verticalGradient(listOf(Color(0xFFD6E2FF).copy(alpha = fill * 1.7f), Color(0xFF8FA6E8).copy(alpha = fill * 1.5f)), box.top, box.bottom))
     val heart = Offset(box.center.x, box.top + box.height * 0.40f)
     clipPath(path) {
+        // volume: light falls from above and a little to the left, the lap and legs sit in a soft shade
+        val key = Offset(box.left + box.width * 0.42f, box.top + box.height * 0.22f)
+        drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.16f), Color.Transparent), key, box.width * 0.55f), box.width * 0.55f, key)
+        drawRect(Brush.verticalGradient(listOf(Color.Transparent, INK.copy(alpha = 0.22f)), box.top + box.height * 0.62f, box.bottom),
+            Offset(box.left, box.top + box.height * 0.62f), Size(box.width, box.height * 0.38f))
         drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.18f + 0.08f * breath), Color.Transparent), heart, box.width * 0.30f), box.width * 0.30f, heart)
+        // a few soft lights drifting inside, slower than the breath
+        for (i in 0 until 4) {
+            val a = t * (0.05f + 0.013f * i) + i * 1.9f
+            val c = Offset(box.left + box.width * (0.5f + 0.16f * sin(a) * (if (i % 2 == 0) 1f else -1f)),
+                box.top + box.height * (0.30f + 0.12f * i + 0.05f * cos(a * 1.3f)))
+            val r = box.width * (0.10f + 0.03f * sin(a * 0.7f + i))
+            drawCircle(Brush.radialGradient(listOf(Color(0xFFE8EEFF).copy(alpha = 0.10f), Color.Transparent), c, r), r, c)
+        }
+        // the spine: a faint line of light from the seat to the crown
+        val sx = box.center.x
+        val top = box.top + box.height * 0.08f; val seat = box.top + box.height * 0.68f
+        // a wide faint glow with a fine bright thread inside it, so it reads as light and not as a seam
+        for ((w, a) in listOf(9f to 0.05f, 1.2f to 0.16f)) drawLine(Brush.verticalGradient(listOf(Color.Transparent, Color.White.copy(alpha = a + 0.05f * breath),
+            Color.White.copy(alpha = a * 1.4f + 0.05f * breath), Color.Transparent), top, seat), Offset(sx, top), Offset(sx, seat), w * density, StrokeCap.Round)
     }
 }
+
+/** The outline: a soft dark edge outside, and a bright rim, brightest where the light falls (head and shoulders). */
+private fun DrawScope.figureRim(box: Rect, path: Path) {
+    drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(6f * density))
+    drawPath(path, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.92f), Color(0xFFCFDBFF).copy(alpha = 0.62f), Color(0xFFAFC0F0).copy(alpha = 0.42f)),
+        box.top, box.bottom), style = Stroke(1.5f * density))
+}
+
+/** A touch of tension: a warm glow that breathes, a bright core, and a ring that opens once when the touch is new. */
+private fun DrawScope.tensionMark(c: Offset, age: Float, breath: Float) {
+    val r = (24f + 5f * breath) * density
+    drawCircle(Brush.radialGradient(listOf(TENSION.copy(alpha = 0.85f), TENSION.copy(alpha = 0.40f + 0.15f * breath), TENSION.copy(alpha = 0f)), c, r), r, c)
+    drawCircle(Brush.radialGradient(listOf(Color.White, TENSION.copy(alpha = 0.9f), TENSION.copy(alpha = 0f)), c, 7f * density), 7f * density, c)
+    if (age in 0f..1.6f) {
+        val k = age / 1.6f
+        drawCircle(TENSION.copy(alpha = 0.8f * (1 - k)), (8 + 26 * k) * density, c, style = Stroke(1.6f * density))
+    }
+}
+
+/** The figure rises and falls a little with a slow breath, from its seat. */
+private inline fun DrawScope.breathing(box: Rect, breath: Float, block: DrawScope.() -> Unit) =
+    scale(1f + 0.006f * breath, 1f + 0.012f * breath, Offset(box.center.x, box.top + box.height * 0.88f), block)
 
 /**
  * The body scan: a figure of light, with a warm light resting on one part after another, from the feet up.
@@ -224,7 +269,8 @@ fun BodyScanView(elapsed: Float, planned: Int, area: Rect?, marks: List<Pair<Bod
         val whole = region.id == WHOLE_BODY
         val t = elapsed
         val breath = 0.5f + 0.5f * sin(t * 2f * PI.toFloat() / 8f)   // a slow eight-second swell, not a pace to follow
-        figureBase(box, path, if (whole) 0.26f + 0.06f * sin(t * 0.5f) else 0.17f, breath)
+        breathing(box, breath) {
+        figureBase(box, path, if (whole) 0.26f + 0.06f * sin(t * 0.5f) else 0.17f, breath, t)
 
         clipPath(path) {
             if (whole) {
@@ -239,34 +285,43 @@ fun BodyScanView(elapsed: Float, planned: Int, area: Rect?, marks: List<Pair<Bod
                 val move = (inStage / 3.5f).coerceIn(0f, 1f).let { it * it * (3 - 2 * it) }
                 val count = max(prev.centers.size, region.centers.size)
                 val r = max(region.rx * box.width, region.ry * box.height) * 1.3f + 16 * density
-                // a soft band of light across the body at this height, and a brighter light on the part itself
+                // a soft band of light across the body at this height (an oval, wider than tall, with no hard edges)
                 val fy = prev.centers.map { it.y }.average().toFloat(); val ty = region.centers.map { it.y }.average().toFloat()
                 val by = box.top + (fy + (ty - fy) * move) * box.height
                 val bh2 = max(region.ry * box.height * 2.2f, 26 * density)
-                drawRect(Brush.verticalGradient(listOf(Color.Transparent, LIGHT.copy(alpha = 0.32f), Color.Transparent), by - bh2, by + bh2),
-                    Offset(box.left - 10, by - bh2), Size(box.width + 20, bh2 * 2))
+                val bandC = Offset(box.center.x, by)
+                scale(box.width * 0.62f / bh2, 1f, bandC) {
+                    drawCircle(Brush.radialGradient(listOf(LIGHT.copy(alpha = 0.30f), LIGHT.copy(alpha = 0.10f), Color.Transparent), bandC, bh2), bh2, bandC)
+                }
+                // on the spine, a bright point at the same height
+                drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.9f), LIGHT.copy(alpha = 0.3f), Color.Transparent), bandC, 9 * density), 9 * density, bandC)
                 for (j in 0 until count) {
                     val from = prev.centers[j % prev.centers.size]
                     val to = region.centers[j % region.centers.size]
                     val c = Offset(box.left + (from.x + (to.x - from.x) * move) * box.width, box.top + (from.y + (to.y - from.y) * move) * box.height)
-                    val pulse = 1f + 0.06f * sin(t * 0.9f + j)
-                    drawCircle(Brush.radialGradient(listOf(LIGHT.copy(alpha = 0.95f), LIGHT.copy(alpha = 0.35f), Color.Transparent), c, r * pulse), r * pulse, c)
+                    val pulse = 1f + 0.05f * sin(t * 0.9f + j) + 0.05f * breath
+                    // the light on the part: a wide warm haze, then a brighter heart
+                    drawCircle(Brush.radialGradient(listOf(LIGHT.copy(alpha = 0.45f), LIGHT.copy(alpha = 0.12f), Color.Transparent), c, r * 1.5f * pulse), r * 1.5f * pulse, c)
+                    drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.85f), LIGHT.copy(alpha = 0.55f), Color.Transparent), c, r * 0.7f * pulse), r * 0.7f * pulse, c)
+                    // motes of light rising slowly from it
+                    for (k in 0 until 6) {
+                        val ph = (t * 0.18f + k / 6f + j * 0.37f) % 1f
+                        val px = c.x + r * 0.55f * sin(k * 2.1f + t * 0.3f) * (1f - ph * 0.5f)
+                        val py = c.y + r * 0.4f - ph * r * 1.6f
+                        drawCircle(Color.White.copy(alpha = 0.55f * sin(PI.toFloat() * ph)), (1.3f + 0.45f * (k % 3)) * density, Offset(px, py))
+                    }
+                    // as the light arrives on a new part, a ring opens from it once
+                    if (inStage in 0.6f..2.6f) {
+                        val k = (inStage - 0.6f) / 2f
+                        drawCircle(LIGHT.copy(alpha = 0.55f * (1 - k)), r * (0.4f + 1.1f * k), c, style = Stroke(1.4f * density))
+                    }
                 }
             }
         }
-        drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(6f * density))
-        drawPath(path, Color.White.copy(alpha = 0.7f), style = Stroke(1.4f * density))
+        figureRim(box, path)
 
-        // the places touched: a warm glow, and a ring that opens once when the touch is new
-        for ((m, born) in marks) {
-            val c = Offset(box.left + m.x * box.width, box.top + m.y * box.height)
-            val age = t - born
-            drawCircle(Brush.radialGradient(listOf(TENSION.copy(alpha = 0.75f), TENSION.copy(alpha = 0f)), c, 20 * density), 20 * density, c)
-            drawCircle(Color.White.copy(alpha = 0.9f), 2.6f * density, c)
-            if (age in 0f..1.6f) {
-                val k = age / 1.6f
-                drawCircle(TENSION.copy(alpha = 0.8f * (1 - k)), (8 + 26 * k) * density, c, style = Stroke(1.6f * density))
-            }
+        // the places touched: a warm glow that breathes, and a ring that opens once when the touch is new
+        for ((m, born) in marks) tensionMark(Offset(box.left + m.x * box.width, box.top + m.y * box.height), t - born, breath)
         }
     }
 }
@@ -294,8 +349,7 @@ fun BodyMap(counts: Map<String, Int>, modifier: Modifier = Modifier) {
                 }
             }
         }
-        drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(5f * density))
-        drawPath(path, Color.White.copy(alpha = 0.6f), style = Stroke(1.2f * density))
+        figureRim(box, path)
     }
 }
 
@@ -311,18 +365,10 @@ fun BodyTouchView(elapsed: Float, area: Rect, marks: List<Pair<BodyMark, Float>>
         onBox(box)
         val path = cache.getOrPut(box) { cache.clear(); figurePath(box) }
         val breath = 0.5f + 0.5f * sin(elapsed * 2f * PI.toFloat() / 8f)
-        figureBase(box, path, 0.2f, breath)
-        drawPath(path, INK.copy(alpha = 0.16f), style = Stroke(6f * density))
-        drawPath(path, Color.White.copy(alpha = 0.7f), style = Stroke(1.4f * density))
-        for ((m, born) in marks) {
-            val c = Offset(box.left + m.x * box.width, box.top + m.y * box.height)
-            val age = elapsed - born
-            drawCircle(Brush.radialGradient(listOf(TENSION.copy(alpha = 0.75f), TENSION.copy(alpha = 0f)), c, 20 * density), 20 * density, c)
-            drawCircle(Color.White.copy(alpha = 0.9f), 2.6f * density, c)
-            if (age in 0f..1.6f) {
-                val k = age / 1.6f
-                drawCircle(TENSION.copy(alpha = 0.8f * (1 - k)), (8 + 26 * k) * density, c, style = Stroke(1.6f * density))
-            }
+        breathing(box, breath) {
+            figureBase(box, path, 0.2f, breath, elapsed)
+            figureRim(box, path)
+            for ((m, born) in marks) tensionMark(Offset(box.left + m.x * box.width, box.top + m.y * box.height), elapsed - born, breath)
         }
     }
 }

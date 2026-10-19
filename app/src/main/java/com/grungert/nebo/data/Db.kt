@@ -177,6 +177,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         writableDatabase.update("sessions", ContentValues().apply { put("wander", wander.joinToString(",").ifEmpty { null }) }, "id=?", arrayOf(id.toString()))
     }
 
+    /** A session that never began (a wave left at its first question), so it leaves no empty row in the journal. */
+    fun deleteSession(id: Long) {
+        writableDatabase.delete("sessions", "id=?", arrayOf(id.toString()))
+    }
+
     /** The pull watched in a wave and how strong it was as the wave began, or (with [after]) as it ended. */
     fun setSessionUrge(id: Long, urge: String, before: Int) {
         writableDatabase.update("sessions", ContentValues().apply { put("urge", urge); put("urge_before", before) }, "id=?", arrayOf(id.toString()))
