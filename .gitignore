@@ -10,3 +10,4 @@ app/.cxx/
 .idea/
 app/libs/*.aar
 app/libs/*.part
+app/libs/ort/

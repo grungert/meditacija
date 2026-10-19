@@ -19,3 +19,13 @@ add_subdirectory(${WHISPER_DIR} whisper-build EXCLUDE_FROM_ALL)
 add_library(nebo_whisper SHARED whisper_jni.cpp)
 target_compile_options(nebo_whisper PRIVATE -O3)
 target_link_libraries(nebo_whisper PRIVATE whisper android log)
+
+# The meaning model runs on the ONNX Runtime that comes with sherpa-onnx (unpacked into app/libs/ort by the
+# Gradle build), so the APK carries one runtime, not two.
+add_library(onnxruntime SHARED IMPORTED)
+set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../libs/ort/${ANDROID_ABI}/libonnxruntime.so)
+add_library(nebo_ort SHARED ort_jni.cpp)
+target_include_directories(nebo_ort PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ort/include)
+target_compile_options(nebo_ort PRIVATE -O2)
+target_link_libraries(nebo_ort PRIVATE onnxruntime log)

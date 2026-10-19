@@ -1,4 +1,7 @@
 import java.security.MessageDigest
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
 plugins {
     id("com.android.application")
@@ -78,17 +81,38 @@ kotlin { jvmToolchain(17) }
 
 // sherpa-onnx runs the Parakeet speech model. Its Android library is published only as a release asset,
 // so it is fetched once into app/libs (not in git) and checked against a pinned hash.
-// This build links ONNX Runtime statically, so it does not clash with the ONNX Runtime the meaning model uses.
+// This is the build that links ONNX Runtime (1.28.2) dynamically, and that runtime also runs the meaning model, through
+// a small JNI layer of our own (src/main/cpp/ort_jni.cpp), so the APK carries one runtime instead of two: the statically
+// linked sherpa build had a private copy inside it, and the onnxruntime-android package a second one, 57 MB together.
+// (Mixing runtimes does not work: sherpa's library asks for OrtGetApiBase@VERS_1.28.2, which no other version exports.)
 val sherpaVersion = "1.13.8"
-val sherpaAar = file("libs/sherpa-onnx-static-link-onnxruntime-$sherpaVersion.aar")
+val sherpaAar = file("libs/sherpa-onnx-shared-$sherpaVersion.aar")
+val ortLib = file("libs/ort/arm64-v8a/libonnxruntime.so")   // for the native build to link against
 if (!sherpaAar.exists()) {
     sherpaAar.parentFile.mkdirs()
     val tmp = File(sherpaAar.path + ".part")
-    uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-static-link-onnxruntime-$sherpaVersion.aar")
+    uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-$sherpaVersion.aar")
         .toURL().openStream().use { input -> tmp.outputStream().use { input.copyTo(it) } }
     val hash = MessageDigest.getInstance("SHA-256").digest(tmp.readBytes()).joinToString("") { "%02x".format(it) }
-    check(hash == "b22c3fc1b6a45666d28892bb2f7694beeb77a8362d7ebd77c1a5431ec9435471") { "sherpa-onnx download has an unexpected hash: $hash" }
-    tmp.renameTo(sherpaAar)
+    check(hash == "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96") { "sherpa-onnx download has an unexpected hash: $hash" }
+    // keep the Java classes and, for arm64, the JNI library and the runtime; the C and C++ API libraries are not used
+    val keep = setOf("jni/arm64-v8a/libsherpa-onnx-jni.so", "jni/arm64-v8a/libonnxruntime.so")
+    ZipFile(tmp).use { zip ->
+        ZipOutputStream(sherpaAar.outputStream()).use { out ->
+            for (e in zip.entries()) {
+                val name = e.name
+                if (name.startsWith("jni/") && !name.endsWith("/") && name !in keep) continue
+                out.putNextEntry(ZipEntry(name))
+                zip.getInputStream(e).use { it.copyTo(out) }
+                out.closeEntry()
+            }
+        }
+    }
+    tmp.delete()
+}
+if (!ortLib.exists()) {
+    ortLib.parentFile.mkdirs()
+    ZipFile(sherpaAar).use { zip -> zip.getInputStream(zip.getEntry("jni/arm64-v8a/libonnxruntime.so")).use { i -> ortLib.outputStream().use { i.copyTo(it) } } }
 }
 
 dependencies {
@@ -106,7 +130,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.30.0")
     implementation(files(sherpaAar))
 
     testImplementation("junit:junit:4.13.2")
