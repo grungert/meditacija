@@ -158,6 +158,14 @@ class Settings(private val context: Context) {
     var dailyHour: Int
         get() = p.getInt("dailyHour", 8)
         set(v) = p.edit { putInt("dailyHour", v) }
+    /** Whether the first look at Nebo (the intro) has been seen. */
+    var introSeen: Boolean
+        get() = p.getBoolean("introSeen", false)
+        set(v) = p.edit { putBoolean("introSeen", v) }
+    /** Whether the person has started a session by holding its icon; until then Home says how. */
+    var holdLearned: Boolean
+        get() = p.getBoolean("holdLearned", false)
+        set(v) = p.edit { putBoolean("holdLearned", v) }
     /** The day after a hard note, a question: how is it now? */
     var followUp: Boolean
         get() = p.getBoolean("followUp", true)

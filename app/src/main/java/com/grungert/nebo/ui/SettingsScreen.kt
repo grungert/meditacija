@@ -6,6 +6,14 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -89,6 +97,19 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             ScreenHeader("Postavke", null)
+
+            // how it all works, for anyone new or unsure
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) { go(Screen.Help) }.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Text("?", style = HeadStyle.copy(color = Ink.accent, shadow = null)) }
+                Column(Modifier.weight(1f)) {
+                    Text("Kako radi Nebo", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+                    Text("Vrste sesija, bilješke, niti, podsjetnici i privatnost", style = SmallStyle.copy(shadow = null))
+                }
+            }
 
             ReminderPanel()
 

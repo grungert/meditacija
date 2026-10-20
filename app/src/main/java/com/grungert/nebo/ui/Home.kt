@@ -134,6 +134,10 @@ private fun describe(c: SessionConfig): String {
 fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val s = context.app.settings
+    var info by remember { mutableStateOf<String?>(null) }   // the kind of session whose card is open ("note" for a note)
+    var holdLearned by remember { mutableStateOf(s.holdLearned) }
+    LaunchedEffect(info) { host.sheetOpen = info != null }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
     LaunchedEffect(Unit) {
         host.showCircle = false; host.dark = false; host.lake = false
         host.engine.paced = false
@@ -277,17 +281,30 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
                         contentAlignment = Alignment.Center) { Icon(NeboIcon.Settings, Ink.text, 20.dp) }
                 }
 
-                // or one tap for a kind of session, five to a row, and the microphone for a note at the end
+                // or a kind of session, five to a row, and the microphone for a note at the end: a tap says what it is,
+                // holding starts it (a ring fills around the icon), so nothing begins by accident
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (!holdLearned) Text("Dodirni ikonicu za opis · drži je za početak", style = SmallStyle.copy(color = Ink.accent, fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 2.dp))
+                    fun learned() { if (!holdLearned) { holdLearned = true; s.holdLearned = true } }
                     val items: List<SessionType?> = SESSION_TYPES + null
                     for (row in items.chunked(5)) Row(Modifier.fillMaxWidth()) {
-                        for (t in row) if (t != null) IconButton(t.icon, t.short, { startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type, circle = 48.dp)
-                            else IconButton(NeboIcon.Mic, "Zapiši", { go(Screen.CheckIn("note")) }, Modifier.weight(1f), circle = 48.dp)
+                        for (t in row) if (t != null) HoldIconButton(t.icon, t.short, { info = t.id }, { learned(); startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type)
+                            else HoldIconButton(NeboIcon.Mic, "Zapiši", { info = "note" }, { learned(); go(Screen.CheckIn("note")) }, Modifier.weight(1f))
                         repeat(5 - row.size) { Box(Modifier.weight(1f)) }
                     }
                 }
             }
         }
+    }
+
+    // the card of the kind of session tapped: what it is and how it works, with the way in
+    info?.let { id ->
+        val t = SESSION_TYPES.firstOrNull { it.id == id }
+        SessionInfoSheet(id, t?.name ?: "Zapiši", t?.icon ?: NeboIcon.Mic, if (t == null) "Zapiši" else "Kreni",
+            onStart = { info = null; if (t == null) go(Screen.CheckIn("note")) else startType(id) },
+            onSetup = if (t == null) null else ({ info = null; s.sessionType = id; go(Screen.Setup) }),
+            onClose = { info = null })
     }
 }
 

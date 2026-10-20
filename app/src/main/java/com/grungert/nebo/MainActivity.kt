@@ -57,6 +57,8 @@ sealed class Screen {
     data class Thread(val ids: List<Long>, val title: String) : Screen()
     data object Fifty : Screen()
     data object Constellations : Screen()
+    data object Intro : Screen()
+    data object Help : Screen()
 }
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
@@ -104,6 +106,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        // the first time, a short look at what Nebo is and how to begin
+        if (!app.settings.introSeen) screen = Screen.Intro
         // only a fresh launch acts on the notification or widget that opened it: when the system recreates the activity
         // (dark mode at sunset, a font change) or it comes back from Recents, the same intent arrives again, and must not
         // start a second session or reopen a check-in
@@ -158,6 +162,8 @@ class MainActivity : ComponentActivity() {
                 is Screen.Thread -> Screen.Journal
                 Screen.Constellations -> Screen.Journal
                 Screen.Fifty -> Screen.Home
+                Screen.Help -> Screen.Settings
+                Screen.Intro -> { app.settings.introSeen = true; Screen.Home }
                 is Screen.KoanNotes -> Screen.Home
                 is Screen.CheckIn -> if (sc.kind == "before") Screen.Setup else Screen.Home
                 else -> Screen.Home
@@ -192,6 +198,8 @@ class MainActivity : ComponentActivity() {
                     is Screen.Thread -> com.grungert.nebo.ui.ThreadScreen(sc, go)
                     Screen.Fifty -> com.grungert.nebo.ui.FiftyScreen(host, go)
                     Screen.Constellations -> com.grungert.nebo.ui.ConstellationsScreen(host, go)
+                    Screen.Intro -> com.grungert.nebo.ui.IntroScreen(go)
+                    Screen.Help -> com.grungert.nebo.ui.HelpScreen(go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
                 }
             }
