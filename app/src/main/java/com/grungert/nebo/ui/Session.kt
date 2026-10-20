@@ -517,7 +517,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (cfg.type == "bodyscan" && !ended) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val area = with(density) { Rect(maxWidth.toPx() * 0.06f, maxHeight.toPx() * 0.14f, maxWidth.toPx() * 0.94f, maxHeight.toPx() * 0.66f) }
+                // the standing figure, as tall as the space between the time and the card allows
+                val area = with(density) { Rect(maxWidth.toPx() * 0.06f, maxHeight.toPx() * 0.12f, maxWidth.toPx() * 0.94f, maxHeight.toPx() * 0.70f) }
                 BodyScanView(elapsed, planned, area, marks.toList()) { figure[0] = it }
             }
             val (st, inStage, len) = scanStage(elapsed, planned)
@@ -559,7 +560,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         if (isRain && !ended) {
             if (rainStep == 2) BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val area = with(density) { Rect(maxWidth.toPx() * 0.12f, maxHeight.toPx() * 0.12f, maxWidth.toPx() * 0.88f, maxHeight.toPx() * 0.50f) }
+                val area = with(density) { Rect(maxWidth.toPx() * 0.12f, maxHeight.toPx() * 0.11f, maxWidth.toPx() * 0.88f, maxHeight.toPx() * 0.60f) }
                 BodyTouchView(elapsed, area, marks.toList()) { figure[0] = it }
             }
             AnimatedContent(rainStep, transitionSpec = { fadeIn(tween(900)) togetherWith fadeOut(tween(900)) }, label = "rain",

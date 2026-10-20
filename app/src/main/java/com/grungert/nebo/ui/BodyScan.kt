@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import com.grungert.nebo.data.BodyMark
 import kotlin.math.PI
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -35,30 +34,30 @@ class BodyRegion(
     val label: String, val where: String,
 )
 
-/** The scan's path, from the feet up to the crown, then the whole body at once. Places are on a seated figure. */
+/** The scan's path, from the feet up to the crown, then the whole body at once. Places are on a standing figure. */
 val BODY_REGIONS = listOf(
-    BodyRegion("stopala", "Stopala", "Tabani, prsti, pete. Gdje dodiruju jedno drugo i podlogu.",
-        listOf(Offset(0.365f, 0.865f), Offset(0.635f, 0.84f)), 0.07f, 0.04f, "napetost u stopalima", "u stopalima"),
-    BodyRegion("noge", "Noge", "Koljena, butine, listovi. Kolika je težina nogu?",
-        listOf(Offset(0.22f, 0.75f), Offset(0.78f, 0.75f)), 0.13f, 0.06f, "napetost u nogama", "u nogama"),
-    BodyRegion("karlica", "Karlica", "Kukovi i mjesto na kojem sjediš. Neka te jastuk nosi.",
-        listOf(Offset(0.5f, 0.665f)), 0.18f, 0.035f, "napetost u karlici", "u karlici"),
+    BodyRegion("stopala", "Stopala", "Tabani, prsti, pete. Kako stopala dodiruju pod?",
+        listOf(Offset(0.36f, 0.975f), Offset(0.64f, 0.975f)), 0.10f, 0.02f, "napetost u stopalima", "u stopalima"),
+    BodyRegion("noge", "Noge", "Butine, koljena, listovi. Kolika je težina nogu?",
+        listOf(Offset(0.37f, 0.76f), Offset(0.63f, 0.76f)), 0.09f, 0.15f, "napetost u nogama", "u nogama"),
+    BodyRegion("karlica", "Karlica", "Kukovi i karlica. Neka se smjeste, ništa ne moraju da drže.",
+        listOf(Offset(0.5f, 0.52f)), 0.19f, 0.03f, "napetost u karlici", "u karlici"),
     BodyRegion("stomak", "Stomak", "Kako se stomak diže i spušta s dahom.",
-        listOf(Offset(0.5f, 0.555f)), 0.13f, 0.045f, "stisnut stomak", "u stomaku"),
+        listOf(Offset(0.5f, 0.44f)), 0.15f, 0.035f, "stisnut stomak", "u stomaku"),
     BodyRegion("leđa", "Leđa", "Od krsta do lopatica. Gdje su leđa meka, a gdje stegnuta?",
-        listOf(Offset(0.5f, 0.45f)), 0.17f, 0.10f, "napetost u leđima", "u leđima"),
+        listOf(Offset(0.5f, 0.36f)), 0.16f, 0.05f, "napetost u leđima", "u leđima"),
     BodyRegion("grudi", "Grudi", "Dah koji širi grudi. Srce ispod njih.",
-        listOf(Offset(0.5f, 0.37f)), 0.16f, 0.045f, "stezanje u grudima", "u grudima"),
-    BodyRegion("ruke", "Ruke", "Nadlaktice, laktovi, podlaktice, šake na koljenima. Šta osjećaju dlanovi?",
-        listOf(Offset(0.235f, 0.54f), Offset(0.765f, 0.54f)), 0.06f, 0.13f, "napetost u rukama", "u rukama"),
+        listOf(Offset(0.5f, 0.29f)), 0.16f, 0.035f, "stezanje u grudima", "u grudima"),
+    BodyRegion("ruke", "Ruke", "Nadlaktice, laktovi, podlaktice, šake. Šta osjećaju dlanovi?",
+        listOf(Offset(0.18f, 0.44f), Offset(0.82f, 0.44f)), 0.06f, 0.15f, "napetost u rukama", "u rukama"),
     BodyRegion("ramena", "Ramena i vrat", "Ramena često nose ono što ne moraju. Mogu li da se spuste?",
-        listOf(Offset(0.36f, 0.285f), Offset(0.64f, 0.285f)), 0.08f, 0.03f, "napeta ramena", "u ramenima"),
+        listOf(Offset(0.33f, 0.225f), Offset(0.67f, 0.225f)), 0.10f, 0.02f, "napeta ramena", "u ramenima"),
     BodyRegion("grlo", "Grlo", "Primijeti gutanje i dah koji prolazi kroz grlo.",
-        listOf(Offset(0.5f, 0.25f)), 0.05f, 0.025f, "knedla u grlu", "u grlu"),
+        listOf(Offset(0.5f, 0.18f)), 0.05f, 0.015f, "knedla u grlu", "u grlu"),
     BodyRegion("lice", "Lice", "Vilica, usne, obrazi, oči, čelo. Neka lice omekša.",
-        listOf(Offset(0.5f, 0.17f)), 0.07f, 0.035f, "stegnuta vilica", "u vilici"),
+        listOf(Offset(0.5f, 0.10f)), 0.09f, 0.03f, "stegnuta vilica", "u vilici"),
     BodyRegion("glava", "Glava", "Tjeme, potiljak, prostor iza očiju.",
-        listOf(Offset(0.5f, 0.095f)), 0.075f, 0.03f, "pritisak u glavi", "u glavi"),
+        listOf(Offset(0.5f, 0.045f)), 0.10f, 0.02f, "pritisak u glavi", "u glavi"),
     BodyRegion(WHOLE_BODY, "Cijelo tijelo", "Sve odjednom: jedno tijelo koje diše.",
         listOf(Offset(0.5f, 0.5f)), 0.5f, 0.5f, "", "u cijelom tijelu"),
 )
@@ -71,8 +70,11 @@ private val LABEL_REGION = mapOf("lupanje srca" to "grudi") + BODY_REGIONS.filte
 
 fun regionOfLabel(label: String): String? = LABEL_REGION[label]
 
-/** The width of the seated figure, cushion included, for its height. */
-const val FIGURE_ASPECT = 0.9f
+/**
+ * The width of the standing figure for its height. Standing, the legs and feet are large and apart, and the arms hang
+ * clear of the body, so every part is easy to touch.
+ */
+const val FIGURE_ASPECT = 0.42f
 
 /** The figure as large as fits in [area], centred. */
 fun figureBox(area: Rect): Rect {
@@ -114,60 +116,52 @@ fun regionAt(pos: Offset, box: Rect, current: String?, lenient: Boolean = false)
     return best.id.takeIf { d(best) <= if (lenient) 9f else 2.4f }
 }
 
-/** A limb between two points: a capsule outline, so all the parts can be joined into one shape. */
-private fun capsule(a: Offset, b: Offset, r: Float): Path {
-    val ang = atan2(b.y - a.y, b.x - a.x)
-    val path = Path()
-    val steps = 12
-    for (i in 0..steps) {
-        val t = ang + PI.toFloat() / 2 - PI.toFloat() * i / steps
-        val x = b.x + r * cos(t); val y = b.y + r * sin(t)
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    for (i in 0..steps) {
-        val t = ang - PI.toFloat() / 2 - PI.toFloat() * i / steps
-        path.lineTo(a.x + r * cos(t), a.y + r * sin(t))
-    }
-    path.close()
-    return path
-}
+/**
+ * The right half of the figure's outline, from below the head down the neck, shoulder, the arm hanging clear of the body
+ * and back up to the armpit, the side, the hip and the outer leg, the foot, and up the inner leg to the centre: cubic
+ * curves (control, control, end) in figure units. The left half is the same, mirrored.
+ */
+private val HALF_START = Offset(0.5f, 0.12f)   // inside the head, where it is wide, so the neck joins it without a waist
+private val HALF = listOf(
+    floatArrayOf(0.552f, 0.12f, 0.557f, 0.15f, 0.558f, 0.175f),
+    floatArrayOf(0.562f, 0.2f, 0.64f, 0.205f, 0.71f, 0.218f),
+    floatArrayOf(0.79f, 0.232f, 0.815f, 0.27f, 0.82f, 0.315f),
+    floatArrayOf(0.83f, 0.37f, 0.845f, 0.42f, 0.85f, 0.46f),
+    floatArrayOf(0.86f, 0.5f, 0.872f, 0.54f, 0.878f, 0.57f),
+    floatArrayOf(0.89f, 0.6f, 0.88f, 0.635f, 0.845f, 0.637f),
+    floatArrayOf(0.812f, 0.637f, 0.8f, 0.605f, 0.8f, 0.575f),
+    floatArrayOf(0.79f, 0.5f, 0.765f, 0.4f, 0.74f, 0.31f),
+    floatArrayOf(0.735f, 0.35f, 0.705f, 0.4f, 0.7f, 0.44f),
+    floatArrayOf(0.7f, 0.48f, 0.735f, 0.51f, 0.735f, 0.555f),
+    floatArrayOf(0.735f, 0.63f, 0.7f, 0.7f, 0.69f, 0.765f),
+    floatArrayOf(0.685f, 0.83f, 0.69f, 0.885f, 0.675f, 0.935f),
+    floatArrayOf(0.68f, 0.96f, 0.745f, 0.975f, 0.735f, 0.992f),
+    floatArrayOf(0.7f, 1.0f, 0.6f, 0.997f, 0.565f, 0.99f),
+    floatArrayOf(0.555f, 0.965f, 0.565f, 0.94f, 0.565f, 0.915f),
+    floatArrayOf(0.555f, 0.86f, 0.56f, 0.8f, 0.56f, 0.76f),
+    floatArrayOf(0.555f, 0.68f, 0.545f, 0.6f, 0.522f, 0.565f),
+    floatArrayOf(0.515f, 0.555f, 0.505f, 0.553f, 0.5f, 0.553f)
+)
+private val HEAD = Rect(0.5f - 0.12f, 0.082f - 0.068f, 0.5f + 0.12f, 0.082f + 0.068f)
 
-/** A figure sitting cross-legged, hands resting on the knees, as one outline. */
+/** A figure standing at ease, arms hanging a little away from the body, feet apart, as one outline. */
 fun figurePath(box: Rect): Path {
     val bw = box.width; val bh = box.height
-    fun p(x: Float, y: Float) = Offset(box.left + x * bw, box.top + y * bh)
-    fun oval(c: Offset, w: Float, h: Float) = Path().apply { addOval(Rect(c.x - w / 2, c.y - h / 2, c.x + w / 2, c.y + h / 2)) }
-    val parts = ArrayList<Path>()
-    parts += oval(p(0.5f, 0.145f), 0.17f * bw, 0.165f * bh)                    // head
-    parts += capsule(p(0.5f, 0.21f), p(0.5f, 0.275f), 0.064f * bw)             // neck
-    parts += Path().apply {                                                     // torso, shoulders to hips
-        val a = p(0.31f, 0.305f); moveTo(a.x, a.y)
-        fun cubic(c1: Offset, c2: Offset, e: Offset) = cubicTo(c1.x, c1.y, c2.x, c2.y, e.x, e.y)
-        // shoulders that slope down from the neck instead of standing square
-        cubic(p(0.39f, 0.258f), p(0.61f, 0.258f), p(0.69f, 0.305f))
-        cubic(p(0.725f, 0.37f), p(0.66f, 0.44f), p(0.64f, 0.52f))
-        cubic(p(0.63f, 0.58f), p(0.70f, 0.62f), p(0.69f, 0.69f))
-        lineTo(p(0.31f, 0.69f).x, p(0.31f, 0.69f).y)
-        cubic(p(0.30f, 0.62f), p(0.37f, 0.58f), p(0.36f, 0.52f))
-        cubic(p(0.34f, 0.44f), p(0.275f, 0.37f), a)
+    fun x(u: Float) = box.left + u * bw
+    fun y(v: Float) = box.top + v * bh
+    val body = Path().apply {
+        moveTo(x(HALF_START.x), y(HALF_START.y))
+        for (s in HALF) cubicTo(x(s[0]), y(s[1]), x(s[2]), y(s[3]), x(s[4]), y(s[5]))
+        // back up the left side: the same curves, mirrored and in reverse
+        for (i in HALF.indices.reversed()) {
+            val s = HALF[i]
+            val (px, py) = if (i == 0) HALF_START.x to HALF_START.y else HALF[i - 1][4] to HALF[i - 1][5]
+            cubicTo(x(1f - s[2]), y(s[3]), x(1f - s[0]), y(s[1]), x(1f - px), y(py))
+        }
         close()
     }
-    for (left in listOf(true, false)) {
-        fun q(x: Float, y: Float) = p(if (left) x else 1f - x, y)
-        parts += capsule(q(0.315f, 0.325f), q(0.245f, 0.47f), 0.044f * bw)    // upper arm
-        parts += capsule(q(0.245f, 0.47f), q(0.215f, 0.64f), 0.038f * bw)     // forearm
-        parts += oval(q(0.215f, 0.675f), 0.08f * bw, 0.05f * bh)              // hand on the knee
-        parts += capsule(q(0.40f, 0.69f), q(0.16f, 0.76f), 0.078f * bw)       // thigh out to the knee
-    }
-    // the shins cross in front, each ending in a foot
-    parts += capsule(p(0.17f, 0.79f), p(0.60f, 0.845f), 0.06f * bw)
-    parts += capsule(p(0.83f, 0.79f), p(0.40f, 0.865f), 0.06f * bw)
-    parts += oval(p(0.5f, 0.76f), 0.42f * bw, 0.17f * bh)                      // the lap, where the shins cross
-    parts += oval(p(0.635f, 0.84f), 0.09f * bw, 0.045f * bh)
-    parts += oval(p(0.365f, 0.865f), 0.09f * bw, 0.045f * bh)
-    var body = parts[0]
-    for (part in parts.drop(1)) body = Path().also { it.op(body, part, PathOperation.Union) }
-    return body
+    val head = Path().apply { addOval(Rect(x(HEAD.left), y(HEAD.top), x(HEAD.right), y(HEAD.bottom))) }
+    return Path().also { it.op(body, head, PathOperation.Union) }
 }
 
 private val INK = Color(0xFF14223F)
@@ -175,7 +169,6 @@ private val LIGHT = Color(0xFFFFF1D6)
 /** Tension marks: a warm coral, the colour of heat held in the body. */
 val TENSION = Color(0xFFF2A88E)
 
-private val CUSHION = Color(0xFF3B2E52)
 
 /**
  * The figure of light on its cushion: a soft shade behind, the round cushion and its shadow, a pale glow around the
@@ -183,46 +176,41 @@ private val CUSHION = Color(0xFF3B2E52)
  * lights drift slowly inside the body and the light along the spine breathes.
  */
 private fun DrawScope.figureBase(box: Rect, path: Path, fill: Float, breath: Float = 0.5f, t: Float = 0f) {
-    val c = Offset(box.center.x, box.top + box.height * 0.5f)
-    scale(1f, 1.05f, c) {
-        drawCircle(Brush.radialGradient(listOf(INK.copy(alpha = 0.55f), INK.copy(alpha = 0.24f), Color.Transparent), c, box.width * 0.72f), box.width * 0.72f, c)
+    // a soft shade behind, as tall as the figure
+    val c = box.center
+    scale(1f, box.height / box.width * 0.62f, c) {
+        drawCircle(Brush.radialGradient(listOf(INK.copy(alpha = 0.55f), INK.copy(alpha = 0.24f), Color.Transparent), c, box.width * 0.85f), box.width * 0.85f, c)
     }
-    // the cushion: a low round zafu, its top catching a little light
-    val cw = box.width * 0.66f; val ch = box.height * 0.15f
-    val cc = Offset(box.center.x, box.top + box.height * 0.87f)
-    drawOval(Color.Black.copy(alpha = 0.22f), Offset(box.center.x - box.width * 0.48f, box.top + box.height * 0.89f), Size(box.width * 0.96f, box.height * 0.08f))
-    // the cushion is behind the crossed legs: drawn only where the body is not
-    clipPath(path, androidx.compose.ui.graphics.ClipOp.Difference) {
-    drawOval(Brush.verticalGradient(listOf(CUSHION.copy(alpha = 0.95f), Color(0xFF241B36).copy(alpha = 0.95f)), cc.y - ch / 2, cc.y + ch / 2),
-        Offset(cc.x - cw / 2, cc.y - ch / 2), Size(cw, ch))
-    drawOval(Color.White.copy(alpha = 0.12f), Offset(cc.x - cw * 0.36f, cc.y - ch * 0.44f), Size(cw * 0.72f, ch * 0.32f))
-    // a seam around its middle, like a stitched zafu
-    drawOval(Color.White.copy(alpha = 0.07f), Offset(cc.x - cw * 0.5f, cc.y - ch * 0.08f), Size(cw, ch * 0.22f), style = Stroke(1.2f * density))
+    // the ground: a shadow under the feet and a little light where they stand
+    val g = Offset(box.center.x, box.top + box.height * 0.995f)
+    scale(1f, 0.16f, g) {
+        drawCircle(Brush.radialGradient(listOf(Color.Black.copy(alpha = 0.35f), Color.Transparent), g, box.width * 0.55f), box.width * 0.55f, g)
+        drawCircle(Brush.radialGradient(listOf(Color(0xFFDCE6FF).copy(alpha = 0.10f + 0.05f * breath), Color.Transparent), g, box.width * 0.38f), box.width * 0.38f, g)
     }
     // an aura: the outline drawn wide and faint, several times
     for ((w, a) in listOf(30f to 0.035f, 18f to 0.05f, 9f to 0.08f)) drawPath(path, Color(0xFFDCE6FF).copy(alpha = a * (0.8f + 0.4f * breath)), style = Stroke(w * density))
     // a body of night blue under the light, so clouds behind it do not show through and seem to stand in front
     drawPath(path, Brush.verticalGradient(listOf(Color(0xFF243466).copy(alpha = 0.96f), Color(0xFF1A2550).copy(alpha = 0.97f)), box.top, box.bottom))
     drawPath(path, Brush.verticalGradient(listOf(Color(0xFFD6E2FF).copy(alpha = fill * 1.7f), Color(0xFF8FA6E8).copy(alpha = fill * 1.5f)), box.top, box.bottom))
-    val heart = Offset(box.center.x, box.top + box.height * 0.40f)
+    val heart = Offset(box.center.x, box.top + box.height * 0.29f)
     clipPath(path) {
         // volume: light falls from above and a little to the left, the lap and legs sit in a soft shade
-        val key = Offset(box.left + box.width * 0.42f, box.top + box.height * 0.22f)
-        drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.16f), Color.Transparent), key, box.width * 0.55f), box.width * 0.55f, key)
-        drawRect(Brush.verticalGradient(listOf(Color.Transparent, INK.copy(alpha = 0.22f)), box.top + box.height * 0.62f, box.bottom),
-            Offset(box.left, box.top + box.height * 0.62f), Size(box.width, box.height * 0.38f))
+        val key = Offset(box.left + box.width * 0.42f, box.top + box.height * 0.16f)
+        drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.16f), Color.Transparent), key, box.width * 0.75f), box.width * 0.75f, key)
+        drawRect(Brush.verticalGradient(listOf(Color.Transparent, INK.copy(alpha = 0.18f)), box.top + box.height * 0.58f, box.bottom),
+            Offset(box.left, box.top + box.height * 0.58f), Size(box.width, box.height * 0.42f))
         drawCircle(Brush.radialGradient(listOf(Color.White.copy(alpha = 0.18f + 0.08f * breath), Color.Transparent), heart, box.width * 0.30f), box.width * 0.30f, heart)
         // a few soft lights drifting inside, slower than the breath
         for (i in 0 until 4) {
             val a = t * (0.05f + 0.013f * i) + i * 1.9f
-            val c = Offset(box.left + box.width * (0.5f + 0.16f * sin(a) * (if (i % 2 == 0) 1f else -1f)),
-                box.top + box.height * (0.30f + 0.12f * i + 0.05f * cos(a * 1.3f)))
-            val r = box.width * (0.10f + 0.03f * sin(a * 0.7f + i))
+            val c = Offset(box.left + box.width * (0.5f + 0.12f * sin(a) * (if (i % 2 == 0) 1f else -1f)),
+                box.top + box.height * (0.26f + 0.10f * i + 0.04f * cos(a * 1.3f)))
+            val r = box.width * (0.16f + 0.04f * sin(a * 0.7f + i))
             drawCircle(Brush.radialGradient(listOf(Color(0xFFE8EEFF).copy(alpha = 0.10f), Color.Transparent), c, r), r, c)
         }
         // the spine: a faint line of light from the seat to the crown
         val sx = box.center.x
-        val top = box.top + box.height * 0.08f; val seat = box.top + box.height * 0.68f
+        val top = box.top + box.height * 0.04f; val seat = box.top + box.height * 0.55f
         // a wide faint glow with a fine bright thread inside it, so it reads as light and not as a seam
         for ((w, a) in listOf(9f to 0.05f, 1.2f to 0.16f)) drawLine(Brush.verticalGradient(listOf(Color.Transparent, Color.White.copy(alpha = a + 0.05f * breath),
             Color.White.copy(alpha = a * 1.4f + 0.05f * breath), Color.Transparent), top, seat), Offset(sx, top), Offset(sx, seat), w * density, StrokeCap.Round)
@@ -249,7 +237,7 @@ private fun DrawScope.tensionMark(c: Offset, age: Float, breath: Float) {
 
 /** The figure rises and falls a little with a slow breath, from its seat. */
 private inline fun DrawScope.breathing(box: Rect, breath: Float, block: DrawScope.() -> Unit) =
-    scale(1f + 0.006f * breath, 1f + 0.012f * breath, Offset(box.center.x, box.top + box.height * 0.88f), block)
+    scale(1f + 0.008f * breath, 1f + 0.006f * breath, Offset(box.center.x, box.top + box.height * 0.99f), block)
 
 /**
  * The body scan: a figure of light, with a warm light resting on one part after another, from the feet up.

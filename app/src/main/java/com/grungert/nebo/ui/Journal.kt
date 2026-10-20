@@ -533,7 +533,7 @@ fun StatsScreen(go: (Screen) -> Unit) {
                 if (d.tension.isEmpty()) Text("Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.",
                     style = SmallStyle.copy(shadow = null))
                 else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    BodyMap(d.tension, Modifier.width(132.dp).height(146.dp))
+                    BodyMap(d.tension, Modifier.width(104.dp).height(220.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         val ranked = d.tension.entries.sortedByDescending { it.value }
                         // "most often" only when one place leads, and has been named more than once
