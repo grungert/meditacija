@@ -37,6 +37,13 @@ class NeboApp : Application() {
         Esm.ensureChannel(this)
         scope.launch {
             Esm.refresh(this@NeboApp)
+            // once: transcripts a model wrote in Cyrillic become Latin, and their themes are found again
+            if (!settings.transcriptsLatin) {
+                for (e in db.entries()) if (e.transcript?.let { com.grungert.nebo.ml.Latin.hasCyrillic(it) } == true)
+                    db.updateEntry(e.copy(transcript = com.grungert.nebo.ml.Latin.of(e.transcript), themes = emptyList()),
+                        com.grungert.nebo.data.Col.TRANSCRIPT, com.grungert.nebo.data.Col.THEMES)
+                settings.transcriptsLatin = true
+            }
             transcriber.drain()   // nothing to do unless a recording waits for its text, and then it is worth doing
         }
         // a note that just became text gets its themes

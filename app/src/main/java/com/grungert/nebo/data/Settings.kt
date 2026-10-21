@@ -158,6 +158,10 @@ class Settings(private val context: Context) {
     var dailyHour: Int
         get() = p.getInt("dailyHour", 8)
         set(v) = p.edit { putInt("dailyHour", v) }
+    /** Whether transcripts written in Cyrillic before Nebo kept Latin script have been rewritten. */
+    var transcriptsLatin: Boolean
+        get() = p.getBoolean("transcriptsLatin", false)
+        set(v) = p.edit { putBoolean("transcriptsLatin", v) }
     /** Whether the first look at Nebo (the intro) has been seen. */
     var introSeen: Boolean
         get() = p.getBoolean("introSeen", false)

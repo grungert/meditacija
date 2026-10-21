@@ -131,7 +131,8 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     private fun heard(engine: SpeechEngine, pcm: FloatArray): String =
         if (pcm.isEmpty() || pcm.maxOf { kotlin.math.abs(it) } < Recorder.SILENCE) "" else {
             val t0 = System.nanoTime()
-            engine.transcribe(pcm).also {
+            // the models sometimes write our language in Cyrillic; Nebo keeps Latin script
+            Latin.of(engine.transcribe(pcm)).also {
                 val took = (System.nanoTime() - t0) / 1e9f
                 val audio = pcm.size / 16000f
                 loadedKey?.substringBefore('/')?.let { id -> settings.measuredSpeech(id, rate = took / audio.coerceAtLeast(1f)) }
