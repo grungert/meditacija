@@ -10,7 +10,6 @@ import com.grungert.nebo.audio.Recorder
 import com.grungert.nebo.data.Db
 import com.grungert.nebo.data.Settings
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -89,11 +88,11 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     // (and loading starts as soon as the person begins to speak). Only touched under [lock].
     private var loaded: SpeechEngine? = null
     private var loadedKey: String? = null
-    private var release: Job? = null
+    private val keep = KeepAlive(scope, lock, 60_000) { loaded?.close(); loaded = null; loadedKey = null }
 
     private fun open(choice: ModelChoice): SpeechEngine? {
         val key = choice.id + "/" + settings.whisperLang
-        if (loadedKey == key) loaded?.let { return it }
+        if (loadedKey == key) loaded?.let { keep.touch(); return it }
         loaded?.close(); loaded = null; loadedKey = null
         return try {
             val t0 = System.nanoTime()
@@ -101,6 +100,7 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
             else WhisperEngine(models.file(choice.files[0].name).absolutePath, settings.whisperLang).takeIf { it.ok })
                 ?.also {
                     loaded = it; loadedKey = key
+                    keep.touch()   // used as of now, when it is ready, not when loading began
                     val took = (System.nanoTime() - t0) / 1e9f
                     settings.measuredSpeech(choice.id, loadSeconds = took)
                     Log.i(TAG, "loaded ${choice.id} in %.1f s".format(took))
@@ -111,13 +111,7 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
     }
 
     /** Lets the loaded model go a minute after the last use; it holds hundreds of megabytes. */
-    private fun releaseLater() {
-        release?.cancel()
-        release = scope.launch {
-            delay(60_000)
-            lock.withLock { loaded?.close(); loaded = null; loadedKey = null }
-        }
-    }
+    private fun releaseLater() = keep.later()
 
     /** Starts loading the speech model while the person is still talking, so the text comes quickly after. */
     fun prepare() {
@@ -133,6 +127,7 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
             val t0 = System.nanoTime()
             // the models sometimes write our language in Cyrillic; Nebo keeps Latin script
             Latin.of(engine.transcribe(pcm)).also {
+                keep.touch()
                 val took = (System.nanoTime() - t0) / 1e9f
                 val audio = pcm.size / 16000f
                 loadedKey?.substringBefore('/')?.let { id -> settings.measuredSpeech(id, rate = took / audio.coerceAtLeast(1f)) }
