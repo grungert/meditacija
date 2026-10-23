@@ -45,6 +45,9 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -104,11 +107,14 @@ fun StatsScreen(go: (Screen) -> Unit) {
     val app = context.app
     var data by remember { mutableStateOf<StatsData?>(null) }
     var web by remember { mutableStateOf<Links.Web?>(null) }
+    var seen by remember { mutableStateOf<List<Pair<Set<com.grungert.nebo.koan.Thing>, Long>>>(emptyList()) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val entries = app.db.entries()
             data = computeStats(app.db.sessions(), entries, app.db.prompts(0))
-            web = Links.web(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
+            // the notes of the last two months, each read once for all the cards about links
+            seen = Links.seen(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
+            web = Links.webOf(seen.map { it.first })
         }
     }
     val week = Calendar.getInstance().get(Calendar.WEEK_OF_YEAR)
@@ -131,7 +137,13 @@ fun StatsScreen(go: (Screen) -> Unit) {
             Arrive(order++) { WeekCard(d) }
             if (d.moodWeeks.any { it.isNotEmpty() }) Arrive(order++) { MoodSkyCard(d) }
             Arrive(order++) { HelpsCard(d) { go(Screen.Setup) } }
-            web?.let { w -> if (w.links.isNotEmpty()) Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations) } } }
+            web?.let { w ->
+                if (w.links.isNotEmpty()) {
+                    Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations) } }
+                    Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label)) } }
+                    Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label)) } }
+                }
+            }
             Arrive(order++) { BodyCard(d) }
             Arrive(order++) { MindCard(d) }
             if (d.dayPartSessions.any { it > 0 }) Arrive(order++) {
@@ -476,6 +488,102 @@ private fun PatternCard(w: Links.Web, onAll: () -> Unit) {
         }
         Text("U istim bilješkama; šta je bilo prvo, ne znamo. Sve utiče na sve, a ovdje je ono što se ponavlja.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
         GlassButton("Vidi sve veze", onAll, Modifier.fillMaxWidth(), icon = NeboIcon.Stars)
+    }
+}
+
+/**
+ * "Kad se javi…" for the things that come back most: a chip for each, and around the chosen one what comes with it.
+ * Touching a thing around it makes that one the middle; the button opens it whole.
+ */
+@Composable
+private fun FocusCard(w: Links.Web, seen: List<Pair<Set<com.grungert.nebo.koan.Thing>, Long>>, onOpen: (com.grungert.nebo.koan.Thing) -> Unit) {
+    val top = remember(w) { w.stars(4) }
+    var chosen by remember(w) { mutableStateOf(top.firstOrNull()) }
+    val t = chosen ?: return
+    val f = remember(t, seen) { Links.focusOf(seen, t) }
+    Panel {
+        CardHead("KAD SE JAVI…", "Šta dolazi s tim")
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (c in (top + (if (t in top) emptyList() else listOf(t)))) {
+                val on = c == t
+                val pc = POINT_COLORS.getValue(c.point)
+                Text(c.label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on || Ink.day) Ink.ink else Color.White, shadow = null),
+                    modifier = Modifier.tap(c.label, role = androidx.compose.ui.semantics.Role.Tab, shape = RoundedCornerShape(14.dp)) { chosen = c }
+                        .background(if (on) Ink.accent else pc.copy(alpha = if (Ink.day) 0.35f else 0.22f), RoundedCornerShape(14.dp))
+                        .padding(horizontal = 11.dp, vertical = 6.dp))
+            }
+        }
+        if (f.with.isEmpty()) Text("Uz ovo još ništa ne dolazi dovoljno često.", style = SmallStyle.copy(shadow = null))
+        else FocusOrbit(f, { chosen = it }, Modifier.fillMaxWidth().height(280.dp))
+        f.sentence()?.let { Text(it, style = ReadStyle) }
+        GlassButton("Otvori „${t.label.trim('„', '“')}“", { onOpen(t) }, Modifier.fillMaxWidth(), icon = NeboIcon.Forward)
+    }
+}
+
+/**
+ * The whole picture, for the curious: each mood against the body, the pulls and the habits of mind, a dot as big as
+ * the notes that held both. Links that came back are full; those seen once are pale. A row's mood opens "Kad se javi…".
+ */
+@Composable
+private fun MatrixCard(w: Links.Web, onOpen: (com.grungert.nebo.koan.Thing) -> Unit) {
+    val rows = remember(w) {
+        w.counts.filter { it.key.point == FourPointsReader.EMOTIONS && it.value >= 2 }.entries.sortedByDescending { it.value }.map { it.key }
+            .filter { r -> w.counts.keys.any { it.point != FourPointsReader.EMOTIONS && w.together(r, it) > 0 } }.take(6)
+    }
+    val cols = remember(w) {
+        listOf(FourPointsReader.BODY, FourPointsReader.URGES, FourPointsReader.THOUGHTS).flatMap { p ->
+            w.counts.filter { it.key.point == p && it.value >= 2 }.entries.sortedByDescending { it.value }.map { it.key }
+                .filter { c -> rows.any { w.together(it, c) > 0 } }.take(4)
+        }.take(9)
+    }
+    // a mood stays only if it touches something shown
+    val shownRows = rows.filter { r -> cols.any { w.together(r, it) > 0 } }
+    if (shownRows.isEmpty() || cols.isEmpty()) return
+    val k = rememberReveal(w)
+    val tm = rememberTextMeasurer()
+    val ink = Ink.text
+    Panel {
+        CardHead("MATRICA", "Sve sa svim")
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val head = 92.dp; val rowH = 34.dp; val labelW = 84.dp
+            val cell = (maxWidth - labelW) / cols.size
+            val rows = shownRows
+            Canvas(Modifier.fillMaxWidth().height(head + rowH * rows.size).pointerInput(rows) {
+                detectTapGestures { pos ->
+                    val i = ((pos.y - head.toPx()) / rowH.toPx()).toInt()
+                    if (pos.y > head.toPx() && i in rows.indices) onOpen(rows[i])
+                }
+            }) {
+                val top = cols.maxOf { c -> rows.maxOf { r -> w.together(r, c) } }.coerceAtLeast(1)
+                for ((j, c) in cols.withIndex()) {
+                    val x = labelW.toPx() + cell.toPx() * (j + 0.5f)
+                    val l = tm.measure(c.label.removePrefix("da "), TextStyle(fontFamily = UiFont, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ink), maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, constraints = androidx.compose.ui.unit.Constraints(maxWidth = 80.dp.toPx().toInt()))
+                    rotate(-55f, Offset(x, head.toPx() - 14.dp.toPx())) { drawText(l, topLeft = Offset(x, head.toPx() - 14.dp.toPx() - l.size.height / 2f)) }
+                    drawRoundRect(POINT_COLORS.getValue(c.point), Offset(x - 9.dp.toPx(), head.toPx() - 8.dp.toPx()), Size(18.dp.toPx(), 3.dp.toPx()), CornerRadius(2.dp.toPx()))
+                }
+                for ((i, r) in rows.withIndex()) {
+                    val y = head.toPx() + rowH.toPx() * (i + 0.5f)
+                    drawCircle(MOOD_COLORS[r.label] ?: POINT_COLORS.getValue(r.point), 5.dp.toPx(), Offset(6.dp.toPx(), y))
+                    val l = tm.measure(r.label, TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ink), maxLines = 1)
+                    drawText(l, topLeft = Offset(16.dp.toPx(), y - l.size.height / 2f))
+                    for ((j, c) in cols.withIndex()) {
+                        val x = labelW.toPx() + cell.toPx() * (j + 0.5f)
+                        val v = w.together(r, c)
+                        if (v == 0) { drawCircle(ink.copy(alpha = 0.16f), 1.5.dp.toPx(), Offset(x, y)); continue }
+                        val linked = v >= w.threshold
+                        val rr = (2.5f + 9f * sqrt(v.toFloat() / top)).dp.toPx() * k
+                        drawCircle(POINT_COLORS.getValue(c.point).copy(alpha = if (linked) 1f else 0.4f), rr, Offset(x, y))
+                        if (linked && rr > 8.dp.toPx()) {
+                            val n = tm.measure("$v", TextStyle(fontFamily = UiFont, fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold, color = Ink.ink))
+                            drawText(n, topLeft = Offset(x - n.size.width / 2f, y - n.size.height / 2f), alpha = k)
+                        }
+                    }
+                }
+            }
+        }
+        Text("Pune tačke su se ponovile bar ${w.threshold} puta; blijede tek jednom. Dodirni raspoloženje da vidiš šta dolazi s njim.",
+            style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
     }
 }
 

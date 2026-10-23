@@ -57,7 +57,12 @@ object Links {
         /** For each point, the share of notes that hold it. */
         val pointShare: Map<String, Float>,
         val threshold: Int,
+        /** Every pair of things of different points and the notes that hold both, links or not yet. */
+        val pairCounts: Map<Pair<Thing, Thing>, Int> = emptyMap(),
     ) {
+        /** How many notes hold both, in either order. */
+        fun together(a: Thing, b: Thing): Int = pairCounts[a to b] ?: pairCounts[b to a] ?: 0
+
         /** The things worth drawing: those with a link, the most frequent first, at most [max]. */
         fun stars(max: Int = 10): List<Thing> =
             links.flatMap { listOf(it.a, it.b) }.distinct().sortedByDescending { counts[it] ?: 0 }.take(max)
@@ -92,7 +97,7 @@ object Links {
             pointPairs[a to b] = if (n == 0) 0f else pts.count { a in it && b in it }.toFloat() / n
         }
         val share = POINTS.associateWith { p -> if (n == 0) 0f else pts.count { p in it }.toFloat() / n }
-        return Web(n, counts, links, pointPairs, share, th)
+        return Web(n, counts, links, pointPairs, share, th, pairs)
     }
 
     class With(val thing: Thing, val together: Int, val lift: Float?)
