@@ -66,8 +66,10 @@ fun ThreadsList(go: (Screen) -> Unit) {
     val t = threads
     when {
         t == null -> Text("Tražim šta se vraća…", style = BodyStyle.copy(color = Ink.soft), modifier = Modifier.padding(top = 24.dp))
-        t.isEmpty() -> Text("Nit se pojavi kad se ista stvar vrati u bilješkama različitih dana. Što više zapisuješ, to ih je više.",
-            style = BodyStyle.copy(color = Ink.soft), modifier = Modifier.padding(top = 24.dp))
+        t.isEmpty() -> Box(Modifier.padding(top = 18.dp)) {
+            EmptyState(NeboIcon.Stars, "Nit se pojavi kad se ista stvar vrati u bilješkama različitih dana, na primjer posao ili san. Što više zapisuješ, to ih je više.",
+                "Zapiši kako si", { go(Screen.CheckIn("note")) })
+        }
         else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(top = 12.dp, bottom = 130.dp)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 4.dp)) {

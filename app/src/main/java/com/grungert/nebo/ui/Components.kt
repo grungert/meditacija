@@ -411,3 +411,38 @@ fun plural(n: Int, one: String, few: String, many: String): String = when {
     n % 10 in 2..4 && n % 100 !in 12..14 -> few
     else -> many
 }
+
+/**
+ * What a card says before it has anything to show: a faint icon in a dashed ring, what will appear here and what
+ * brings it, and the one step that does, when there is one. Never an empty box, never a blame.
+ */
+@Composable
+fun EmptyState(icon: NeboIcon, text: String, action: String? = null, onAction: (() -> Unit)? = null, progress: Pair<Int, Int>? = null) {
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        Modifier.fillMaxWidth().clip(shape).background(Ink.text.copy(alpha = 0.04f))
+            .border(1.dp, Ink.text.copy(alpha = 0.12f), shape).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        val pulse = com.grungert.nebo.sky.slowPulse(4000)
+        Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(52.dp)) {
+                drawCircle(Ink.accent.copy(alpha = 0.10f + 0.08f * pulse), size.minDimension / 2)
+                drawCircle(Ink.text.copy(alpha = 0.25f), size.minDimension / 2 - 1.dp.toPx(),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5f, 6f))))
+            }
+            Icon(icon, Ink.accentInk, 24.dp)
+        }
+        Text(text, style = SmallStyle.copy(fontSize = 13.5.sp, lineHeight = 19.sp, color = Ink.text, shadow = null), textAlign = TextAlign.Center)
+        // how far there is to go, as dots: three of five
+        progress?.let { (have, need) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(need) { i -> Box(Modifier.size(8.dp).clip(CircleShape).background(if (i < have) Ink.accent else Ink.text.copy(alpha = 0.15f))) }
+                Text("  $have od $need", style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, shadow = null))
+            }
+        }
+        if (action != null && onAction != null) Text(action, style = SmallStyle.copy(fontWeight = FontWeight.ExtraBold, color = Ink.ink, shadow = null),
+            modifier = Modifier.tap(action, shape = RoundedCornerShape(14.dp), onClick = onAction).background(Ink.accent, RoundedCornerShape(14.dp))
+                .padding(horizontal = 16.dp, vertical = 9.dp))
+    }
+}

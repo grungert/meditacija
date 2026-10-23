@@ -147,19 +147,45 @@ fun StatsScreen(go: (Screen) -> Unit) {
             Column(Modifier.screenPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 var order = 0
                 Arrive(order++) { PeriodCard(d) { go(Screen.CheckIn("week")) } }
+                fun note() = go(Screen.CheckIn("note"))
+                fun sit(type: String) { context.app.settings.sessionType = type; go(Screen.Session(context.lastConfig().copy(checkInBefore = false))) }
                 if (d.moodBuckets.any { it.isNotEmpty() }) Arrive(order++) { MoodSkyCard(d) }
+                else Arrive(order++) { Panel {
+                    CardHead("NEBO RASPOLOŽENJA", "Kako ti je bilo")
+                    EmptyState(NeboIcon.Heart, "Kad uz bilješku izabereš kako ti je, ovdje se vidi kako se raspoloženja mijenjaju iz dana u dan.", "Zapiši kako si", ::note)
+                } }
                 Arrive(order++) { HelpsCard(d) { go(Screen.Setup) } }
                 web?.let { w ->
                     if (w.links.isNotEmpty()) {
                         Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations(Screen.Stats)) } }
                         Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label, back = Screen.Stats)) } }
                         Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label, back = Screen.Stats)) } }
-                    }
+                    } else Arrive(order++) { Panel {
+                        CardHead("TVOJ OBRAZAC", "Šta ide zajedno")
+                        EmptyState(NeboIcon.Points, "Kad se u bilješkama nešto vrati zajedno bar ${w.threshold} puta, na primjer briga i napeta ramena, ovdje se pokaže kako se tvoje misli, emocije, tijelo i nagoni dodiruju.",
+                            "Zapiši kako si", ::note, progress = (w.notes.coerceAtMost(10) to 10).takeIf { w.notes < 10 })
+                    } }
                 }
-                d.completion?.takeIf { it.count >= com.grungert.nebo.koan.Practice.ENOUGH }?.let { c -> Arrive(order++) { CompletionCard(c, d.completionSinceStart) } }
-                d.clouds?.takeIf { it.sessions.size >= 3 }?.let { c -> Arrive(order++) { CloudsCard(c) } }
+                val c = d.completion
+                if (c != null && c.count >= com.grungert.nebo.koan.Practice.ENOUGH) Arrive(order++) { CompletionCard(c, d.completionSinceStart) }
+                else Arrive(order++) { Panel {
+                    CardHead("ZAVRŠAVANJE", "Koliko odsjediš")
+                    EmptyState(NeboIcon.Hourglass, "Kad odsjediš nekoliko sesija sa izabranom dužinom, ovdje se vidi koje dužine i koje doba dana ti najlakše prijaju.",
+                        "Kreni sa 3 minuta", { sit("hourglass") }, progress = (c?.count ?: 0) to com.grungert.nebo.koan.Practice.ENOUGH)
+                } }
+                val cl = d.clouds
+                if (cl != null && cl.sessions.size >= 3) Arrive(order++) { CloudsCard(cl) }
+                else Arrive(order++) { Panel {
+                    CardHead("OBLACI", "Koliko misli dolazi")
+                    EmptyState(NeboIcon.Cloud, "U Oblacima dodirneš nebo svaki put kad primijetiš misao. Poslije nekoliko sesija ovdje se vidi da li dolaze rjeđe nego na početku.",
+                        "Probaj Oblake", { sit("thoughts") }, progress = (cl?.sessions?.size ?: 0) to 3)
+                } }
                 Arrive(order++) { BodyCard(d) }
                 Arrive(order++) { MindCard(d) }
+                if (d.dayPartSessions.none { it > 0 }) Arrive(order++) { Panel {
+                    CardHead("DOBA DANA", "Kad sjedneš")
+                    EmptyState(NeboIcon.Sun, "U ovom periodu još nema sesija. Kad sjedneš, ovdje se vidi da li ti više prija jutro, dan, veče ili noć.", "Kreni", { go(Screen.Home) })
+                } }
                 if (d.dayPartSessions.any { it > 0 }) Arrive(order++) {
                     Panel {
                         CardHead("DOBA DANA", "Kad sjedneš")
@@ -179,6 +205,10 @@ fun StatsScreen(go: (Screen) -> Unit) {
                     }
                 }
                 if (d.themes.isNotEmpty()) Arrive(order++) { ThemesCard(d) }
+                else Arrive(order++) { Panel {
+                    CardHead("TEME", "Šta se vraća")
+                    EmptyState(NeboIcon.Journal, "Kad zapišeš ili izgovoriš nekoliko misli, ovdje se pokaže o čemu najčešće pišeš: posao, san, odnosi…", "Zapiši kako si", ::note)
+                } }
                 Arrive(order++) { Tiles(d) }
             }
         }
@@ -906,8 +936,7 @@ private fun CloudsCard(c: com.grungert.nebo.koan.Practice.Clouds) {
 private fun BodyCard(d: StatsData) {
     Panel {
         CardHead("TIJELO", "Gdje nosiš napetost")
-        if (d.tension.isEmpty()) Text("Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.",
-            style = SmallStyle.copy(shadow = null))
+        if (d.tension.isEmpty()) EmptyState(NeboIcon.Body, "Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.")
         else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 BodyMap(d.tension, Modifier.width(104.dp).height(220.dp))
@@ -942,8 +971,7 @@ private fun MindCard(d: StatsData) {
     Panel {
         CardHead("UM", "Gdje je bio um")
         if (d.times.isEmpty() && d.habits.isEmpty() && d.wander.isEmpty()) {
-            Text("Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.",
-                style = SmallStyle.copy(shadow = null))
+            EmptyState(NeboIcon.Cloud, "Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.")
             return@Panel
         }
         if (d.times.isNotEmpty()) {
@@ -1009,7 +1037,8 @@ private fun ThemesCard(d: StatsData) {
 @Composable
 private fun Tiles(d: StatsData) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (d.waves.isNotEmpty()) {
+        if (d.waves.isEmpty()) Tile("TALAS", NeboIcon.Wave, "—", "kad te nešto vuče, probaj Talas: poriv raste i opada", Modifier.weight(1f))
+        else {
             val all = d.waves.sumOf { it.count }
             val before = d.waves.sumOf { (it.before * it.count).toDouble() } / all
             val after = d.waves.sumOf { (it.after * it.count).toDouble() } / all

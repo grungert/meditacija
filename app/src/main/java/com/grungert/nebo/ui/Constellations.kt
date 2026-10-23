@@ -153,8 +153,10 @@ fun ConstellationsScreen(sc: Screen.Constellations, host: SkyHost, go: (Screen) 
                 val w = web
                 when {
                     w == null -> Text("Tražim veze…", style = SmallStyle, modifier = Modifier.align(Alignment.TopCenter))
-                    w.links.isEmpty() -> Text("Veze se pokažu kad se nešto u bilješkama vrati bar ${w.threshold} puta zajedno. Zapisuj, i nebo će se popuniti.",
-                        style = BodyStyle, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).screenPadding())
+                    w.links.isEmpty() -> Box(Modifier.align(Alignment.Center).screenPadding()) {
+                        EmptyState(NeboIcon.Stars, "Veze se pokažu kad se nešto u bilješkama vrati bar ${w.threshold} puta zajedno. Zapisuj, i nebo će se popuniti zvijezdama.",
+                            "Zapiši kako si", { go(Screen.CheckIn("note")) })
+                    }
                     else -> ThingsSky(w, { th -> go(Screen.Focus(th.point, th.label, back = sc)) }, Modifier.fillMaxSize())
                 }
             } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {

@@ -253,9 +253,11 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                             val r = rows
                             val m = meaning
                             val bySense = query.trim().length >= 3 && app.recommender.usesMeaning
-                            if (r != null && r.isEmpty() && (query.isBlank() || !bySense || m?.isEmpty() == true)) Text(
-                                if (query.isNotBlank()) "Ništa ne odgovara pretrazi." else "Ovdje će se pojaviti tvoje sesije i zapažanja.",
-                                style = BodyStyle.copy(color = Ink.soft, shadow = null), modifier = Modifier.padding(24.dp))
+                            if (r != null && r.isEmpty() && (query.isBlank() || !bySense || m?.isEmpty() == true)) Box(Modifier.padding(18.dp)) {
+                                if (query.isNotBlank()) EmptyState(NeboIcon.Search, "Ništa ne odgovara „${query.trim()}“. Probaj jednu riječ, ili raspoloženje: „mirno“, „umorno“.")
+                                else EmptyState(NeboIcon.Journal, "Ovdje će biti tvoje bilješke i sesije, dan po dan. Jedna riječ o tome kako si je dovoljna za početak.",
+                                    "Zapiši prvu bilješku", { go(Screen.CheckIn("note")) })
+                            }
                             LazyColumn(state = list, contentPadding = PaddingValues(start = 10.dp, end = 18.dp, top = 6.dp, bottom = 140.dp)) {
                                 items(r ?: emptyList(), key = { row ->
                                     when (row) { is DayHead -> "d" + row.label; is SessionsOfDay -> "s" + row.day; is NoteRow -> "n" + row.entry.id; else -> row.hashCode() }
@@ -446,8 +448,9 @@ private fun InsightsList(starred: List<Entry>?, threadOf: Map<Long, com.grungert
     onStar: (Entry) -> Unit, onEdit: (Entry) -> Unit, go: (Screen) -> Unit) {
     val s = starred ?: return
     if (s.isEmpty()) {
-        Text("Označi bilješku koja ti je nešto otvorila, oznakom gore desno. Ovdje će se skupljati, a starije će ti se povremeno vraćati.",
-            style = BodyStyle.copy(color = Ink.soft, shadow = null), modifier = Modifier.padding(24.dp))
+        Box(Modifier.padding(18.dp)) {
+            EmptyState(NeboIcon.Bookmark, "Kad ti neka bilješka nešto otvori, sačuvaj je oznakom gore desno na njoj. Ovdje će se skupljati, a starije će ti se povremeno vraćati.")
+        }
         return
     }
     // one from at least two weeks ago, a different one each day
