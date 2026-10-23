@@ -703,33 +703,6 @@ fun percents(counts: List<Int>): List<Int> {
     return out
 }
 
-class StatsData(
-    val weekMinutes: Int, val weekSessions: Int, val weekNotes: Int, val weeks: List<Int>, val weekLabels: List<String>, val dayParts: List<Int>,
-    val types: List<Pair<String, Int>>, val themes: List<Pair<String, Int>>, val shifts: List<Pair<String, Int>>,
-    val promptsFired: Int, val promptsAnswered: Int, val esmByPart: List<Int>,
-    val moodWeeks: List<Map<String, Int>>,
-    val links: List<PointLink> = emptyList(),
-    /** How often each part of the body was named as tense: in scans (once a scan) and in notes' body point. */
-    val tension: Map<String, Int> = emptyMap(),
-    val scans: Int = 0,
-    /** The habits of mind in the last 30 days' notes, the mind's time, and where it went during clouds sessions. */
-    val habits: List<Pair<String, Int>> = emptyList(),
-    val times: Map<MindHabits.Time, Int> = emptyMap(),
-    val wander: List<Pair<String, Int>> = emptyList(),
-    /** Waves ridden, per pull: how many, and how strong on average before and after. */
-    val waves: List<WaveSummary> = emptyList(),
-    /** What helps: sessions with a note before and after, and what they show. */
-    val helps: com.grungert.nebo.koan.WhatHelps.Finding? = null,
-    /** Minutes on each day of this week, Monday to Sunday; -1 for the days still ahead. */
-    val weekDays: List<Int> = List(7) { -1 },
-    /** Sessions in the morning, by day, in the evening and at night. */
-    val dayPartSessions: List<Int> = List(4) { 0 },
-    /** The first mood before and the first after a session, and how many sessions went that way. */
-    val flows: List<Triple<String, String, Int>> = emptyList(),
-    /** Sessions with a note both before and after. */
-    val flowPairs: Int = 0,
-)
-
 /** Where tension was named: each scan counts a part once, each note once for each part its body point names. */
 fun tensionCounts(sessions: List<Session>, entries: List<Entry>): Map<String, Int> {
     val c = HashMap<String, Int>()
@@ -759,72 +732,6 @@ fun pointLinks(entries: List<Entry>): List<PointLink> {
             if (body == null && urge == null) null else PointLink(mood, body, urge, together(body, urge))
         }
         .sortedByDescending { it.times }.take(5)
-}
-
-private fun dayPart(t: Long): Int {
-    val h = Calendar.getInstance().apply { timeInMillis = t }.get(Calendar.HOUR_OF_DAY)
-    return when (h) { in 5..11 -> 0; in 12..16 -> 1; in 17..21 -> 2; else -> 3 }
-}
-
-fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<com.grungert.nebo.data.Prompt>): StatsData {
-    val cal = Calendar.getInstance().apply {
-        firstDayOfWeek = Calendar.MONDAY
-        set(Calendar.DAY_OF_WEEK, Calendar.MONDAY); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
-    val thisWeek = cal.timeInMillis
-    // week starts step by the calendar: a week with a clock change is 167 or 169 hours, and its Monday stays a Monday
-    fun weekStart(k: Int) = (cal.clone() as Calendar).apply { add(Calendar.WEEK_OF_YEAR, -k) }.timeInMillis
-    fun inWeek(t: Long, k: Int) = t >= weekStart(k) && t < weekStart(k - 1)
-    val weeks = (7 downTo 0).map { k -> (sessions.filter { inWeek(it.startedAt, k) }.sumOf { it.actualSec } + 59) / 60 }
-    val labels = (7 downTo 0).map { k -> SimpleDateFormat("d.M.", Locale.ROOT).format(Date(weekStart(k))) }
-    // minutes rounded up, so a short sit still shows
-    val parts = IntArray(4).also { a -> sessions.forEach { a[dayPart(it.startedAt)] += it.actualSec } }.map { (it + 59) / 60 }
-    val types = sessions.groupingBy { it.type }.eachCount().toList().sortedByDescending { it.second }
-    val themeCount = HashMap<String, Int>()
-    for (e in entries) {
-        val ts = (e.themes.ifEmpty { Lexicon.themes(e.words) } + e.moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }).toSet()
-        ts.forEach { themeCount[it] = (themeCount[it] ?: 0) + 1 }
-    }
-    val shifts = HashMap<String, Int>()
-    val flows = HashMap<Pair<String, String>, Int>()
-    for (s in sessions) {
-        val b = entries.firstOrNull { it.sessionId == s.id && it.kind == "before" }?.moods?.firstOrNull() ?: continue
-        val a = entries.firstOrNull { it.sessionId == s.id && it.kind == "after" }?.moods?.firstOrNull() ?: continue
-        val k = "$b → $a"; shifts[k] = (shifts[k] ?: 0) + 1
-        flows[b to a] = (flows[b to a] ?: 0) + 1
-    }
-    val now = System.currentTimeMillis()
-    val weekDays = (0 until 7).map { i ->
-        val from = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }.timeInMillis
-        val to = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i + 1) }.timeInMillis
-        if (from > now) -1 else sessions.filter { it.startedAt in from until to }.sumOf { it.actualSec } / 60
-    }
-    val fired = prompts.filter { it.firedAt != null }
-    val esm = entries.filter { it.kind == "esm" }
-    val month = entries.filter { it.createdAt >= System.currentTimeMillis() - 30 * 86_400_000L }
-    val mind = month.map { com.grungert.nebo.koan.MindHabits.mindOf(it) }
-    return StatsData(
-        // the bars round each week up so a short sit still shows; the week's own number counts like Home and the week review
-        weekMinutes = sessions.filter { it.startedAt >= thisWeek }.sumOf { it.actualSec } / 60, weekSessions = sessions.count { it.startedAt >= thisWeek }, weekNotes = entries.count { it.createdAt >= thisWeek }, weeks = weeks, weekLabels = labels,
-        dayParts = parts, types = types, themes = themeCount.toList().sortedByDescending { it.second }.take(8),
-        shifts = shifts.toList().sortedByDescending { it.second }.take(6),
-        promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null }, links = pointLinks(entries),
-        esmByPart = IntArray(4).also { a -> esm.forEach { a[dayPart(it.createdAt)]++ } }.toList(),
-        moodWeeks = (7 downTo 0).map { k ->
-            entries.filter { inWeek(it.createdAt, k) }.flatMap { it.moods }.groupingBy { it }.eachCount()
-        },
-        tension = tensionCounts(sessions, entries),
-        scans = sessions.count { it.type == "bodyscan" },
-        habits = MindHabits.HABITS.map { h -> h.id to mind.count { h.id in MindHabits.habits(it) } }.filter { it.second > 0 }.sortedByDescending { it.second },
-        times = mind.mapNotNull { MindHabits.time(it) }.groupingBy { it }.eachCount(),
-        wander = sessions.flatMap { it.wander }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
-        waves = waveSummaries(sessions),
-        helps = com.grungert.nebo.koan.WhatHelps.find(sessions, entries),
-        weekDays = weekDays,
-        dayPartSessions = IntArray(4).also { a -> sessions.filter { it.actualSec >= 30 }.forEach { a[dayPart(it.startedAt)]++ } }.toList(),
-        flows = flows.entries.sortedByDescending { it.value }.map { Triple(it.key.first, it.key.second, it.value) },
-        flowPairs = flows.values.sum(),
-    )
 }
 
 /** Rounded bars on one scale, the value above each; the latest one in warm light. */

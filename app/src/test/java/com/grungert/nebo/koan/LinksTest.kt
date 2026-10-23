@@ -57,6 +57,8 @@ class LinksTest {
         val notes = List(2) { note(it + 1, 21, listOf("zabrinuto"), text = "Šta ako ne stignem do petka") }
         val w = Links.web(notes)
         assertEquals(Thing(FourPointsReader.THOUGHTS, "„šta ako“"), w.links.single().let { if (it.a.point == FourPointsReader.THOUGHTS) it.a else it.b })
+        val f = Links.focus(notes, Thing(FourPointsReader.THOUGHTS, "„šta ako“"))
+        assertEquals("Uveče, kad je tu „šta ako“, uz to dođe „zabrinuto“ 2 od 2 puta.", f.sentence())
     }
 
     @Test

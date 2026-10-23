@@ -118,7 +118,9 @@ object Links {
         fun sentence(): String? {
             val top = with.firstOrNull() ?: return part?.let { "Najčešće dolazi ${PART_WHEN[it]}: $partCount od $notes puta." }
             val whenPart = part?.let { PART_WHEN[it].replaceFirstChar { c -> c.uppercase() } + ", " } ?: ""
-            val lead = if (whenPart.isEmpty()) "Kad je tu „${thing.label}“, " else whenPart + "kad je tu „${thing.label}“, "
+            // habits of mind carry their own quotes ("„šta ako“"): the sentence adds them once
+            val name = thing.label.trim('„', '“')
+            val lead = if (whenPart.isEmpty()) "Kad je tu „$name“, " else whenPart + "kad je tu „$name“, "
             return lead + "uz to dođe „${top.thing.label.trim('„', '“')}“ ${top.together} od $notes puta."
         }
     }

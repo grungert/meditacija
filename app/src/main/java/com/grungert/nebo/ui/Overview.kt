@@ -1,5 +1,11 @@
 package com.grungert.nebo.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -97,129 +103,259 @@ private fun CardHead(kicker: String, title: String) {
     }
 }
 
+/** The span last looked at, so coming back to the overview shows the same one. */
+private var lastRange: StatsRange? = null
+
 /**
- * A calm overview, no streaks and no scores: what happened this week, how it felt, what helps, where the body holds
- * things, where the mind goes, and how it all comes together. Each card comes up in turn and its drawing grows in.
+ * A calm overview, no streaks and no scores: what happened in a span of time (this week by default, or a month, three
+ * months, a year, or any dates on the calendar), how it felt, what helps, how things come together, where the body
+ * holds them, where the mind goes. Each card comes up in turn and its drawing grows in; legends switch parts on and off.
  */
 @Composable
 fun StatsScreen(go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
+    var range by remember { mutableStateOf(lastRange ?: StatsRange.of(RangeKind.WEEK)) }
+    LaunchedEffect(range) { lastRange = range }
+    var picking by remember { mutableStateOf(false) }
     var data by remember { mutableStateOf<StatsData?>(null) }
     var web by remember { mutableStateOf<Links.Web?>(null) }
     var seen by remember { mutableStateOf<List<Pair<Set<com.grungert.nebo.koan.Thing>, Long>>>(emptyList()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(range) {
         withContext(Dispatchers.IO) {
             val entries = app.db.entries()
-            data = computeStats(app.db.sessions(), entries, app.db.prompts(0))
-            // the notes of the last two months, each read once for all the cards about links
-            seen = Links.seen(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
+            data = computeStats(app.db.sessions(), entries, app.db.prompts(0), range)
+            // the span's notes, each read once for all the cards about links
+            seen = Links.seen(entries.filter { it.createdAt >= range.from && it.createdAt < range.to })
             web = Links.webOf(seen.map { it.first })
         }
     }
-    val week = Calendar.getInstance().get(Calendar.WEEK_OF_YEAR)
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(
-            Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).screenPadding().padding(top = 12.dp, bottom = 130.dp),
+            Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(top = 12.dp, bottom = 130.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Row(verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Text((SimpleDateFormat("LLLL", Locale.forLanguageTag("sr-Latn-ME")).format(Date()) + " · $week. sedmica").uppercase(), style = LabelStyle)
-                    Text("Pregled", style = TitleStyle.copy(fontSize = 38.sp, lineHeight = 42.sp))
-                }
-                GlassButton("Sedmica", { go(Screen.CheckIn("week")) }, icon = NeboIcon.Week)
+            Column(Modifier.screenPadding()) {
+                Text(ijekavian(SimpleDateFormat("EEEE, d. MMMM", Locale.forLanguageTag("sr-Latn-ME")).format(Date())).uppercase(), style = LabelStyle)
+                Text("Pregled", style = TitleStyle.copy(fontSize = 38.sp, lineHeight = 42.sp))
+                Text("Ne mjeri koliko si dobar, nego šta primjećuješ.", style = BodyStyle.copy(fontSize = 15.sp, color = Ink.soft))
             }
-            Text("Ne mjeri koliko si dobar, nego šta primjećuješ.", style = BodyStyle.copy(fontSize = 15.sp, color = Ink.soft))
+            RangePills(range, { range = StatsRange.of(it) }, { picking = true })
             val d = data ?: return@Column
-            var order = 0
-            Arrive(order++) { WeekCard(d) }
-            if (d.moodWeeks.any { it.isNotEmpty() }) Arrive(order++) { MoodSkyCard(d) }
-            Arrive(order++) { HelpsCard(d) { go(Screen.Setup) } }
-            web?.let { w ->
-                if (w.links.isNotEmpty()) {
-                    Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations) } }
-                    Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label)) } }
-                    Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label)) } }
+            Column(Modifier.screenPadding(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                var order = 0
+                Arrive(order++) { PeriodCard(d) { go(Screen.CheckIn("week")) } }
+                if (d.moodBuckets.any { it.isNotEmpty() }) Arrive(order++) { MoodSkyCard(d) }
+                Arrive(order++) { HelpsCard(d) { go(Screen.Setup) } }
+                web?.let { w ->
+                    if (w.links.isNotEmpty()) {
+                        Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations) } }
+                        Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label)) } }
+                        Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label)) } }
+                    }
                 }
-            }
-            Arrive(order++) { BodyCard(d) }
-            Arrive(order++) { MindCard(d) }
-            if (d.dayPartSessions.any { it > 0 }) Arrive(order++) {
-                Panel {
-                    CardHead("DOBA DANA", "Kad sjedneš")
-                    DayParts(d.dayPartSessions)
-                    val lead = d.dayPartSessions.indices.maxBy { d.dayPartSessions[it] }
-                    if (d.dayPartSessions[lead] >= 2 && d.dayPartSessions.count { it == d.dayPartSessions[lead] } == 1)
-                        Text("Najčešće ${Links.PART_WHEN[lead]}.", style = ReadStyle)
+                Arrive(order++) { BodyCard(d) }
+                Arrive(order++) { MindCard(d) }
+                if (d.dayPartSessions.any { it > 0 }) Arrive(order++) {
+                    Panel {
+                        CardHead("DOBA DANA", "Kad sjedneš")
+                        DayParts(d.dayPartSessions)
+                        val lead = d.dayPartSessions.indices.maxBy { d.dayPartSessions[it] }
+                        if (d.dayPartSessions[lead] >= 2 && d.dayPartSessions.count { it == d.dayPartSessions[lead] } == 1)
+                            Text("Najčešće ${Links.PART_WHEN[lead]}.", style = ReadStyle)
+                    }
                 }
-            }
-            Arrive(order++) {
-                Panel {
-                    CardHead("OSAM SEDMICA", "Minute po sedmici")
-                    Bars(d.weeks.map { it.toFloat() }, d.weekLabels, highlightLast = true)
+                if (d.history.size > 1) Arrive(order++) {
+                    Panel {
+                        CardHead("KROZ VRIJEME", when (d.range.kind) {
+                            RangeKind.WEEK -> "Minute po sedmici"; RangeKind.MONTH -> "Minute po 30 dana"; RangeKind.QUARTER -> "Minute po tri mjeseca"
+                            RangeKind.YEAR -> "Minute po godini"; RangeKind.CUSTOM -> "Minute po periodu iste dužine"
+                        })
+                        Bars(d.history.map { it.toFloat() }, d.historyLabels, highlightLast = true)
+                    }
                 }
+                if (d.themes.isNotEmpty()) Arrive(order++) { ThemesCard(d) }
+                Arrive(order++) { Tiles(d) }
             }
-            if (d.themes.isNotEmpty()) Arrive(order++) { ThemesCard(d) }
-            Arrive(order++) { Tiles(d) }
+        }
+        if (picking) RangePickerDialog({ a, b -> picking = false; range = StatsRange.custom(a, b) }, { picking = false })
+    }
+}
+
+/** The spans as pills that scroll sideways; the last one opens the calendar, and shows the dates once chosen. */
+@Composable
+private fun RangePills(range: StatsRange, onKind: (RangeKind) -> Unit, onPick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        for (k in RangeKind.entries) {
+            val on = range.kind == k
+            val bg by animateColorAsState(if (on) Ink.accent else Ink.surface, label = "range")
+            Row(
+                Modifier.tap(k.pill, androidx.compose.ui.semantics.Role.Tab, shape = RoundedCornerShape(18.dp)) { if (k == RangeKind.CUSTOM) onPick() else onKind(k) }
+                    .background(bg, RoundedCornerShape(18.dp)).padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (k == RangeKind.CUSTOM) Icon(NeboIcon.Week, if (on) Ink.ink else Ink.text, 16.dp, filled = on)
+                Text(if (k == RangeKind.CUSTOM && on) range.title else k.pill,
+                    style = SmallStyle.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = if (on) Ink.ink else Ink.text, shadow = null), maxLines = 1, softWrap = false)
+            }
         }
     }
 }
 
-/** This week: three figures, and the minutes of each day as a breath-like wave; the days ahead wait as dashed rings. */
+/** The calendar's day (UTC midnight) as the same day at local midnight. */
+private fun localDay(utc: Long): Long {
+    val u = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utc }
+    return Calendar.getInstance().apply { clear(); set(u.get(Calendar.YEAR), u.get(Calendar.MONTH), u.get(Calendar.DAY_OF_MONTH)) }.timeInMillis
+}
+
+/** Any dates, up to today, on a calendar in the app's colours. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun WeekCard(d: StatsData) {
+private fun RangePickerDialog(onPick: (Long, Long) -> Unit, onDismiss: () -> Unit) {
+    val state = androidx.compose.material3.rememberDateRangePickerState(selectableDates = object : androidx.compose.material3.SelectableDates {
+        override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= System.currentTimeMillis()
+    })
+    val colors = androidx.compose.material3.DatePickerDefaults.colors(
+        containerColor = Ink.sheet, titleContentColor = Ink.soft, headlineContentColor = Ink.text, weekdayContentColor = Ink.soft,
+        subheadContentColor = Ink.soft, navigationContentColor = Ink.text, yearContentColor = Ink.text, currentYearContentColor = Ink.accentInk,
+        selectedYearContainerColor = Ink.accent, selectedYearContentColor = Ink.ink, dayContentColor = Ink.text, disabledDayContentColor = Ink.faint,
+        selectedDayContainerColor = Ink.accent, selectedDayContentColor = Ink.ink, todayContentColor = Ink.accentInk, todayDateBorderColor = Ink.accentInk,
+        dayInSelectionRangeContainerColor = Ink.accent.copy(alpha = 0.35f), dayInSelectionRangeContentColor = Ink.text, dividerColor = Ink.hairline,
+    )
+    val start = state.selectedStartDateMillis; val end = state.selectedEndDateMillis
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton({ if (start != null) onPick(localDay(start), localDay(end ?: start)) }, enabled = start != null) {
+                Text("Prikaži", style = BodyStyle.copy(fontWeight = FontWeight.Bold, color = if (start != null) Ink.accentInk else Ink.faint, shadow = null))
+            }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onDismiss) { Text("Otkaži", style = BodyStyle.copy(color = Ink.soft, shadow = null)) } },
+        colors = colors,
+    ) {
+        androidx.compose.material3.DateRangePicker(state, Modifier.weight(1f), colors = colors, showModeToggle = false,
+            title = { Text("Izaberi period", style = KickerStyle, modifier = Modifier.padding(start = 24.dp, top = 20.dp)) },
+            headline = {
+                Text(if (start == null) "Od kog dana?" else if (end == null) "${SimpleDateFormat("d. M.", Locale.ROOT).format(Date(localDay(start)))} – do kog dana?"
+                    else "${SimpleDateFormat("d. M.", Locale.ROOT).format(Date(localDay(start)))} – ${SimpleDateFormat("d. M. yyyy.", Locale.ROOT).format(Date(localDay(end)))}",
+                    style = HeadStyle.copy(fontSize = 20.sp, shadow = null), modifier = Modifier.padding(start = 24.dp, bottom = 12.dp))
+            })
+    }
+}
+
+/** A figure with what it was in the span before: an arrow up or down and by how much, in quiet grey, never a score. */
+@Composable
+private fun Figure(n: Int, label: String, before: Int, modifier: Modifier) {
+    Column(modifier.clip(RoundedCornerShape(20.dp)).background(Ink.text.copy(alpha = 0.05f)).padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("$n", style = NumberStyle.copy(fontSize = 30.sp, lineHeight = 34.sp))
+        Text(label, style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.text, shadow = null), maxLines = 1)
+        val diff = n - before
+        Text(when { diff > 0 -> "↑ $diff"; diff < 0 -> "↓ ${-diff}"; else -> "kao prije" }, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, shadow = null))
+    }
+}
+
+/**
+ * The span at a glance: which span, one sentence on how many days held a sit, three figures beside the span before,
+ * the minutes as a wave over its days (or weeks, or months), and the way to the week's review.
+ */
+@Composable
+private fun PeriodCard(d: StatsData, onReview: () -> Unit) {
+    val r = d.range
     Panel {
-        CardHead("OVA SEDMICA", if (d.weekMinutes == 0) "Sedmica tek počinje" else "${d.weekMinutes} ${plural(d.weekMinutes, "minuta", "minute", "minuta")} prisutnosti")
-        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-            for ((n, label) in listOf(d.weekMinutes to "minuta", d.weekSessions to plural(d.weekSessions, "sesija", "sesije", "sesija"), d.weekNotes to plural(d.weekNotes, "zapis", "zapisa", "zapisa")))
-                Column {
-                    Text("$n", style = NumberStyle)
-                    Text(label, style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
-                }
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(r.title.uppercase() + (if (r.kind != RangeKind.CUSTOM) " · " + SimpleDateFormat("d. M.", Locale.ROOT).format(Date(r.from)) + " – " +
+                SimpleDateFormat("d. M.", Locale.ROOT).format(Date(r.to - 1)) else ""), style = KickerStyle)
+            Text(when {
+                d.practicedDays == 0 && r.kind == RangeKind.WEEK && d.daysSoFar <= 1 -> "Sedmica tek počinje"
+                d.practicedDays == 0 -> "U ovom periodu još nema sesija"
+                else -> "Meditacija u ${d.practicedDays} od ${d.daysSoFar} ${plural(d.daysSoFar, "dana", "dana", "dana")}"
+            }, style = HeadStyle.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold, shadow = null))
         }
-        WeekWave(d.weekDays)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Figure(d.minutes, "minuta", d.prevMinutes, Modifier.weight(1f))
+            Figure(d.sessions, plural(d.sessions, "sesija", "sesije", "sesija"), d.prevSessions, Modifier.weight(1f))
+            Figure(d.notes, plural(d.notes, "zapis", "zapisa", "zapisa"), d.prevNotes, Modifier.weight(1f))
+        }
+        Text("Strelice: u odnosu na " + when (r.kind) {
+            RangeKind.WEEK -> "prošlu sedmicu"; RangeKind.MONTH -> "prethodnih 30 dana"; RangeKind.QUARTER -> "prethodna tri mjeseca"
+            RangeKind.YEAR -> "godinu prije"; RangeKind.CUSTOM -> "isto toliko dana prije"
+        } + ".", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+        Wave(d.wave, d.waveLabels)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val peak = d.wave.indices.filter { d.wave[it] > 0 }.maxByOrNull { d.wave[it] }
+            // a day's letter says too little ("P" is Monday and Friday): the day by name when the stretches are days
+            val name = peak?.let { if (r.days <= 31) ijekavian(SimpleDateFormat(if (r.days <= 7) "EEEE" else "d. M.", Locale.forLanguageTag("sr-Latn-ME"))
+                .format(Date(r.from + it * 86_400_000L + 43_200_000L))) else d.waveLabels[it] }
+            Text(if (peak == null) "" else "Najviše: ${name?.replaceFirstChar { it.uppercase() }} · ${d.wave[peak]} min",
+                style = SmallStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null), modifier = Modifier.weight(1f))
+            Row(Modifier.tap("Sedmični pregled", shape = RoundedCornerShape(14.dp), onClick = onReview).padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Sedmični pregled", style = SmallStyle.copy(fontWeight = FontWeight.ExtraBold, color = Ink.accentInk, shadow = null))
+                Icon(NeboIcon.Forward, Ink.accentInk, 13.dp)
+            }
+        }
     }
 }
 
-private val DAYS = listOf("P", "U", "S", "Č", "P", "S", "N")
-
+/**
+ * The minutes of each stretch as a breath-like wave; stretches still ahead wait as dashed rings. With many stretches
+ * only a few labels show, and only the highest and the last get a dot.
+ */
 @Composable
-private fun WeekWave(days: List<Int>) {
-    val k = rememberReveal(days, 1100)
+private fun Wave(values: List<Int>, labels: List<String>) {
+    val k = rememberReveal(values, 1100)
     val tm = rememberTextMeasurer()
     val ink = Ink.text
     val dot = if (Ink.day) Color.White else Color(0xFF16244A)
+    val gold = Color(0xFFE0A04E)
     Canvas(Modifier.fillMaxWidth().height(124.dp)) {
+        val n = values.size
+        if (n == 0) return@Canvas
         val w = size.width
         val base = size.height - 26.dp.toPx()
         val top = 22.dp.toPx()
-        val max = (days.maxOrNull() ?: 0).coerceAtLeast(1).toFloat()
-        val xs = (0..6).map { 14.dp.toPx() + it * (w - 28.dp.toPx()) / 6 }
+        val max = (values.maxOrNull() ?: 0).coerceAtLeast(1).toFloat()
+        val xs = (0 until n).map { 14.dp.toPx() + it * (w - 28.dp.toPx()) / (n - 1).coerceAtLeast(1) }
         fun y(v: Int) = base - (base - top) * (v / max)
-        val done = days.withIndex().filter { it.value >= 0 }.map { Offset(xs[it.index], y(it.value)) }
+        val done = values.withIndex().filter { it.value >= 0 }.map { Offset(xs[it.index], y(it.value)) }
         drawLine(ink.copy(alpha = 0.12f), Offset(0f, base), Offset(w, base), 1.dp.toPx())
-        if (done.size >= 2) clipRect(right = w * k) {
-            val line = smoothPath(done)
+        // many stretches (a month of days) read better as thin bars than as a curve that spikes between empty days
+        if (n > 10) {
+            val bw = ((w - 28.dp.toPx()) / n * 0.55f).coerceAtMost(10.dp.toPx())
+            val peakAt = values.indices.filter { values[it] >= 0 }.maxByOrNull { values[it] }
+            for ((i, v) in values.withIndex()) {
+                if (v < 0) continue
+                val hh = ((base - top) * (v / max) * k).coerceAtLeast(if (v > 0) 4.dp.toPx() else 2.dp.toPx())
+                drawRoundRect(if (i == peakAt) gold else Ink.accent.copy(alpha = if (v > 0) 0.9f else 0.35f), Offset(xs[i] - bw / 2, base - hh), Size(bw, hh), CornerRadius(bw / 2))
+            }
+        } else if (done.size >= 2) clipRect(right = w * k) {
             val area = smoothPath(done).apply { lineTo(done.last().x, base); lineTo(done.first().x, base); close() }
             drawPath(area, Brush.verticalGradient(listOf(Ink.accent.copy(alpha = 0.85f), Ink.accent.copy(alpha = 0.04f)), startY = top, endY = base))
-            drawPath(line, Color(0xFFE0A04E), style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
+            drawPath(smoothPath(done), gold, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round))
         }
-        val peak = days.indices.filter { days[it] >= 0 }.maxByOrNull { days[it] }
-        for ((i, v) in days.withIndex()) {
-            if (v < 0) drawCircle(ink.copy(alpha = 0.25f), 3.dp.toPx(), Offset(xs[i], base), style = Stroke(1.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f))))
-            else if (xs[i] <= w * k + 1) {
-                drawCircle(if (i == peak) Color(0xFFE0A04E) else dot, (if (i == peak) 5f else 3.5f).dp.toPx(), Offset(xs[i], y(v)))
-                drawCircle(Color(0xFFE0A04E), (if (i == peak) 5f else 3.5f).dp.toPx(), Offset(xs[i], y(v)), style = Stroke(2.dp.toPx()))
+        val peak = values.indices.filter { values[it] >= 0 }.maxByOrNull { values[it] }
+        val lastDone = values.indices.lastOrNull { values[it] >= 0 }
+        val many = n > 10
+        val every = if (many) ((n + 4) / 5) else 1
+        for ((i, v) in values.withIndex()) {
+            if (v < 0) { if (!many) drawCircle(ink.copy(alpha = 0.25f), 3.dp.toPx(), Offset(xs[i], base), style = Stroke(1.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))) }
+            else if (!many && xs[i] <= w * k + 1) {
+                val r = (if (i == peak) 5f else 3.5f).dp.toPx()
+                drawCircle(if (i == peak) gold else dot, r, Offset(xs[i], y(v)))
+                drawCircle(gold, r, Offset(xs[i], y(v)), style = Stroke(2.dp.toPx()))
             }
-            val l = tm.measure(DAYS[i], TextStyle(fontFamily = UiFont, fontSize = 11.5.sp, fontWeight = if (i == peak) FontWeight.ExtraBold else FontWeight.SemiBold,
-                color = ink.copy(alpha = if (i == peak) 1f else 0.6f)))
-            drawText(l, topLeft = Offset(xs[i] - l.size.width / 2f, base + 8.dp.toPx()))
+            if (i % every == 0 || i == n - 1 && (n - 1) % every >= every / 2) {
+                val l = tm.measure(labels.getOrElse(i) { "" }, TextStyle(fontFamily = UiFont, fontSize = 11.sp, fontWeight = if (i == peak) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    color = ink.copy(alpha = if (i == peak) 1f else 0.6f)))
+                drawText(l, topLeft = Offset((xs[i] - l.size.width / 2f).coerceIn(0f, w - l.size.width), base + 8.dp.toPx()))
+            }
         }
-        if (peak != null && days[peak] > 0) {
-            val l = tm.measure("${days[peak]} min", TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = ink))
-            drawText(l, topLeft = Offset((xs[peak] - l.size.width / 2f).coerceIn(0f, w - l.size.width), y(days[peak]) - l.size.height - 8.dp.toPx()), alpha = k)
+        if (peak != null && values[peak] > 0) {
+            val l = tm.measure("${values[peak]} min", TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = ink))
+            drawText(l, topLeft = Offset((xs[peak] - l.size.width / 2f).coerceIn(0f, w - l.size.width), y(values[peak]) - l.size.height - 8.dp.toPx()), alpha = k)
         }
     }
 }
@@ -227,61 +363,128 @@ private fun WeekWave(days: List<Int>) {
 /** Calm moods first, so the stream reads from light to heavy. */
 private val MOOD_ORDER = listOf("mirno", "zahvalno", "radosno", "radoznalo", "umorno", "zbunjeno", "nemirno", "zabrinuto", "tužno", "ljuto")
 
-/** The moods of eight weeks as one flowing stream, each mood a band as wide as the notes that held it that week. */
+/**
+ * A legend whose entries switch their part of a chart on and off: a touch hides or shows one, a long press shows
+ * only that one, and "Sve" brings them all back.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun ToggleLegend(items: List<Pair<String, Color>>, hidden: Set<String>, onChange: (Set<String>) -> Unit) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for ((name, color) in items) {
+            val off = name in hidden
+            val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val a by animateFloatAsState(if (off) 0.4f else 1f, label = "legend")
+            Row(
+                Modifier.pressScale(src).clip(RoundedCornerShape(14.dp))
+                    .combinedClickable(src, androidx.compose.foundation.LocalIndication.current, onClickLabel = if (off) "Prikaži" else "Sakrij",
+                        onLongClickLabel = "Samo ovo", onLongClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onChange(items.map { it.first }.filter { it != name }.toSet())
+                        }) {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        onChange(if (off) hidden - name else hidden + name)
+                    }
+                    .background(Ink.text.copy(alpha = if (off) 0.03f else 0.07f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(if (off) Color.Transparent else color).border(1.5.dp, color.copy(alpha = a), CircleShape))
+                Text(name, style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.text.copy(alpha = a), shadow = null,
+                    textDecoration = if (off) androidx.compose.ui.text.style.TextDecoration.LineThrough else null))
+            }
+        }
+        if (hidden.isNotEmpty()) Text("Sve", style = SmallStyle.copy(fontWeight = FontWeight.ExtraBold, color = Ink.accentInk, shadow = null),
+            modifier = Modifier.tap("Prikaži sve", shape = RoundedCornerShape(14.dp)) { onChange(emptySet()) }.padding(horizontal = 10.dp, vertical = 6.dp))
+    }
+}
+
+/**
+ * The moods of the span as one flowing stream, each mood a band as wide as the notes that held it in each stretch.
+ * The legend switches moods on and off; the stream reshapes itself softly around what is left.
+ */
 @Composable
 private fun MoodSkyCard(d: StatsData) {
+    var hidden by remember { mutableStateOf(emptySet<String>()) }
     Panel {
-        CardHead("NEBO RASPOLOŽENJA", "Kako ti je bilo, sedmicu po sedmicu")
-        val k = rememberReveal(d.moodWeeks, 1400)
-        val moods = MOOD_ORDER.filter { m -> d.moodWeeks.any { (it[m] ?: 0) > 0 } } + d.moodWeeks.flatMap { it.keys }.filter { it !in MOOD_ORDER }.distinct()
+        CardHead("NEBO RASPOLOŽENJA", "Kako ti je bilo")
+        val k = rememberReveal(d.moodBuckets, 1400)
+        val moods = MOOD_ORDER.filter { m -> d.moodBuckets.any { (it[m] ?: 0) > 0 } } + d.moodBuckets.flatMap { it.keys }.filter { it !in MOOD_ORDER }.distinct()
+        // each mood fades in and out of the stream instead of jumping
+        val weight = moods.associateWith { m -> animateFloatAsState(if (m in hidden) 0f else 1f, tween(450), label = "mood-$m").value }
         val edge = if (Ink.day) Color.White.copy(alpha = 0.7f) else Color(0x99101C3A)
-        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        val single = d.moodBuckets.size == 1
+        // with moods on only a few days a stream would pinch to nothing between them: then each stretch is a column of dots
+        val sparse = d.moodBuckets.count { it.isNotEmpty() } < 4
+        val tm = rememberTextMeasurer()
+        val ink = Ink.text
+        if (sparse) Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+            val n = d.moodBuckets.size
+            val w = size.width
+            val base = size.height - 22.dp.toPx()
+            val xs = (0 until n).map { 14.dp.toPx() + it * (w - 28.dp.toPx()) / (n - 1).coerceAtLeast(1) }
+            val step = 15.dp.toPx(); val r = 6.dp.toPx()
+            for ((i, b) in d.moodBuckets.withIndex()) {
+                var y = base - r
+                for (m in moods) {
+                    val wt = weight.getValue(m)
+                    repeat(b[m] ?: 0) {
+                        if (wt > 0.001f && y > r) {
+                            drawCircle((MOOD_COLORS[m] ?: Color.Gray).copy(alpha = wt), r * (0.6f + 0.4f * wt) * k, Offset(xs[i], y))
+                            y -= step * wt
+                        }
+                    }
+                }
+                if (b.isEmpty()) drawCircle(ink.copy(alpha = 0.15f), 2.dp.toPx(), Offset(xs[i], base - r))
+                val l = tm.measure(d.moodLabels.getOrElse(i) { "" }, TextStyle(fontFamily = UiFont, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = 0.6f)))
+                if (n <= 12 || i % 2 == 0) drawText(l, topLeft = Offset((xs[i] - l.size.width / 2f).coerceIn(0f, w - l.size.width), base + 6.dp.toPx()))
+            }
+        } else Canvas(Modifier.fillMaxWidth().height(150.dp)) {
             val w = size.width; val h = size.height
-            val totals = d.moodWeeks.map { wk -> moods.sumOf { wk[it] ?: 0 } }
-            val unit = h * 0.92f / (totals.maxOrNull() ?: 0).coerceAtLeast(1)
-            val xs = d.moodWeeks.indices.map { 6.dp.toPx() + it * (w - 12.dp.toPx()) / (d.moodWeeks.size - 1).coerceAtLeast(1) }
+            val buckets = if (single) d.moodBuckets + d.moodBuckets else d.moodBuckets
+            val totals = buckets.map { b -> moods.sumOf { ((b[it] ?: 0) * weight.getValue(it)).toDouble() }.toFloat() }
+            val unit = h * 0.92f / (totals.maxOrNull() ?: 0f).coerceAtLeast(1f)
+            val xs = buckets.indices.map { 6.dp.toPx() + it * (w - 12.dp.toPx()) / (buckets.size - 1).coerceAtLeast(1) }
             val base = totals.map { h / 2 - it * unit / 2 }
             clipRect(right = w * k) {
                 var below = List(xs.size) { 0f }
                 for (m in moods) {
+                    val wt = weight.getValue(m)
+                    if (wt <= 0.001f) continue
                     val y0 = xs.indices.map { base[it] + below[it] }
-                    val y1 = xs.indices.map { y0[it] + (d.moodWeeks[it][m] ?: 0) * unit }
+                    val y1 = xs.indices.map { y0[it] + (buckets[it][m] ?: 0) * unit * wt }
                     if (y1.zip(y0).all { (a, b) -> a - b < 0.1f }) continue
                     val path = smoothPath(xs.indices.map { Offset(xs[it], y0[it]) })
                     smoothPath(xs.indices.reversed().map { Offset(xs[it], y1[it]) }, path, move = false)
                     path.close()
-                    drawPath(path, MOOD_COLORS[m] ?: Color.Gray)
+                    drawPath(path, (MOOD_COLORS[m] ?: Color.Gray).copy(alpha = wt))
                     drawPath(path, edge, style = Stroke(1.dp.toPx()))
-                    below = xs.indices.map { below[it] + (d.moodWeeks[it][m] ?: 0) * unit }
+                    below = xs.indices.map { below[it] + (buckets[it][m] ?: 0) * unit * wt }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth()) {
-            Text(d.weekLabels.firstOrNull() ?: "", style = SmallStyle.copy(fontSize = 11.5.sp, shadow = null), modifier = Modifier.weight(1f))
-            Text("ova sedmica", style = SmallStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Ink.text, shadow = null))
+        if (!sparse) Row(Modifier.fillMaxWidth()) {
+            Text(d.moodLabels.firstOrNull() ?: "", style = SmallStyle.copy(fontSize = 11.5.sp, shadow = null), modifier = Modifier.weight(1f))
+            if (d.moodLabels.size > 1) Text(d.moodLabels.last(), style = SmallStyle.copy(fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = Ink.text, shadow = null))
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (m in moods) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(MOOD_COLORS[m] ?: Color.Gray))
-                Text(m, style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.text, shadow = null))
-            }
-        }
-        moodTrend(d.moodWeeks)?.let { Text(it, style = ReadStyle) }
+        ToggleLegend(moods.map { it to (MOOD_COLORS[it] ?: Color.Gray) }, hidden) { hidden = it }
+        moodTrend(d.moodBuckets)?.let { Text(it, style = ReadStyle) }
     }
 }
 
-/** One sentence about how the moods moved: the first four weeks against the last four, only when a mood clearly rose or fell. */
-private fun moodTrend(weeks: List<Map<String, Int>>): String? {
-    if (weeks.size < 8) return null
-    val early = weeks.take(4); val late = weeks.takeLast(4)
-    val moods = weeks.flatMap { it.keys }.distinct()
+/** One sentence about how the moods moved: the first half of the span against the second, only when a mood clearly rose or fell. */
+private fun moodTrend(buckets: List<Map<String, Int>>): String? {
+    if (buckets.size < 4) return null
+    val half = buckets.size / 2
+    val early = buckets.take(half); val late = buckets.takeLast(half)
+    val moods = buckets.flatMap { it.keys }.distinct()
     val change = moods.associateWith { m -> late.sumOf { it[m] ?: 0 } - early.sumOf { it[m] ?: 0 } }
     val up = change.entries.filter { it.value >= 2 }.maxByOrNull { it.value }
     val down = change.entries.filter { it.value <= -2 }.minByOrNull { it.value }
     return when {
-        up != null && down != null -> "Više je „${up.key}“, manje „${down.key}“ nego prije mjesec dana."
-        up != null -> "„${up.key.replaceFirstChar { it.uppercase() }}“ dolazi češće nego prije mjesec dana."
-        down != null -> "„${down.key.replaceFirstChar { it.uppercase() }}“ dolazi rjeđe nego prije mjesec dana."
+        up != null && down != null -> "Više je „${up.key}“, manje „${down.key}“ nego na početku perioda."
+        up != null -> "„${up.key.replaceFirstChar { it.uppercase() }}“ dolazi češće nego na početku perioda."
+        down != null -> "„${down.key.replaceFirstChar { it.uppercase() }}“ dolazi rjeđe nego na početku perioda."
         else -> null
     }
 }
@@ -464,9 +667,13 @@ internal fun Ribbons(columns: List<List<Pair<String, Int>>>, flows: List<Triple<
 @Composable
 private fun PatternCard(w: Links.Web, onAll: () -> Unit) {
     val order = listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)
+    var hidden by remember(w) { mutableStateOf(emptySet<String>()) }   // points switched off in the legend, by name
     // up to four things per point, among those that have a link, the most frequent first
     val linked = w.links.flatMap { listOf(it.a, it.b) }.toSet()
-    val cols = order.map { p -> linked.filter { it.point == p }.sortedByDescending { w.counts[it] ?: 0 }.take(4) }.filter { it.isNotEmpty() }
+    val present = order.filter { p -> linked.any { it.point == p } }
+    if (present.size < 2) return
+    val cols = order.filter { POINT_NAMES.getValue(it) !in hidden }
+        .map { p -> linked.filter { it.point == p }.sortedByDescending { w.counts[it] ?: 0 }.take(4) }.filter { it.isNotEmpty() }
     val idx = cols.flatMapIndexed { i, c -> c.map { it to i } }.toMap()
     // a ribbon for every link, from the upper row to the lower; those that skip a row pass behind it, since all four touch
     val flows = w.links.mapNotNull { l ->
@@ -477,10 +684,11 @@ private fun PatternCard(w: Links.Web, onAll: () -> Unit) {
             else -> Triple(l.b.point + ":" + l.b.label, l.a.point + ":" + l.a.label, l.together)
         }
     }.sortedBy { f -> idx.entries.first { (it.key.point + ":" + it.key.label) == f.second }.value }
-    if (flows.isEmpty() || cols.size < 2) return
     Panel {
         CardHead("TVOJ OBRAZAC", "Šta ide zajedno")
-        Ribbons(cols.map { c -> c.map { (it.point + ":" + it.label) to (w.counts[it] ?: 0) } }, flows,
+        ToggleLegend(present.map { POINT_NAMES.getValue(it) to POINT_COLORS.getValue(it) }, hidden) { hidden = it }
+        if (flows.isEmpty() || cols.size < 2) Text("Uključi bar dvije tačke koje se dodiruju.", style = SmallStyle.copy(shadow = null))
+        else Ribbons(cols.map { c -> c.map { (it.point + ":" + it.label) to (w.counts[it] ?: 0) } }, flows,
             { POINT_COLORS[it.substringBefore(':')] ?: Color.Gray },
             cols.map { POINT_NAMES.getValue(it.first().point).uppercase() }, name = { it.substringAfter(':').removePrefix("da ") })
         w.links.firstOrNull()?.let { l ->
@@ -530,21 +738,25 @@ private fun MatrixCard(w: Links.Web, onOpen: (com.grungert.nebo.koan.Thing) -> U
         w.counts.filter { it.key.point == FourPointsReader.EMOTIONS && it.value >= 2 }.entries.sortedByDescending { it.value }.map { it.key }
             .filter { r -> w.counts.keys.any { it.point != FourPointsReader.EMOTIONS && w.together(r, it) > 0 } }.take(6)
     }
-    val cols = remember(w) {
-        listOf(FourPointsReader.BODY, FourPointsReader.URGES, FourPointsReader.THOUGHTS).flatMap { p ->
+    var hidden by remember(w) { mutableStateOf(emptySet<String>()) }
+    val groups = remember(w) { listOf(FourPointsReader.BODY, FourPointsReader.URGES, FourPointsReader.THOUGHTS).filter { p -> w.counts.keys.any { it.point == p && (w.counts[it] ?: 0) >= 2 } } }
+    val cols = remember(w, hidden) {
+        groups.filter { POINT_NAMES.getValue(it) !in hidden }.flatMap { p ->
             w.counts.filter { it.key.point == p && it.value >= 2 }.entries.sortedByDescending { it.value }.map { it.key }
                 .filter { c -> rows.any { w.together(it, c) > 0 } }.take(4)
         }.take(9)
     }
     // a mood stays only if it touches something shown
     val shownRows = rows.filter { r -> cols.any { w.together(r, it) > 0 } }
-    if (shownRows.isEmpty() || cols.isEmpty()) return
+    if (rows.isEmpty() || groups.isEmpty()) return
     val k = rememberReveal(w)
     val tm = rememberTextMeasurer()
     val ink = Ink.text
     Panel {
         CardHead("MATRICA", "Sve sa svim")
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        ToggleLegend(groups.map { POINT_NAMES.getValue(it) to POINT_COLORS.getValue(it) }, hidden) { hidden = it }
+        if (shownRows.isEmpty() || cols.isEmpty()) Text("Uključi bar jednu tačku.", style = SmallStyle.copy(shadow = null))
+        else androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
             val head = 92.dp; val rowH = 34.dp; val labelW = 84.dp
             val cell = (maxWidth - labelW) / cols.size
             val rows = shownRows
@@ -625,7 +837,7 @@ private fun BodyCard(d: StatsData) {
 @Composable
 private fun MindCard(d: StatsData) {
     Panel {
-        CardHead("UM · POSLJEDNJIH 30 DANA", "Gdje je bio um")
+        CardHead("UM", "Gdje je bio um")
         if (d.times.isEmpty() && d.habits.isEmpty() && d.wander.isEmpty()) {
             Text("Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.",
                 style = SmallStyle.copy(shadow = null))
