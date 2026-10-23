@@ -26,7 +26,7 @@ import kotlin.random.Random
  * drawn by the same code as in the app. The sky shader cannot run in a widget, so its parts are painted simply here.
  */
 object WidgetArt {
-    fun render(settings: Settings, wPx: Int, hPx: Int, density: Float): Bitmap {
+    fun render(settings: Settings, wPx: Int, hPx: Int, density: Float, week: BooleanArray? = null, today: Int = -1): Bitmap {
         val bmp = Bitmap.createBitmap(wPx, hPx, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val w = wPx.toFloat(); val h = hPx.toFloat()
@@ -119,6 +119,24 @@ object WidgetArt {
         paint.shader = LinearGradient(0f, 0f, 0f, h * 0.6f, intArrayOf(android.graphics.Color.argb(80, 20, 34, 63), 0), null, Shader.TileMode.CLAMP)
         c.drawRect(0f, 0f, w, h * 0.6f, paint)
         paint.shader = null
+        // the week in the top right corner: seven dots, filled for a day that held a sit, today ringed
+        if (week != null) {
+            val r = 3.6f * u; val gap = 11f * u
+            val y = 21f * u
+            val x0 = w - 18f * u - gap * 6
+            for (i in 0 until 7) {
+                val x = x0 + i * gap
+                paint.style = Paint.Style.FILL
+                paint.color = if (week[i]) android.graphics.Color.argb(255, 255, 217, 160) else android.graphics.Color.argb(if (i > today) 50 else 90, 255, 255, 255)
+                c.drawCircle(x, y, if (week[i]) r else r * 0.7f, paint)
+                if (i == today) {
+                    paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.4f * u
+                    paint.color = android.graphics.Color.argb(230, 255, 255, 255)
+                    c.drawCircle(x, y, r + 2.6f * u, paint)
+                    paint.style = Paint.Style.FILL
+                }
+            }
+        }
         return bmp
     }
 

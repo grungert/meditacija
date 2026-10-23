@@ -127,6 +127,12 @@ class MainActivity : ComponentActivity() {
         setContent { App() }
     }
 
+    // leaving the app: the widget shows what changed (a session, a note, the hour)
+    override fun onStop() {
+        super.onStop()
+        com.grungert.nebo.widget.NeboWidget.refresh(this)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handle(intent)
@@ -150,6 +156,11 @@ class MainActivity : ComponentActivity() {
             "urge" -> screen = Screen.Session(lastConfig().copy(type = "urge", minutes = 5, checkInBefore = false, eyesClosed = false))
             "breath" -> lastConfig().let { c -> screen = Screen.Session(c.copy(type = "breath", minutes = if (c.minutes in listOf(3, 5, 10, 15, 20, 0)) c.minutes else 5, checkInBefore = false)) }
             "note" -> screen = Screen.CheckIn("note")
+        }
+        // the suggested session on the home-screen widget, started straight away
+        intent?.getStringExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE)?.let { t ->
+            app.settings.sessionType = t
+            screen = Screen.Session(lastConfig().copy(checkInBefore = false))
         }
         // "Zapiši" on the home-screen widget
         if (intent?.getBooleanExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_NOTE, false) == true) screen = Screen.CheckIn("note")

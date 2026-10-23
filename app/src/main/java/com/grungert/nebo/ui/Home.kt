@@ -175,13 +175,13 @@ private fun lengthOf(type: String, last: SessionConfig) = when {
 private val PART_LABEL = listOf("UJUTRU", "USRED DANA", "UVEČE", "KASNO UVEČE")
 
 /** The suggestion for now: a session, why it, and the label above it. */
-private class Now(val type: String, val why: String, val basis: String)
+class Now(val type: String, val why: String, val basis: String)
 
 /**
  * What to do now, in this order: something that keeps coming at this time of day in the notes, met with a practice
  * that fits it; else what has most often helped; else what suits the hour.
  */
-private fun suggestNow(entries: List<com.grungert.nebo.data.Entry>, helps: String?, part: Int): Now {
+fun suggestNow(entries: List<com.grungert.nebo.data.Entry>, helps: String?, part: Int): Now {
     val recent = Links.seen(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
     val web = Links.webOf(recent.map { it.first })
     val heavy = setOf("nemirno", "zabrinuto", "tužno", "ljuto", "umorno", "zbunjeno")
