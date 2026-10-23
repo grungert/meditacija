@@ -210,10 +210,17 @@ private fun localDay(utc: Long): Long {
     return Calendar.getInstance().apply { clear(); set(u.get(Calendar.YEAR), u.get(Calendar.MONTH), u.get(Calendar.DAY_OF_MONTH)) }.timeInMillis
 }
 
-/** Any dates, up to today, on a calendar in the app's colours. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+/** Any dates, up to today, on a calendar in the app's colours and in our language, its weeks from Monday, whatever the phone speaks. */
 @Composable
 private fun RangePickerDialog(onPick: (Long, Long) -> Unit, onDismiss: () -> Unit) {
+    val base = androidx.compose.ui.platform.LocalConfiguration.current
+    val ours = remember(base) { android.content.res.Configuration(base).apply { setLocale(Locale.forLanguageTag("sr-Latn-ME")) } }
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalConfiguration provides ours) { RangeCalendar(onPick, onDismiss) }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun RangeCalendar(onPick: (Long, Long) -> Unit, onDismiss: () -> Unit) {
     val state = androidx.compose.material3.rememberDateRangePickerState(selectableDates = object : androidx.compose.material3.SelectableDates {
         override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= System.currentTimeMillis()
     })
@@ -422,7 +429,7 @@ private fun MoodSkyCard(d: StatsData) {
             val n = d.moodBuckets.size
             val w = size.width
             val base = size.height - 22.dp.toPx()
-            val xs = (0 until n).map { 14.dp.toPx() + it * (w - 28.dp.toPx()) / (n - 1).coerceAtLeast(1) }
+            val xs = (0 until n).map { w * (it + 0.5f) / n }
             val step = 15.dp.toPx(); val r = 6.dp.toPx()
             for ((i, b) in d.moodBuckets.withIndex()) {
                 var y = base - r
@@ -705,26 +712,43 @@ private fun PatternCard(w: Links.Web, onAll: () -> Unit) {
  */
 @Composable
 private fun FocusCard(w: Links.Web, seen: List<Pair<Set<com.grungert.nebo.koan.Thing>, Long>>, onOpen: (com.grungert.nebo.koan.Thing) -> Unit) {
-    val top = remember(w) { w.stars(4) }
-    var chosen by remember(w) { mutableStateOf(top.firstOrNull()) }
-    val t = chosen ?: return
-    val f = remember(t, seen) { Links.focusOf(seen, t) }
+    val top = remember(w) { w.stars(5) }
+    // several can be on at once, like boxes to tick; one always stays, and at most four
+    var chosen by remember(w) { mutableStateOf(top.take(1)) }
+    if (chosen.isEmpty()) return
+    fun toggle(t: com.grungert.nebo.koan.Thing) {
+        chosen = when {
+            t in chosen && chosen.size > 1 -> chosen - t
+            t in chosen -> chosen
+            else -> (chosen + t).takeLast(4)
+        }
+    }
+    val foci = remember(chosen, seen) { chosen.map { Links.focusOf(seen, it) } }
     Panel {
         CardHead("KAD SE JAVI…", "Šta dolazi s tim")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (c in (top + (if (t in top) emptyList() else listOf(t)))) {
-                val on = c == t
+            for (c in (top + chosen.filter { it !in top })) {
+                val on = c in chosen
                 val pc = POINT_COLORS.getValue(c.point)
-                Text(c.label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on || Ink.day) Ink.ink else Color.White, shadow = null),
-                    modifier = Modifier.tap(c.label, role = androidx.compose.ui.semantics.Role.Tab, shape = RoundedCornerShape(14.dp)) { chosen = c }
-                        .background(if (on) Ink.accent else pc.copy(alpha = if (Ink.day) 0.35f else 0.22f), RoundedCornerShape(14.dp))
-                        .padding(horizontal = 11.dp, vertical = 6.dp))
+                val bg by animateColorAsState(if (on) pc else pc.copy(alpha = if (Ink.day) 0.22f else 0.14f), label = "focus-chip")
+                Row(
+                    Modifier.tap(c.label, androidx.compose.ui.semantics.Role.Checkbox, shape = RoundedCornerShape(14.dp)) { toggle(c) }.background(bg, RoundedCornerShape(14.dp))
+                        .padding(start = 8.dp, end = 11.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).background(if (on) Ink.ink.copy(alpha = 0.85f) else Color.Transparent)
+                        .border(1.5.dp, if (on) Color.Transparent else Ink.text.copy(alpha = 0.45f), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                        if (on) Icon(NeboIcon.Check, Color.White, 11.dp, filled = true)
+                    }
+                    Text(c.label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on || Ink.day) Ink.ink else Color.White, shadow = null))
+                }
             }
         }
-        if (f.with.isEmpty()) Text("Uz ovo još ništa ne dolazi dovoljno često.", style = SmallStyle.copy(shadow = null))
-        else FocusOrbit(f, { chosen = it }, Modifier.fillMaxWidth().height(280.dp))
-        f.sentence()?.let { Text(it, style = ReadStyle) }
-        GlassButton("Otvori „${t.label.trim('„', '“')}“", { onOpen(t) }, Modifier.fillMaxWidth(), icon = NeboIcon.Forward)
+        if (foci.all { it.with.isEmpty() }) Text("Uz ovo još ništa ne dolazi dovoljno često.", style = SmallStyle.copy(shadow = null))
+        else FocusMany(foci, { toggle(it) }, Modifier.fillMaxWidth().height(if (foci.size > 1) 320.dp else 280.dp))
+        for (f in foci) f.sentence()?.let { Text(it, style = ReadStyle.copy(fontSize = if (foci.size > 1) 17.sp else 19.sp, lineHeight = if (foci.size > 1) 24.sp else 27.sp)) }
+        if (foci.size > 1) Text("Dodirni pojam oko njih da ga dodaš; dodirni onaj u sredini da ga skloniš.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+        GlassButton("Otvori „${chosen.last().label.trim('„', '“')}“", { onOpen(chosen.last()) }, Modifier.fillMaxWidth(), icon = NeboIcon.Forward)
     }
 }
 

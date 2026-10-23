@@ -413,3 +413,111 @@ fun ThreadWeb(entries: List<Entry>, modifier: Modifier = Modifier) {
     val web = remember(entries) { Links.web(entries) }
     PointsWeb(web.pointShare, web.pointPairs, modifier.aspectRatio(1.25f))
 }
+
+/** A thing around the middle, and the things in the middle it comes with: (index of the middle one, notes together, share of that one's notes). */
+private class Around(val thing: Thing, val with: List<Triple<Int, Int, Float>>) {
+    val strongest get() = with.maxBy { it.third }
+}
+
+/**
+ * "Kad se javi…" for several things at once: the chosen ones in the middle, and around them what comes with each, a line
+ * from every middle thing to what comes with it, so what they share is seen at once. Touching a thing around adds it to
+ * the middle; touching one in the middle takes it out (while another stays).
+ */
+@Composable
+fun FocusMany(foci: List<Links.Focus>, onToggle: (Thing) -> Unit, modifier: Modifier = Modifier) {
+    val keys = foci.map { it.thing }
+    val k = remember(keys) { Animatable(0f) }
+    LaunchedEffect(keys) { k.animateTo(1f, spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessVeryLow)) }
+    val tm = rememberTextMeasurer()
+    val ink = Ink.text
+    val cardBg = if (Ink.day) Color.White else Color(0xFF1A2850)
+    val around = remember(foci) {
+        val map = LinkedHashMap<Thing, MutableList<Triple<Int, Int, Float>>>()
+        for ((i, f) in foci.withIndex()) for (w in f.with) if (w.thing !in keys)
+            map.getOrPut(w.thing) { ArrayList() } += Triple(i, w.together, w.together.toFloat() / f.notes.coerceAtLeast(1))
+        map.map { Around(it.key, it.value) }.sortedByDescending { it.strongest.third }.take(7)
+    }
+    fun centers(w: Float, h: Float): List<Offset> {
+        val c = Offset(w / 2, h / 2); val n = foci.size
+        if (n <= 1) return listOf(c)
+        val r = w * (if (n == 2) 0.2f else 0.21f)
+        return (0 until n).map { i -> val a = (if (n == 2) PI else -PI / 2 + PI / n) + i * 2 * PI / n; Offset(c.x + r * cos(a).toFloat(), c.y + r * 0.75f * sin(a).toFloat()) }
+    }
+    /** Each thing around sits on the ring near the middle things it comes with, spread evenly, in that order. */
+    fun places(w: Float, h: Float): List<Offset> {
+        val cs = centers(w, h); val mid = Offset(w / 2, h / 2)
+        val want = around.map { a ->
+            val p = a.with.map { cs[it.first] }.let { ps -> Offset(ps.map { it.x }.average().toFloat(), ps.map { it.y }.average().toFloat()) }
+            val d = Offset(p.x - mid.x, p.y - mid.y)
+            if (d.getDistance() < 1f) -PI / 2 else kotlin.math.atan2(d.y.toDouble(), d.x.toDouble())
+        }
+        val order = around.indices.sortedBy { want[it] }
+        val n = around.size.coerceAtLeast(1)
+        val start = if (order.isEmpty()) 0.0 else want[order.first()]
+        val out = Array(around.size) { Offset.Zero }
+        for ((rank, i) in order.withIndex()) {
+            val a = start + rank * 2 * PI / n
+            // further out when several share the middle, so a thing around never sits on one of them
+            val far = if (foci.size > 1) 1.13f else 1f
+            out[i] = Offset(mid.x + w * 0.38f * far * cos(a).toFloat(), mid.y + h * 0.33f * far * sin(a).toFloat())
+        }
+        return out.toList()
+    }
+    Canvas(modifier.pointerInput(foci, around) {
+        detectTapGestures { pos ->
+            val w = size.width.toFloat(); val h = size.height.toFloat()
+            val ps = places(w, h); val cs = centers(w, h)
+            val hit = (ps.withIndex().map { it.value to around[it.index].thing } + cs.withIndex().map { it.value to keys[it.index] })
+                .minByOrNull { hypot(it.first.x - pos.x, it.first.y - pos.y) }
+            if (hit != null && hypot(hit.first.x - pos.x, hit.first.y - pos.y) < 40.dp.toPx()) onToggle(hit.second)
+        }
+    }) {
+        val v = k.value
+        val mid = Offset(size.width / 2, size.height / 2)
+        val cs = centers(size.width, size.height).map { Offset(mid.x + (it.x - mid.x) * v, mid.y + (it.y - mid.y) * v) }
+        val ps = places(size.width, size.height).map { Offset(mid.x + (it.x - mid.x) * v, mid.y + (it.y - mid.y) * v) }
+        for ((i, a) in around.withIndex()) for ((ci, _, share) in a.with)
+            drawLine(POINT_COLORS.getValue(a.thing.point).copy(alpha = 0.8f), cs[ci], ps[i], (1.5f + 6f * share).dp.toPx(), StrokeCap.Round)
+        // the chosen ones touch each other too: a line between two of them, as thick as their notes together
+        for (i in foci.indices) for (j in i + 1 until foci.size) {
+            val t = foci[i].with.firstOrNull { it.thing == foci[j].thing }?.together ?: foci[j].with.firstOrNull { it.thing == foci[i].thing }?.together ?: continue
+            val share = t.toFloat() / minOf(foci[i].notes, foci[j].notes).coerceAtLeast(1)
+            drawLine(ink.copy(alpha = 0.35f + 0.3f * share), cs[i], cs[j], (2f + 6f * share).dp.toPx(), StrokeCap.Round)
+            val m = Offset((cs[i].x + cs[j].x) / 2, (cs[i].y + cs[j].y) / 2)
+            val l = tm.measure("$t×", TextStyle(fontFamily = UiFont, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = Ink.ink))
+            drawCircle(cardBg, l.size.width / 2f + 6.dp.toPx(), m)
+            drawText(l, topLeft = Offset(m.x - l.size.width / 2f, m.y - l.size.height / 2f))
+        }
+        val one = foci.size == 1
+        val cr = (if (one) 34 else 24).dp.toPx()
+        for ((i, f) in foci.withIndex()) {
+            val c = POINT_COLORS.getValue(f.thing.point)
+            drawCircle(c.copy(alpha = 0.25f), cr + 8.dp.toPx() * v, cs[i])
+            drawCircle(c, cr, cs[i])
+            if (one) {
+                label(tm, f.thing.label, cs[i].x, cs[i].y - 15.sp.toPx(), TextStyle(fontFamily = UiFont, fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold, color = Ink.ink), cr * 2.2f)
+                label(tm, "${f.notes} ${plural(f.notes, "put", "puta", "puta")}", cs[i].x, cs[i].y + 2.sp.toPx(),
+                    TextStyle(fontFamily = UiFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Ink.ink.copy(alpha = 0.7f)))
+            } else {
+                // several in the middle: the count inside, the name under (or over, for the upper ones) on a soft halo
+                label(tm, "${f.notes}×", cs[i].x, cs[i].y - 8.sp.toPx(), TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = Ink.ink))
+                val above = cs[i].y < mid.y - 1f
+                label(tm, f.thing.label, cs[i].x, if (above) cs[i].y - cr - 28.sp.toPx() else cs[i].y + cr + 10.dp.toPx(),
+                    TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = ink,
+                        shadow = androidx.compose.ui.graphics.Shadow(cardBg, blurRadius = 8f)), 110.dp.toPx())
+            }
+        }
+        for ((i, a) in around.withIndex()) {
+            val p = ps[i]; val pc = POINT_COLORS.getValue(a.thing.point)
+            val best = a.strongest
+            val r = 21.dp.toPx()
+            drawCircle(cardBg, r, p)
+            drawCircle(pc.copy(alpha = 0.3f), r, p, style = Stroke(5.dp.toPx()))
+            drawArc(pc, -90f, 360f * best.third * v, false, Offset(p.x - r, p.y - r), androidx.compose.ui.geometry.Size(r * 2, r * 2), style = Stroke(5.dp.toPx(), cap = StrokeCap.Round))
+            label(tm, "${best.second}/${foci[best.first].notes}", p.x, p.y - 8.sp.toPx(), TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, color = if (Ink.day) Ink.ink else Color.White))
+            label(tm, a.thing.label, p.x, if (p.y < mid.y) (p.y - r - 34.sp.toPx()).coerceAtLeast(0f) else p.y + r + 6.dp.toPx(),
+                TextStyle(fontFamily = UiFont, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ink), 120.dp.toPx())
+        }
+    }
+}
