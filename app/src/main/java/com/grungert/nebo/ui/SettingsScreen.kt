@@ -178,7 +178,7 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                         items((5..23).toList()) { h -> Chip("$h", hour == h, { hour = h; applyReminder() }) }
                     }
                     Label("Minute")
-                    ChipRow { for (m in listOf(0, 15, 30, 45)) Chip(":%02d".format(m), minute == m, { minute = m; applyReminder() }) }
+                    ChipRow { for (m in listOf(0, 15, 30, 45)) Chip("%02d".format(m), minute == m, { minute = m; applyReminder() }) }
                     Label("Dani")
                     ChipRow { for ((label, v) in listOf("svaki dan" to "all", "radni dani" to "weekdays", "vikend" to "weekend")) Chip(label, days == v, { days = v; applyReminder() }) }
                     SwitchRow("Ne ako sam taj dan već meditirao", skip, { skip = it; applyReminder() })

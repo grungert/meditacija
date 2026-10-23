@@ -1,5 +1,7 @@
 package com.grungert.nebo.ui
 
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Brush
 import android.Manifest
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.animation.core.animateFloatAsState
@@ -236,90 +238,105 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
 
     fun clock(s: Float) = "%d:%02d".format(s.toInt() / 60, s.toInt() % 60)
 
+    // the title says what this is; above it, only when: the day and the hour
+    val kicker = ijekavian(java.text.SimpleDateFormat("EEEE · HH:mm", java.util.Locale.forLanguageTag("sr-Latn-ME")).format(java.util.Date())).uppercase()
+    val closable = sc.kind == "note" || sc.kind == "esm" || sc.kind == "week" || sc.kind == "evening" || sc.kind == "followup"
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState())
-                .screenPadding().padding(top = 8.dp, bottom = 110.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .screenPadding().padding(top = 8.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            ScreenHeader(title, if (sc.kind == "note" || sc.kind == "esm" || sc.kind == "week" || sc.kind == "evening" || sc.kind == "followup") ({ player.stop(); recorder.stop(); go(Screen.Home) }) else null)
-            Text(prompt, style = BodyStyle.copy(color = Ink.soft))
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (closable) BackButton { player.stop(); recorder.stop(); go(Screen.Home) }
+                Column(Modifier.weight(1f)) {
+                    Text(kicker, style = KickerStyle.copy(color = Ink.accent))
+                    Text(title, style = TitleStyle.copy(fontSize = 28.sp, lineHeight = 32.sp))
+                }
+            }
+            // the question, in the reading face: it is asked of you, not an instruction
+            Text(prompt, style = ReadStyle.copy(fontSize = 21.sp, lineHeight = 29.sp))
             if (sc.kind == "evening") DaySummary()
             sc.follows?.let { Yesterday(it) }
 
-            // speaking: one big button, the live wave of the voice, the time
-            Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(Ink.surface).padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                val pulse = com.grungert.nebo.sky.slowPulse(900)
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(132.dp)) {
-                    if (recording) Box(Modifier.size((104 + 26 * pulse).dp).clip(CircleShape).background(Ink.seal.copy(alpha = 0.22f)))
-                    Box(
-                        Modifier.size(96.dp).clip(CircleShape).background(if (recording) Ink.seal else Ink.paper)
-                            .clickable(role = Role.Button, onClickLabel = if (recording) "Zaustavi snimanje" else "Snimi") {
+            // one card for speaking and writing: the big button, the live wave of the voice, and under it the words
+            val shape = RoundedCornerShape(30.dp)
+            Column(Modifier.fillMaxWidth().clip(shape).background(Ink.surface)) {
+                Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 22.dp, bottom = 14.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    val pulse = com.grungert.nebo.sky.slowPulse(if (recording) 900 else 3600)
+                    val rec = Color(0xFFEC8B74)
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(124.dp)) {
+                        Box(Modifier.size(((if (recording) 100 else 92) + (if (recording) 22 else 8) * pulse).dp).clip(CircleShape)
+                            .background((if (recording) rec else Ink.accent).copy(alpha = if (recording) 0.25f else 0.16f)))
+                        Box(
+                            Modifier.size(88.dp).tap(if (recording) "Zaustavi snimanje" else "Snimi", shape = CircleShape) {
                                 when {
                                     recording -> recorder.stop()
                                     micAllowed -> { player.stop(); startRecording() }
                                     else -> permission.launch(Manifest.permission.RECORD_AUDIO)
                                 }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (recording) Box(Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
-                        else Icon(NeboIcon.Mic, Ink.inkOnPaper, 34.dp)
-                    }
-                }
-                // the wave: one bar per tenth of a second, louder is taller
-                Canvas(Modifier.fillMaxWidth().height(40.dp)) {
-                    val n = 56
-                    val w = size.width / n
-                    for (i in 0 until n) {
-                        val lv = levels.getOrNull(levels.size - n + i) ?: 0f
-                        val h = (size.height * (0.08f + 0.92f * kotlin.math.sqrt(lv.coerceIn(0f, 1f)))).coerceAtMost(size.height)
-                        drawRoundRect(if (recording) Color.White.copy(alpha = 0.85f) else Color.White.copy(alpha = 0.25f),
-                            topLeft = Offset(i * w + w * 0.2f, (size.height - h) / 2), size = Size(w * 0.6f, h), cornerRadius = CornerRadius(w * 0.3f))
-                    }
-                }
-                // while the words are worked out: a bar that fills over the time this phone usually needs,
-                // slowing near the end rather than stopping, so it never claims to be done before it is
-                if (transcribing) {
-                    LaunchedEffect(Unit) { while (true) { delay(100); waited += 0.1f } }
-                    val k = waited / expected
-                    val fill = if (k < 1f) 0.9f * k else 0.9f + 0.09f * (1f - kotlin.math.exp(-(k - 1f) * 1.5f))
-                    val shown by animateFloatAsState(fill, tween(300), label = "transcribe")
-                    Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.15f))) {
-                        Box(Modifier.fillMaxWidth(shown).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(Ink.accent))
-                    }
-                }
-                Text(
-                    when {
-                        recording -> clock(seconds) + " / " + clock(MAX_SECONDS.toFloat())
-                        silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
-                        transcribing -> (expected - waited).let { left ->
-                            if (left > 1.5f) "Pretvaram glas u tekst… još oko ${kotlin.math.ceil(left).toInt()} s" else "Pretvaram glas u tekst, samo trenutak…"
+                            }.background(if (recording) rec else Ink.accent, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (recording) Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(Color.White))
+                            else Icon(NeboIcon.Mic, Ink.ink, 34.dp, filled = true)
                         }
-                        audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
-                        audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti."
-                        audio != null -> "Snimljeno · " + clock(audioSeconds)
-                        askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
-                        else -> "Dodirni i govori, do dva minuta"
-                    }, style = SmallStyle.copy(shadow = null, textAlign = TextAlign.Center),
-                )
-                if (audio != null && !recording) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} }, icon = NeboIcon.Play)
-                    if (app.models.readyWhisper() == null) GlassButton("Preuzmi model za govor", { player.stop(); go(Screen.Settings) })
+                    }
+                    // the wave: one bar per tenth of a second, louder is taller
+                    Canvas(Modifier.fillMaxWidth().height(36.dp)) {
+                        val n = 56
+                        val w = size.width / n
+                        for (i in 0 until n) {
+                            val lv = levels.getOrNull(levels.size - n + i) ?: 0f
+                            val h = (size.height * (0.08f + 0.92f * kotlin.math.sqrt(lv.coerceIn(0f, 1f)))).coerceAtMost(size.height)
+                            drawRoundRect(if (recording) Ink.accent.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.22f),
+                                topLeft = Offset(i * w + w * 0.2f, (size.height - h) / 2), size = Size(w * 0.6f, h), cornerRadius = CornerRadius(w * 0.3f))
+                        }
+                    }
+                    // while the words are worked out: a bar that fills over the time this phone usually needs,
+                    // slowing near the end rather than stopping, so it never claims to be done before it is
+                    if (transcribing) {
+                        LaunchedEffect(Unit) { while (true) { delay(100); waited += 0.1f } }
+                        val k = waited / expected
+                        val fill = if (k < 1f) 0.9f * k else 0.9f + 0.09f * (1f - kotlin.math.exp(-(k - 1f) * 1.5f))
+                        val shown by animateFloatAsState(fill, tween(300), label = "transcribe")
+                        Box(Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = 0.12f))) {
+                            Box(Modifier.fillMaxWidth(shown).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(Ink.accent))
+                        }
+                    }
+                    Text(
+                        when {
+                            recording -> clock(seconds) + " / " + clock(MAX_SECONDS.toFloat())
+                            silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
+                            transcribing -> (expected - waited).let { left ->
+                                if (left > 1.5f) "Pretvaram glas u tekst… još oko ${kotlin.math.ceil(left).toInt()} s" else "Pretvaram glas u tekst, samo trenutak…"
+                            }
+                            audio != null && heard != null && heard!!.isBlank() -> "Snimljeno, ali nijesam razabrao riječi. Možeš napisati."
+                            audio != null && heard != null -> "Evo šta sam čuo. Možeš ispraviti."
+                            audio != null -> "Snimljeno · " + clock(audioSeconds)
+                            askedMic && !micAllowed -> "Bez mikrofona možeš i da napišeš."
+                            else -> "Dodirni i govori, do dva minuta"
+                        }, style = SmallStyle.copy(shadow = null, textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold),
+                    )
+                    if (audio != null && !recording) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GlassButton("Preslušaj", { player.play(audio!!.absolutePath) {} }, icon = NeboIcon.Play)
+                        if (app.models.readyWhisper() == null) GlassButton("Preuzmi model za govor", { player.stop(); go(Screen.Settings) })
+                    }
                 }
-            }
-
-            // writing: the words (or the transcript to correct)
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.surface).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel(if (fieldFromVoice) "Tvoje riječi, možeš ispraviti" else "Ili napiši")
-                Box {
-                    if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else "Šta je u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
-                    BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
-                        cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp))
+                Box(Modifier.fillMaxWidth().height(1.dp).background(Ink.hairline))
+                // writing: the words, or the transcript to correct, in the reading face
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(NeboIcon.Pen, Ink.soft, 14.dp)
+                        Text(if (fieldFromVoice) "TVOJE RIJEČI · MOŽEŠ ISPRAVITI" else "ILI NAPIŠI", style = KickerStyle.copy(color = Ink.soft))
+                    }
+                    Box {
+                        if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else "Šta je u tebi…", style = ReadStyle.copy(color = Ink.faint))
+                        BasicTextField(text, { text = it }, textStyle = ReadStyle.copy(color = Ink.text),
+                            cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp))
+                    }
                 }
             }
 
@@ -331,14 +348,19 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             }
             FourPointsCard(points, moods, startWith = if (scanned) com.grungert.nebo.koan.FourPointsReader.BODY else com.grungert.nebo.koan.FourPointsReader.EMOTIONS)
         }
-        // the actions stay within reach at the bottom
-        Row(
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding().imePadding().screenPadding().padding(bottom = 16.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            GlassButton("Preskoči", { if (!saving) { player.stop(); recorder.stop(); taking?.delete(); audio?.delete(); audio = null; next(null) } },
-                Modifier.weight(1f), enabled = !saving)
-            GlassButton(if (saving) "Čuvam…" else "Sačuvaj", { save() }, Modifier.weight(2f), strong = true, enabled = !recording && !saving)
+        // the actions stay within reach at the bottom, over a soft fade so what scrolls under them does not show through
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth().height(28.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF00A1530)))))
+            Row(
+                Modifier.fillMaxWidth().background(Color(0xF00A1530)).navigationBarsPadding().imePadding().screenPadding().padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Preskoči", style = BodyStyle.copy(fontWeight = FontWeight.Bold, color = Ink.soft, shadow = null), textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).tap("Preskoči", shape = RoundedCornerShape(22.dp), enabled = !saving) {
+                        player.stop(); recorder.stop(); taking?.delete(); audio?.delete(); audio = null; next(null)
+                    }.padding(vertical = 15.dp))
+                GlassButton(if (saving) "Čuvam…" else "Sačuvaj", { save() }, Modifier.weight(2f), strong = true, enabled = !recording && !saving, icon = NeboIcon.Check)
+            }
         }
     }
 }
