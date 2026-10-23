@@ -177,21 +177,35 @@ private val PART_LABEL = listOf("UJUTRU", "USRED DANA", "UVEČE", "KASNO UVEČE"
 /** The suggestion for now: a session, why it, and the label above it. */
 class Now(val type: String, val why: String, val basis: String)
 
+/** "Poslije Disanja", "Disanje": a kind of session in a sentence. */
+private val SESSION_SUBJECT = mapOf(
+    "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci", "silence" to "Tišina", "points" to "4 tačke",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN",
+)
+
 /**
- * What to do now, in this order: something that keeps coming at this time of day in the notes, met with a practice
- * that fits it; else what has most often helped; else what suits the hour.
+ * What to do now, in this order: something that keeps coming at this time of day in the notes, met with what has
+ * been shown to help (from the notes before and after sessions) or else a practice that fits it; else what has most
+ * often helped; else what suits the hour. The person's own evidence comes before any rule of thumb.
  */
-fun suggestNow(entries: List<com.grungert.nebo.data.Entry>, helps: String?, part: Int): Now {
+fun suggestNow(entries: List<com.grungert.nebo.data.Entry>, finding: com.grungert.nebo.koan.WhatHelps.Finding?, part: Int): Now {
+    val helps = finding?.let { com.grungert.nebo.koan.WhatHelps.suggestion(it) }
+    val helped = finding?.kinds?.firstOrNull { it.type == helps }
+    // when one kind clearly helps more at this hour, that one
+    val atThisHour = finding?.partFor?.takeIf { it.second == part }?.first
+    val best = atThisHour ?: helps
+    val proof = finding?.kinds?.firstOrNull { it.type == best }?.let { " ${SESSION_SUBJECT[it.type] ?: it.type} ti pomaže ${it.lighter} od ${it.count} puta." } ?: ""
     val recent = Links.seen(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
     val web = Links.webOf(recent.map { it.first })
     val heavy = setOf("nemirno", "zabrinuto", "tužno", "ljuto", "umorno", "zbunjeno")
     val now = web.counts.filter { (t, n) -> n >= 3 && (t.point != com.grungert.nebo.koan.FourPointsReader.EMOTIONS || t.label in heavy) }.keys
         .map { Links.focusOf(recent, it) }.filter { it.part == part }.maxByOrNull { it.notes }
     if (now != null) {
-        val (type, _) = practiceFor(now.thing)
-        return Now(type, "${Links.PART_WHEN[part].replaceFirstChar { it.uppercase() }} ti često dođe „${now.thing.label.trim('„', '“')}“.", "iz tvojih bilješki")
+        val type = best ?: practiceFor(now.thing).first
+        return Now(type, "${Links.PART_WHEN[part].replaceFirstChar { it.uppercase() }} ti često dođe „${now.thing.label.trim('„', '“')}“." + proof,
+            if (best != null) "iz tvojih bilješki i iskustva" else "iz tvojih bilješki")
     }
-    if (helps != null) return Now(helps, "Najčešće ti pomaže.", "iz tvog iskustva")
+    if (best != null && helped != null) return Now(best, proof.trim().ifEmpty { "Najčešće ti pomaže." }, "iz tvog iskustva")
     return when (part) {
         0 -> Now("breath", "Nekoliko mirnih daha za početak dana.", "po dobu dana")
         1 -> Now("hourglass", "Tri minute da se vratiš sebi.", "po dobu dana")
@@ -245,9 +259,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             val start = if (s.eveningReview) s.eveningHour - 1 else 20
             followUp = Esm.followUpNote(context)
             val all = context.app.db.entries()
-            val finding = com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), all)
-            val helps = com.grungert.nebo.koan.WhatHelps.suggestion(finding)
-            now = suggestNow(all, helps, part)
+            now = suggestNow(all, com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), all), part)
 
             val today = Esm.midnight().timeInMillis
             eveningDue = hour >= start && !Esm.eveningDone(context) &&

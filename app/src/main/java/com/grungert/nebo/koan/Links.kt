@@ -20,6 +20,8 @@ data class Thing(val point: String, val label: String)
  */
 object Links {
     const val LIFT_FROM = 5
+    /** Below this, two things come together hardly more often than chance would bring them. */
+    const val MIN_LIFT = 1.2f
     val PART_WHEN = listOf("ujutru", "danju", "uveče", "noću")
 
     private val HABIT_LABEL = mapOf(
@@ -98,9 +100,11 @@ object Links {
             }
         }
         val th = threshold(n)
+        // two frequent things meet often by chance alone: once there are enough notes to tell (LIFT_FROM together),
+        // a pair that comes together no more often than chance is no link, however many times it was counted
         val links = pairs.filter { it.value >= th }.map { (k, c) ->
             Link(k.first, k.second, c, if (c >= LIFT_FROM) c.toFloat() * n / (counts.getValue(k.first) * counts.getValue(k.second)) else null)
-        }.sortedWith(compareByDescending<Link> { it.together }.thenBy { it.a.label })
+        }.filter { (it.lift ?: Float.MAX_VALUE) >= MIN_LIFT }.sortedWith(compareByDescending<Link> { it.together }.thenBy { it.a.label })
         val pts = notes.map { s -> s.map { it.point }.toSet() }
         val pointPairs = HashMap<Pair<String, String>, Float>()
         for (i in POINTS.indices) for (j in i + 1 until POINTS.size) {
@@ -147,6 +151,7 @@ object Links {
         val with = mine.flatMap { it.first }.filter { it != thing && it.point != thing.point }.groupingBy { it }.eachCount()
             .filter { it.value >= th }
             .map { (t, c) -> With(t, c, if (c >= LIFT_FROM) c.toFloat() * all.size / (n * counts.getValue(t)) else null) }
+            .filter { (it.lift ?: Float.MAX_VALUE) >= MIN_LIFT }
             .sortedWith(compareByDescending<With> { it.together }.thenBy { it.thing.label })
         val parts = IntArray(4).also { a -> mine.forEach { a[part(it.second)]++ } }.toList()
         val lead = parts.indices.maxByOrNull { parts[it] }
