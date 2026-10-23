@@ -37,6 +37,18 @@ class LinksTest {
     }
 
     @Test
+    fun chosenMoodsAreTrustedAndLooksBackHoldNothing() {
+        // moods chosen by hand stand as they are; the words fill in only when none were chosen
+        val chosen = Entry(id = 1, createdAt = at(1, 20), kind = "note", text = "Umoran sam, ali mirniji nego jutros", moods = listOf("umorno"))
+        assertEquals(setOf(Thing(FourPointsReader.EMOTIONS, "umorno")), Links.things(chosen).filter { it.point == FourPointsReader.EMOTIONS }.toSet())
+        val unchosen = Entry(id = 2, createdAt = at(1, 20), kind = "note", text = "Brinem da neću stići do petka")
+        assertTrue(Thing(FourPointsReader.EMOTIONS, "zabrinuto") in Links.things(unchosen))
+        // the evening look back is written at night about the whole day: it says nothing about when or together
+        val evening = Entry(id = 3, createdAt = at(1, 21), kind = "evening", text = "Dobro: šetnja. Teško: brinem za rok, ramena napeta.")
+        assertTrue(Links.things(evening).isEmpty())
+    }
+
+    @Test
     fun twoMoodsInOneNoteAreNotALink() {
         val notes = List(3) { note(it + 1, 9, listOf("nemirno", "umorno")) }
         assertTrue(Links.web(notes).links.isEmpty())

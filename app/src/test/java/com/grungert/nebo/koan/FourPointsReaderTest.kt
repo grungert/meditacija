@@ -14,6 +14,13 @@ class FourPointsReaderTest {
         assertFalse("lupanje srca" in read("Hvala ti od srca za sve").body)
         assertFalse("toplina" in read("Popio sam toplu kafu na terasi").body)
         assertTrue("napeta ramena" in read("Boli me vrat i ramena su mi kao kamen").body)
+        // calm breath is no short breath, a warm cup no warmth in the body, tense shoulders no restless mood
+        assertFalse("plitak dah" in read("Kiša pada, slušam je i dišem polako").body)
+        assertTrue("plitak dah" in read("Dišem plitko i fali mi vazduha").body)
+        assertFalse("toplina" in read("Primjećujem miris i toplinu šoljice").body)
+        assertTrue("toplina" in read("Osjećam toplinu u grudima").body)
+        assertFalse("nemirno" in read("Ramena su mi bila napeta cijeli dan").moods)
+        assertTrue("nemirno" in read("Sav sam napet pred sastanak").moods)
         assertTrue("lupanje srca" in read("Srce mi lupa kao ludo").body)
     }
 

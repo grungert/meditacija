@@ -216,7 +216,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                     Text("Dnevnik", style = TitleStyle.copy(color = Ink.onSky, shadow = skyShadow, fontSize = 38.sp, lineHeight = 42.sp))
                 }
                 SkyAction(NeboIcon.Search, if (searching) "Zatvori pretragu" else "Traži") { searching = !searching; if (!searching) query = "" }
-                SkyAction(NeboIcon.Stars, "Sazviježđa") { constellationsMode = 1; go(Screen.Constellations) }
+                SkyAction(NeboIcon.Stars, "Sazviježđa") { constellationsMode = 1; go(Screen.Constellations()) }
                 SkyAction(NeboIcon.Share, "Izvezi") {
                     scope.launch { Export.share(context, app.db, app.library, app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() })) }
                 }
@@ -672,7 +672,7 @@ fun SimilarScreen(sc: Screen.Similar, go: (Screen) -> Unit) {
                 .screenPadding().padding(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ScreenHeader("Slično ranije", { player.stop(); go(Screen.Journal) })
+            ScreenHeader("Slično ranije", { player.stop(); go(sc.back) })
             target?.let { t ->
                 PaperCard {
                     Text(ijekavian(dayFmt.format(Date(t.createdAt))).replaceFirstChar { it.uppercase() } + " · " + timeFmt.format(Date(t.createdAt)), style = PaperSmall)

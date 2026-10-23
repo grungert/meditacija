@@ -15,8 +15,9 @@ object FourPointsReader {
 
     /**
      * Labels the person can pick, each with the word stems that bring it. A trailing * matches any ending.
-     * Only words that mean the body: "vrata" are a door, "hvala od srca" is not a racing heart, "topla kafa" is no
-     * warmth in the body.
+     * Only words that mean the body: "vrata" are a door, "hvala od srca" is not a racing heart, "topla kafa" and
+     * "toplina šoljice" are no warmth in the body, and "dišem polako" is calm breath, not a short one: breathing counts
+     * only when it is short, heavy or missing.
      */
     val BODY_LABELS = listOf(
         "stisnut stomak" to listOf("stomak*", "želud*", "mučnin*", "utrob*"),
@@ -24,10 +25,11 @@ object FourPointsReader {
         "stezanje u grudima" to listOf("grud*", "prsa", "prsima", "stez*", "steže"),
         "lupanje srca" to listOf("lupa mi srce", "srce mi lupa", "srce lupa", "lupanje srca", "srce mi tuče", "ubrzano srce", "puls*"),
         "knedla u grlu" to listOf("knedl*", "grlo", "grlu"),
-        "plitak dah" to listOf("dah", "daha", "diš*", "disanje", "disati", "gušim se", "guši me", "nedostaje mi vazduh*", "fali mi vazduh*", "nemam vazduh*"),
+        "plitak dah" to listOf("plit*", "kratak dah", "kratko dišem", "ubrzano dišem", "ubrzan dah", "teško dišem", "teško mi je da dišem", "ne mogu da dišem",
+            "zadihan*", "gušim se", "guši me", "nedostaje mi vazduh*", "fali mi vazduh*", "nemam vazduh*", "zastaje mi dah", "zadržavam dah"),
         "stegnuta vilica" to listOf("vilic*", "stisnut* zub*", "stežem zube", "škrgut*"),
         "pritisak u glavi" to listOf("glavobolj*", "sljepoočnic*", "pritisak u glavi", "boli me glava", "glava mi je teška", "teška glava"),
-        "toplina" to listOf("toplin*", "toplo mi je", "vrućin*", "vruće mi je", "talas topline"),
+        "toplina" to listOf("toplina u*", "toplinu u*", "osjećam toplin*", "toplo mi je", "vrućin*", "vruće mi je", "talas topline", "toplina se širi", "zagrijan*"),
         "drhtanje" to listOf("drht*", "tresem se", "tresu mi se"),
         "težina u tijelu" to listOf("težina u tijelu", "težinu u", "otežal*", "olovn*", "teško tijelo", "teške noge", "teške ruke"),
         "opušteno tijelo" to listOf("opušten*", "lagano tijelo", "olakšan*", "ramena se spuštaju", "ramena se konačno spuštaju"),
@@ -58,7 +60,8 @@ object FourPointsReader {
         "ne znam da li", "kažem sebi", "u glavi", "po glavi", "zašto", "da li ću")
     private val MOOD_STEMS = mapOf(
         "mirno" to listOf("mir", "mirno", "miran", "mirna", "smiren*", "spokoj*"),
-        "nemirno" to listOf("nemir*", "nervoz*", "uznemir*", "anksio*", "napet*"),
+        // "napet" as a mood, said of oneself; "napeta ramena" are the body, read there
+        "nemirno" to listOf("nemir*", "nervoz*", "uznemir*", "anksio*", "napet sam", "napeta sam", "osjećam se napet*", "sav sam napet", "sva sam napeta"),
         "umorno" to listOf("umor*", "iscrplj*", "pospan*"),
         "tužno" to listOf("tuž*", "tug*", "plač*", "plak*", "suz*"),
         "ljuto" to listOf("ljut*", "bijes*", "iznervir*", "frustr*"),

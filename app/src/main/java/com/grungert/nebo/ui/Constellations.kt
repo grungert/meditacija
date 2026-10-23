@@ -112,7 +112,7 @@ var constellationsMode = 0
  * The sky above turns to night while this is open.
  */
 @Composable
-fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
+fun ConstellationsScreen(sc: Screen.Constellations, host: SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
     var entries by remember { mutableStateOf<List<Entry>?>(null) }
@@ -143,7 +143,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66040A1C), Color(0x33040A1C), Color(0xCC040A1C)))))
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Column(Modifier.screenPadding().padding(top = 8.dp)) {
-                ScreenHeader("Sazviježđa", { go(Screen.Journal) })
+                ScreenHeader("Sazviježđa", { go(sc.back) })
                 PillTabs(listOf("Niti", "Veze"), mode, { mode = it }, Modifier.padding(bottom = 8.dp))
                 Text(if (mode == 0) "Svaki zapis je zvijezda u boji svoje tačke. Niti su sazviježđa: dodirni jedno da ga otvoriš."
                     else "Svaka zvijezda je nešto što se vraća u bilješkama. Linija spaja ono što dolazi zajedno. Dodirni zvijezdu.",
@@ -155,7 +155,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
                     w == null -> Text("Tražim veze…", style = SmallStyle, modifier = Modifier.align(Alignment.TopCenter))
                     w.links.isEmpty() -> Text("Veze se pokažu kad se nešto u bilješkama vrati bar ${w.threshold} puta zajedno. Zapisuj, i nebo će se popuniti.",
                         style = BodyStyle, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).screenPadding())
-                    else -> ThingsSky(w, { th -> go(Screen.Focus(th.point, th.label)) }, Modifier.fillMaxSize())
+                    else -> ThingsSky(w, { th -> go(Screen.Focus(th.point, th.label, back = sc)) }, Modifier.fillMaxSize())
                 }
             } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val density = LocalDensity.current
@@ -172,7 +172,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
                     detectTapGestures { pos ->
                         val near = stars.minByOrNull { hypot(it.at.x - pos.x, it.at.y - pos.y) }
                         if (near == null || hypot(near.at.x - pos.x, near.at.y - pos.y) > 34.dp.toPx()) { peek = null; return@detectTapGestures }
-                        if (near.thread >= 0) th.getOrNull(near.thread)?.let { go(Screen.Thread(it.entries.map { e -> e.id }, it.title)) }
+                        if (near.thread >= 0) th.getOrNull(near.thread)?.let { go(Screen.Thread(it.entries.map { e -> e.id }, it.title, back = sc)) }
                         else peek = near.entry
                     }
                 }) {
@@ -218,7 +218,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
                     Text("${thread.title.uppercase()} · ${thread.entries.size}", style = LabelStyle.copy(color = Ink.soft.copy(alpha = 0.9f * alpha), fontSize = 10.sp),
                         textAlign = TextAlign.Center, maxLines = 2,
                         modifier = Modifier.offset(x = with(density) { x.toDp() } - 75.dp, y = with(density) { y.toDp() } + 12.dp).width(150.dp)
-                            .clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { go(Screen.Thread(thread.entries.map { it.id }, thread.title)) }
+                            .clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button) { go(Screen.Thread(thread.entries.map { it.id }, thread.title, back = sc)) }
                             .padding(vertical = 4.dp))
                 }
                 if (all != null && all.isEmpty()) Text("Nebo je još prazno. Svaka bilješka ovdje postaje zvijezda.", style = BodyStyle,
@@ -239,7 +239,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
                             modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { peek = null }.padding(4.dp))
                     }
                     Text(p.words, style = BodyStyle.copy(fontSize = 15.sp, lineHeight = 22.sp, shadow = null), maxLines = 4)
-                    GlassButton("Slične bilješke", { go(Screen.Similar(p.id)) }, icon = NeboIcon.Similar)
+                    GlassButton("Slične bilješke", { go(Screen.Similar(p.id, back = sc)) }, icon = NeboIcon.Similar)
                 } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     for (k in listOf(FourPointsReader.THOUGHTS, FourPointsReader.EMOTIONS, FourPointsReader.BODY, FourPointsReader.URGES)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

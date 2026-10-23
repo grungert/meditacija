@@ -52,15 +52,16 @@ sealed class Screen {
     data object Stats : Screen()
     data object Settings : Screen()
     data class Week(val entryId: Long?) : Screen()
-    data class Similar(val entryId: Long) : Screen()
+    // the screens that open from more than one place carry the one to go back to
+    data class Similar(val entryId: Long, val back: Screen = Journal) : Screen()
     data class KoanNotes(val koanId: String) : Screen()
-    data class Thread(val ids: List<Long>, val title: String) : Screen()
+    data class Thread(val ids: List<Long>, val title: String, val back: Screen = Journal) : Screen()
     data object Fifty : Screen()
-    data object Constellations : Screen()
+    data class Constellations(val back: Screen = Journal) : Screen()
     data object Intro : Screen()
     data object Help : Screen()
     /** One thing from the notes, and what tends to come with it. */
-    data class Focus(val point: String, val label: String) : Screen()
+    data class Focus(val point: String, val label: String, val back: Screen = Journal) : Screen()
 }
 
 /** The screens read in daylight when the sun is up; sessions and check-ins keep the night look. */
@@ -169,10 +170,10 @@ class MainActivity : ComponentActivity() {
         BackHandler(enabled = screen != Screen.Home) {
             screen = when (val sc = screen) {
                 is Screen.Journal, is Screen.Stats, is Screen.Settings, is Screen.Setup, is Screen.Week -> Screen.Home
-                is Screen.Similar -> Screen.Journal
-                is Screen.Thread -> Screen.Journal
-                Screen.Constellations -> Screen.Journal
-                is Screen.Focus -> Screen.Journal
+                is Screen.Similar -> sc.back
+                is Screen.Thread -> sc.back
+                is Screen.Constellations -> sc.back
+                is Screen.Focus -> sc.back
                 Screen.Fifty -> Screen.Home
                 Screen.Help -> Screen.Settings
                 Screen.Intro -> { app.settings.introSeen = true; Screen.Home }
@@ -215,7 +216,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                     is Screen.Thread -> com.grungert.nebo.ui.ThreadScreen(sc, go)
                     Screen.Fifty -> com.grungert.nebo.ui.FiftyScreen(host, go)
-                    Screen.Constellations -> com.grungert.nebo.ui.ConstellationsScreen(host, go)
+                    is Screen.Constellations -> com.grungert.nebo.ui.ConstellationsScreen(sc, host, go)
                     Screen.Intro -> com.grungert.nebo.ui.IntroScreen(go)
                     Screen.Help -> com.grungert.nebo.ui.HelpScreen(go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)

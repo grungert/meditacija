@@ -239,7 +239,7 @@ fun FocusScreen(sc: Screen.Focus, go: (Screen) -> Unit) {
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(scroll).screenPadding().padding(top = 8.dp, bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            ScreenHeader("Kad se javi…", { go(Screen.Journal) })
+            ScreenHeader("Kad se javi…", { go(sc.back) })
             val f = focus ?: return@Column
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -356,7 +356,29 @@ fun layoutStars(web: Links.Web, w: Float, h: Float, max: Int = 10): List<StarPla
     val padX = w * 0.16f; val padTop = h * 0.08f; val padBottom = h * 0.14f
     fun fx(x: Float) = if (maxX - minX < 1f) w / 2 else padX + (x - minX) / (maxX - minX) * (w - 2 * padX)
     fun fy(y: Float) = if (maxY - minY < 1f) h / 2 else padTop + (y - minY) / (maxY - minY) * (h - padTop - padBottom)
-    return things.mapIndexed { i, t -> StarPlace(t, Offset(fx(px[i]), fy(py[i])), web.counts[t] ?: 0) }
+    val at = Array(n) { Offset(fx(px[it]), fy(py[it])) }
+    // a line must not run over a star it does not join, or two things would look linked through a third:
+    // such a star steps aside, square to the line, until it is clear
+    val clear = min(w, h) * 0.075f
+    repeat(40) {
+        var moved = false
+        for (i in 0 until n) for ((a, b, _) in links) {
+            if (i == a || i == b) continue
+            val p = at[i]; val s = at[a]; val e = at[b]
+            val dx = e.x - s.x; val dy = e.y - s.y
+            val len2 = (dx * dx + dy * dy).coerceAtLeast(1f)
+            val t = (((p.x - s.x) * dx + (p.y - s.y) * dy) / len2).coerceIn(0f, 1f)
+            val q = Offset(s.x + t * dx, s.y + t * dy)
+            val d = hypot(p.x - q.x, p.y - q.y)
+            if (d < clear && t > 0.05f && t < 0.95f) {
+                val (nx, ny) = if (d > 0.5f) (p.x - q.x) / d to (p.y - q.y) / d else (-dy / sqrt(len2)) to (dx / sqrt(len2))
+                at[i] = Offset((p.x + nx * (clear - d + 2f)).coerceIn(padX * 0.6f, w - padX * 0.6f), (p.y + ny * (clear - d + 2f)).coerceIn(padTop, h - padBottom))
+                moved = true
+            }
+        }
+        if (!moved) return@repeat
+    }
+    return things.mapIndexed { i, t -> StarPlace(t, at[i], web.counts[t] ?: 0) }
 }
 
 /**

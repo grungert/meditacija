@@ -26,13 +26,24 @@ object Links {
         "moranje" to "„moram“", "uvijek" to "„uvijek, nikad“", "staako" to "„šta ako“", "samokritika" to "samokritika", "tudjemisli" to "tuđe misli",
     )
 
-    /** The things one note holds: its moods, its body and urges (read from its words when the points were left empty), and its habits of mind. */
+    /** Kinds of notes that look back over a whole day or week: written in the evening about the morning too, good and hard side by side. */
+    private val LOOKING_BACK = setOf("evening", "week")
+    private val BODY_NAMES = FourPointsReader.BODY_LABELS.map { it.first }.toSet()
+    private val URGE_NAMES = FourPointsReader.URGE_LABELS.map { it.first }.toSet()
+
+    /**
+     * The things one note holds: its moods (as chosen; read from the words only when none were chosen), its body and
+     * urges (read from the words when the points were left empty), and its habits of mind. Only the named body
+     * sensations and urges count, since a sentence in a person's own words never comes back word for word. A look back
+     * over a day or a week holds nothing here: what it names did not happen at the hour it was written, nor together.
+     */
     fun things(e: Entry): Set<Thing> {
+        if (e.kind in LOOKING_BACK) return emptySet()
         val read = if (e.points.isEmpty && e.words.isNotBlank()) FourPointsReader.read(e.words) else null
         val out = LinkedHashSet<Thing>()
-        (e.moods + (read?.moods ?: emptyList())).distinct().forEach { out += Thing(FourPointsReader.EMOTIONS, it) }
-        e.points.body.ifEmpty { read?.body ?: emptyList() }.forEach { out += Thing(FourPointsReader.BODY, it) }
-        e.points.urges.ifEmpty { read?.urges ?: emptyList() }.forEach { out += Thing(FourPointsReader.URGES, it) }
+        e.moods.ifEmpty { read?.moods ?: emptyList() }.distinct().forEach { out += Thing(FourPointsReader.EMOTIONS, it) }
+        e.points.body.ifEmpty { read?.body ?: emptyList() }.filter { it in BODY_NAMES }.forEach { out += Thing(FourPointsReader.BODY, it) }
+        e.points.urges.ifEmpty { read?.urges ?: emptyList() }.filter { it in URGE_NAMES }.forEach { out += Thing(FourPointsReader.URGES, it) }
         MindHabits.habits(MindHabits.mindOf(e)).forEach { id -> HABIT_LABEL[id]?.let { out += Thing(FourPointsReader.THOUGHTS, it) } }
         return out
     }

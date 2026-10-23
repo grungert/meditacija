@@ -73,7 +73,7 @@ fun ThreadsList(go: (Screen) -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("Ono što se vraća kroz tvoje bilješke, po značenju" + if (app.recommender.usesMeaning) "." else " i temama.",
                         style = SmallStyle.copy(shadow = null))
-                    GlassButton("Vidi ih kao sazviježđa", { constellationsMode = 0; go(Screen.Constellations) }, Modifier.fillMaxWidth(), icon = NeboIcon.Stars, strong = true)
+                    GlassButton("Vidi ih kao sazviježđa", { constellationsMode = 0; go(Screen.Constellations()) }, Modifier.fillMaxWidth(), icon = NeboIcon.Stars, strong = true)
                 }
             }
             items(t, key = { it.first.entries.first().id }) { (th, face) -> Box(Modifier.animateItem()) { ThreadCard(th, face) { go(Screen.Thread(th.entries.map { it.id }, th.title)) } } }
@@ -151,7 +151,7 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
                 .screenPadding().padding(vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ScreenHeader(sc.title, { player.stop(); go(Screen.Journal) })
+            ScreenHeader(sc.title, { player.stop(); go(sc.back) })
             val list = entries ?: return@Column
             if (list.isEmpty()) { Text("Ove bilješke više ne postoje.", style = BodyStyle); return@Column }
             val first = list.first()
@@ -168,7 +168,7 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
                     for ((t, n) in web.counts.entries.sortedByDescending { it.value }.take(8)) {
                         val c = POINT_COLORS.getValue(t.point)
                         Text("${t.label} · $n", style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (Ink.day) Ink.ink else Color.White, shadow = null),
-                            modifier = Modifier.tap(t.label, shape = RoundedCornerShape(12.dp)) { player.stop(); go(Screen.Focus(t.point, t.label)) }
+                            modifier = Modifier.tap(t.label, shape = RoundedCornerShape(12.dp)) { player.stop(); go(Screen.Focus(t.point, t.label, back = sc)) }
                                 .background(c.copy(alpha = if (Ink.day) 0.35f else 0.25f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
                     }
                 }
@@ -215,7 +215,7 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
             }
             MoodDots(list)
             SectionLabel("Cijela nit")
-            for (e in list) EntryCard(e, player, onStar = {}, onSimilar = { player.stop(); go(Screen.Similar(e.id)) }, footer = dayLabel(e.createdAt))
+            for (e in list) EntryCard(e, player, onStar = {}, onSimilar = { player.stop(); go(Screen.Similar(e.id, back = sc)) }, footer = dayLabel(e.createdAt))
             Box(Modifier.height(40.dp))
         }
     }

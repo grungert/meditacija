@@ -150,9 +150,9 @@ fun StatsScreen(go: (Screen) -> Unit) {
                 Arrive(order++) { HelpsCard(d) { go(Screen.Setup) } }
                 web?.let { w ->
                     if (w.links.isNotEmpty()) {
-                        Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations) } }
-                        Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label)) } }
-                        Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label)) } }
+                        Arrive(order++) { PatternCard(w) { constellationsMode = 1; go(Screen.Constellations(Screen.Stats)) } }
+                        Arrive(order++) { FocusCard(w, seen) { t -> go(Screen.Focus(t.point, t.label, back = Screen.Stats)) } }
+                        Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label, back = Screen.Stats)) } }
                     }
                 }
                 Arrive(order++) { BodyCard(d) }
