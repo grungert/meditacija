@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -155,6 +156,8 @@ fun StatsScreen(go: (Screen) -> Unit) {
                         Arrive(order++) { MatrixCard(w) { t -> go(Screen.Focus(t.point, t.label, back = Screen.Stats)) } }
                     }
                 }
+                d.completion?.takeIf { it.count >= com.grungert.nebo.koan.Practice.ENOUGH }?.let { c -> Arrive(order++) { CompletionCard(c, d.completionSinceStart) } }
+                d.clouds?.takeIf { it.sessions.size >= 3 }?.let { c -> Arrive(order++) { CloudsCard(c) } }
                 Arrive(order++) { BodyCard(d) }
                 Arrive(order++) { MindCard(d) }
                 if (d.dayPartSessions.any { it > 0 }) Arrive(order++) {
@@ -812,6 +815,89 @@ private fun MatrixCard(w: Links.Web, onOpen: (com.grungert.nebo.koan.Thing) -> U
             }
         }
         Text("Pune tačke su se ponovile bar ${w.threshold} puta; blijede tek jednom. Dodirni raspoloženje da vidiš šta dolazi s njim.",
+            style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+    }
+}
+
+private val TYPE_NAME = mapOf(
+    "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci", "silence" to "Tišina", "points" to "4 tačke",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN",
+)
+
+/**
+ * Sitting through: how much of the planned time is sat, by length, by kind or by the part of the day. Each group a
+ * thin bar that fills to its share, the finished ones in calm green. No score: a session left early is still a sit.
+ */
+@Composable
+private fun CompletionCard(c: com.grungert.nebo.koan.Practice.Completion, sinceStart: Boolean) {
+    var view by remember { mutableIntStateOf(if (c.byLength.size >= 2) 0 else if (c.byKind.size >= 2) 1 else 2) }
+    Panel {
+        CardHead("ZAVRŠAVANJE" + if (sinceStart) " · OD POČETKA" else "", "Koliko odsjediš")
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${c.done}", style = NumberStyle)
+            Text("od ${c.count} sesija do kraja", style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.text, shadow = null), modifier = Modifier.padding(bottom = 6.dp))
+        }
+        PillTabs(listOf("Po dužini", "Po vrsti", "Po dobu dana"), view, { view = it })
+        val groups = when (view) { 0 -> c.byLength; 1 -> c.byKind; else -> c.byPart }
+        if (groups.isEmpty()) Text("Za ovo još treba bar ${com.grungert.nebo.koan.Practice.ENOUGH} sesije u istoj grupi.", style = SmallStyle.copy(shadow = null))
+        for (g in groups) Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            val name = when (view) { 0 -> "${g.key} min"; 1 -> TYPE_NAME[g.key] ?: g.key; else -> Links.PART_WHEN[g.key.toInt()].replaceFirstChar { it.uppercase() } }
+            Row {
+                Text(name, style = BodyStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
+                Text("${g.done} od ${g.count}", style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+            }
+            val k = rememberReveal(view to g.key)
+            Box(Modifier.fillMaxWidth().height(9.dp).clip(RoundedCornerShape(5.dp)).background(Ink.text.copy(alpha = 0.1f))) {
+                Box(Modifier.fillMaxWidth((g.share * k).coerceAtLeast(0.01f)).fillMaxHeight().clip(RoundedCornerShape(5.dp)).background(Color(0xFF5FBFA6)))
+            }
+        }
+        c.sentence()?.let { Text(it, style = ReadStyle) }
+        Text("Do kraja: bar 90% planiranog vremena. Prekinuta sesija je i dalje sjedenje.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
+    }
+}
+
+/**
+ * The clouds over the weeks: each clouds session a small cloud as high as the thoughts it noticed in a minute,
+ * and a soft line through them; the sentence says whether they come less often than at the start.
+ */
+@Composable
+private fun CloudsCard(c: com.grungert.nebo.koan.Practice.Clouds) {
+    Panel {
+        CardHead("OBLACI", "Koliko misli dolazi")
+        val k = rememberReveal(c, 1200)
+        val tm = rememberTextMeasurer()
+        val ink = Ink.text
+        val lilac = POINT_COLORS.getValue(FourPointsReader.THOUGHTS)
+        Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+            val n = c.sessions.size
+            val w = size.width
+            val base = size.height - 22.dp.toPx(); val top = 14.dp.toPx()
+            val max = (c.sessions.maxOf { it.perMinute }).coerceAtLeast(0.5f)
+            val xs = (0 until n).map { 16.dp.toPx() + it * (w - 32.dp.toPx()) / (n - 1).coerceAtLeast(1) }
+            fun y(v: Float) = base - (base - top) * (v / max)
+            drawLine(ink.copy(alpha = 0.12f), Offset(0f, base), Offset(w, base), 1.dp.toPx())
+            // a running mean over three sessions: the way it goes, not the ups and downs of one sit
+            if (n >= 3) {
+                val mean = (0 until n).map { i -> c.sessions.subList(maxOf(0, i - 1), minOf(n, i + 2)).map { it.perMinute }.average().toFloat() }
+                clipRect(right = w * k) { drawPath(smoothPath(mean.mapIndexed { i, v -> Offset(xs[i], y(v)) }), lilac, style = Stroke(2.5.dp.toPx(), cap = StrokeCap.Round)) }
+            }
+            for ((i, s) in c.sessions.withIndex()) {
+                if (xs[i] > w * k + 1) continue
+                val p = Offset(xs[i], y(s.perMinute)); val r = 5.dp.toPx()
+                // a little cloud: three puffs
+                drawCircle(lilac.copy(alpha = 0.55f), r, p)
+                drawCircle(lilac.copy(alpha = 0.55f), r * 0.8f, Offset(p.x - r * 0.9f, p.y + r * 0.25f))
+                drawCircle(lilac.copy(alpha = 0.55f), r * 0.8f, Offset(p.x + r * 0.9f, p.y + r * 0.25f))
+            }
+            val df = java.text.SimpleDateFormat("d.M.", Locale.ROOT)
+            for (i in listOf(0, n - 1).distinct()) {
+                val l = tm.measure(df.format(Date(c.sessions[i].at)), TextStyle(fontFamily = UiFont, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = ink.copy(alpha = 0.6f)))
+                drawText(l, topLeft = Offset((xs[i] - l.size.width / 2f).coerceIn(0f, w - l.size.width), base + 6.dp.toPx()))
+            }
+        }
+        Text(c.sentence() ?: "Poslije šest sesija Oblaka ovdje piše da li misli dolaze rjeđe nego na početku. Do sada: ${c.sessions.size}.",
+            style = if (c.sentence() != null) ReadStyle else SmallStyle.copy(shadow = null))
+        Text("Misli u minuti: koliko puta si u Oblacima dodirnuo nebo da pustiš misao. Više nije gore: znači da ih bolje primjećuješ.",
             style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
     }
 }

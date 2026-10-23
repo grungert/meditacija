@@ -149,6 +149,11 @@ class StatsData(
     val flows: List<Triple<String, String, Int>> = emptyList(),
     /** Sessions with a note both before and after. */
     val flowPairs: Int = 0,
+    /** How much of the planned time is sat through: in the span, or since the start when the span holds too few. */
+    val completion: com.grungert.nebo.koan.Practice.Completion? = null,
+    val completionSinceStart: Boolean = false,
+    /** Thoughts a minute in clouds sessions, from the first one up to the end of the span. */
+    val clouds: com.grungert.nebo.koan.Practice.Clouds? = null,
 )
 
 private fun partOfDay(t: Long): Int {
@@ -184,6 +189,10 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
     }
     val fired = prompts.filter { it.firedAt != null && inRange(it.firedAt, range) }
     val mind = entries.map { MindHabits.mindOf(it) }
+    // a span with few sessions says little about sitting through: then everything up to its end
+    val inSpan = com.grungert.nebo.koan.Practice.completion(sessions)
+    val sinceStart = inSpan.count < 8
+    val completion = if (sinceStart) com.grungert.nebo.koan.Practice.completion(allSessions.filter { it.startedAt < range.to }) else inSpan
     val dayOf = { t: Long -> midnight(t).timeInMillis }
     return StatsData(
         range = range,
@@ -211,5 +220,7 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
         helps = com.grungert.nebo.koan.WhatHelps.find(sessions, allEntries),
         flows = flows.entries.sortedByDescending { it.value }.map { Triple(it.key.first, it.key.second, it.value) },
         flowPairs = flows.values.sum(),
+        completion = completion, completionSinceStart = sinceStart,
+        clouds = com.grungert.nebo.koan.Practice.clouds(allSessions.filter { it.startedAt < range.to }),
     )
 }
