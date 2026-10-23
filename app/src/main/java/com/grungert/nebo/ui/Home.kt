@@ -231,12 +231,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var now by remember { mutableStateOf<Now?>(null) }
     var group by remember { mutableIntStateOf(if (part >= 2) 1 else 0) }
     var groupChosen by remember { mutableStateOf(false) }
-    // the cards under "Za tebe": what helps, an insight coming back, the link that keeps coming, a koan for the week
-    var helped by remember { mutableStateOf<com.grungert.nebo.koan.WhatHelps.Kind?>(null) }
-    var helpPairs by remember { mutableIntStateOf(0) }
-    var back by remember { mutableStateOf<com.grungert.nebo.data.Entry?>(null) }
-    var topLink by remember { mutableStateOf<Links.Link?>(null) }
-    var koanOffer by remember { mutableStateOf<com.grungert.nebo.koan.KoanItem?>(null) }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val ss = context.app.db.sessions(weekStart())
@@ -253,15 +248,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             val finding = com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), all)
             val helps = com.grungert.nebo.koan.WhatHelps.suggestion(finding)
             now = suggestNow(all, helps, part)
-            helped = finding.kinds.firstOrNull(); helpPairs = finding.pairs
-            val old = all.filter { it.starred && it.createdAt < System.currentTimeMillis() - 14 * 86_400_000L }
-            back = old.getOrNull((Esm.today() % old.size.coerceAtLeast(1)))
-            topLink = Links.web(all.filter { it.createdAt >= System.currentTimeMillis() - 30 * 86_400_000L }).links.firstOrNull()
-            // a koan for the week when none is being carried: a different one each week
-            if (s.activeWeekKoan() == null) {
-                val koans = context.app.library.items.filter { it.isKoan && it.question != null }
-                koanOffer = koans.getOrNull(Calendar.getInstance().get(Calendar.WEEK_OF_YEAR) % koans.size.coerceAtLeast(1))
-            }
+
             val today = Esm.midnight().timeInMillis
             eveningDue = hour >= start && !Esm.eveningDone(context) &&
                 (s.eveningReview || context.app.db.sessions(today).isNotEmpty() || context.app.db.entries(today).isNotEmpty())
@@ -275,7 +262,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     val reviewDue = (dow == Calendar.SATURDAY || dow == Calendar.SUNDAY || dow == Calendar.MONDAY) &&
         s.weekReviewed != Esm.weekKey(Esm.reviewWeekStart()) && reviewHeld > 0
     val last = context.lastConfig()
-    var weekKoan by remember { mutableStateOf(context.app.library.byId(s.activeWeekKoan())) }
+    val weekKoan = remember { context.app.library.byId(s.activeWeekKoan()) }
 
     fun startType(id: String) {
         s.sessionType = id
@@ -394,8 +381,6 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
                         }
                     }
                 }
-                ForYou(weekKoan, koanOffer, helped, helpPairs, back, topLink, go,
-                    onCarry = { k -> s.carryKoan(k.id); weekKoan = k; koanOffer = null }, onHelped = { t -> startType(t) })
             }
         }
     }
@@ -667,63 +652,5 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
         // the start button stays within reach at the bottom
         GlassButton("Počni", { start() }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().screenPadding().padding(bottom = 16.dp).fillMaxWidth(),
             strong = true, sub = describe(SessionConfig(type, minutes, pattern, interval, before, after, eyes, ambient)))
-    }
-}
-
-/**
- * "Za tebe": a row of small cards drawn from your own notes, each one a way in. A koan for the week (to carry, or the
- * one being carried), what has most helped, an insight coming back, and the link that keeps coming. Only those with
- * something to say are shown.
- */
-@Composable
-private fun ForYou(weekKoan: com.grungert.nebo.koan.KoanItem?, offer: com.grungert.nebo.koan.KoanItem?, helped: com.grungert.nebo.koan.WhatHelps.Kind?, pairs: Int,
-    back: com.grungert.nebo.data.Entry?, link: Links.Link?, go: (Screen) -> Unit, onCarry: (com.grungert.nebo.koan.KoanItem) -> Unit, onHelped: (String) -> Unit) {
-    val s = LocalContext.current.app.settings
-    androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-        Text("ZA TEBE", style = LabelStyle.copy(color = Ink.onSky.copy(alpha = 0.95f), shadow = skyShadow, letterSpacing = 1.8.sp), modifier = Modifier.padding(start = 4.dp))
-        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (weekKoan != null) item {
-                ForYouCard("KOAN SEDMICE · ${s.weekKoanDay()}. DAN OD 7", weekKoan.question ?: weekKoan.title ?: "", "Bilješke uz koan", italic = true) { go(Screen.KoanNotes(weekKoan.id)) }
-            } else if (offer != null) item {
-                ForYouCard("KOAN ZA OVU SEDMICU", (offer.title?.let { "$it\n" } ?: "") + (offer.question ?: ""), "Nosi ga sedam dana", italic = true) { onCarry(offer) }
-            }
-            item {
-                if (helped != null) ForYouCard("ŠTA TI POMAŽE", "Poslije ${TYPE_NAME_AFTER[helped.type] ?: helped.type} si bio lakše ${helped.lighter} od ${helped.count} puta.",
-                    "Kreni: ${SESSION_TYPES.firstOrNull { it.id == helped.type }?.name ?: helped.type}") { onHelped(helped.type) }
-                else ForYouCard("ŠTA TI POMAŽE", "Zapiši kako si prije i poslije sesije, pa ćeš ovdje vidjeti šta ti stvarno pomaže. Do sada: $pairs od 5.",
-                    "Pregled") { go(Screen.Stats) }
-            }
-            if (back != null) item {
-                ForYouCard("VRAĆA TI SE · " + dayLabel(back.createdAt).uppercase(), back.words, "Tvoji uvidi") { go(Screen.Journal) }
-            }
-            if (link != null) item {
-                ForYouCard("OVO SE VRAĆA", "„${link.a.label.trim('„', '“')}“ i „${link.b.label.trim('„', '“')}“ dolaze zajedno, ${link.together} ${plural(link.together, "put", "puta", "puta")} ovog mjeseca.",
-                    "Kad se javi…") { go(Screen.Focus(link.a.point, link.a.label)) }
-            }
-        }
-    }
-}
-
-/** "Poslije …" for each kind of session. */
-private val TYPE_NAME_AFTER = mapOf(
-    "breath" to "Disanja", "walk" to "Šetnje", "thoughts" to "Oblaka", "silence" to "Tišine", "points" to "4 tačke",
-    "hourglass" to "Pješčanog sata", "bodyscan" to "Skeniranja tijela", "urge" to "Talasa", "rain" to "RAIN-a",
-)
-
-@Composable
-private fun ForYouCard(kicker: String, body: String, action: String, italic: Boolean = false, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(26.dp)
-    Column(
-        Modifier.width(272.dp).height(170.dp).tap(action, shape = shape, onClick = onClick).lift(shape, 8.dp).background(Ink.surface, shape)
-            .then(if (Ink.day) Modifier.border(1.dp, Color(0xCCFFFFFF), shape) else Modifier).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(kicker, style = KickerStyle.copy(fontSize = 11.sp), maxLines = 1)
-        Text(body, style = ReadStyle.copy(fontSize = 17.sp, lineHeight = 23.sp, fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal),
-            maxLines = 4, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(action, style = SmallStyle.copy(fontWeight = FontWeight.ExtraBold, color = Ink.accentInk, shadow = null))
-            Icon(NeboIcon.Forward, Ink.accentInk, 12.dp)
-        }
     }
 }
