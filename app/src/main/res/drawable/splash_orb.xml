@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- While the app opens, the orb breathes and its ring goes out, as in the loader that follows. -->
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/splash_orb_still">
+    <target android:name="orb" android:animation="@animator/splash_breath" />
+    <target android:name="ring" android:animation="@animator/splash_ring" />
+    <target android:name="ringPath" android:animation="@animator/splash_ring_fade" />
+</animated-vector>

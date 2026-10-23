@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <objectAnimator android:propertyName="scaleX" android:valueFrom="0.8" android:valueTo="1.6" android:duration="1600"
+        android:repeatCount="infinite" android:interpolator="@android:interpolator/decelerate_quad" />
+    <objectAnimator android:propertyName="scaleY" android:valueFrom="0.8" android:valueTo="1.6" android:duration="1600"
+        android:repeatCount="infinite" android:interpolator="@android:interpolator/decelerate_quad" />
+</set>

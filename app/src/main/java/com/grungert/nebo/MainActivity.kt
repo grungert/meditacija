@@ -77,6 +77,8 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var lake by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
+    /** Whether the sky has drawn its first frame, for the opening loader to give way to it. */
+    var skyDrawn by mutableStateOf(false)
     /** Whether the sun is up behind the screens, with some slack so dusk does not flicker between the two looks. */
     var sunUp by mutableStateOf(false)
 
@@ -89,6 +91,7 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
 
     /** Keeps the meadow's sound in step with the sky: wind and breath, birds by day, crickets by night. */
     fun tuneAmbience(pal: com.grungert.nebo.sky.Palette, sunAmount: Float) {
+        if (!skyDrawn) skyDrawn = true
         // by the clock, not the light through the clouds: a rainy noon is still day
         val sun = com.grungert.nebo.sky.DayCycle.sunAmount(day.hour)
         if (!sunUp && sun > 0.55f) sunUp = true else if (sunUp && sun < 0.3f) sunUp = false
@@ -114,6 +117,8 @@ class MainActivity : ComponentActivity() {
     companion object { const val EXTRA_SHORTCUT = "shortcut" }
 
     private var screen by mutableStateOf<Screen>(Screen.Home)
+    /** The opening loader, on a fresh start only: not when the system recreates the activity, nor with animations off. */
+    private var loading by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -124,6 +129,11 @@ class MainActivity : ComponentActivity() {
         // (dark mode at sunset, a font change) or it comes back from Recents, the same intent arrives again, and must not
         // start a second session or reopen a check-in
         if (savedInstanceState == null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) handle(intent)
+        loading = savedInstanceState == null && SysSettings.Global.getFloat(contentResolver, SysSettings.Global.ANIMATOR_DURATION_SCALE, 1f) != 0f
+        // the system's opening screen hands over to the loader at once: its orb fades as the loader's starts to breathe
+        splashScreen.setOnExitAnimationListener { view ->
+            view.animate().alpha(0f).setDuration(if (loading) 180 else 300).withEndAction { view.remove() }.start()
+        }
         setContent { App() }
     }
 
@@ -222,7 +232,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Koan -> KoanScreen(sc, host, go)
                     Screen.Journal -> JournalScreen(host, go)
                     Screen.Stats -> StatsScreen(go)
-                    Screen.Settings -> SettingsScreen(go)
+                    Screen.Settings -> SettingsScreen(host, go)
                     is Screen.Week -> com.grungert.nebo.ui.WeekScreen(sc, go)
                     is Screen.Similar -> com.grungert.nebo.ui.SimilarScreen(sc, go)
                     is Screen.Thread -> com.grungert.nebo.ui.ThreadScreen(sc, go)
@@ -254,6 +264,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }, onMic = { screen = Screen.CheckIn("note") }, Modifier.navigationBarsPadding().padding(bottom = 12.dp))
             }
+            if (loading) com.grungert.nebo.ui.Loader(ready = host.skyDrawn) { loading = false }
         }
     }
 }

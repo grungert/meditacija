@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Nebo" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/sky</item>
+        <item name="android:windowBackground">@color/night</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- the opening screen: the night sky with the sand orb, which the loader in the app then breathes -->
+        <item name="android:windowSplashScreenBackground">@color/night</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_orb</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/night</item>
+        <item name="android:windowSplashScreenAnimationDuration">1600</item>
     </style>
     <color name="sky">#FF3F7FCF</color>
+    <color name="night">#FF0B1530</color>
 </resources>

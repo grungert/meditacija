@@ -228,7 +228,7 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     LaunchedEffect(info) { host.sheetOpen = info != null }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
     LaunchedEffect(Unit) {
-        host.showCircle = false; host.dark = false; host.lake = false
+        host.showCircle = false; host.dark = false; host.lake = s.lakeScene
         host.engine.paced = false
         host.engine.walkOn = false
         host.onTap = null; host.onPhase = null; host.onFrame = null

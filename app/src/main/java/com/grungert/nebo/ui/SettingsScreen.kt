@@ -80,7 +80,7 @@ private val BLUE = Color(0xFF6F9BE0)
  * and touched. Above the reminders, a word when the phone keeps Nebo from sending them, with the way to allow it.
  */
 @Composable
-fun SettingsScreen(go: (Screen) -> Unit) {
+fun SettingsScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
     val s = app.settings
@@ -223,6 +223,8 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                     { weekReminder = it; s.weekReminder = it; if (it) askToNotify(); refresh() }, last = true)
             }
 
+            SkyGroup(host)
+
             Group("Sesije") {
                 SettingRow(NeboIcon.Breath, CALM, "Vibracija na udah i izdah", "Blago, da dah možeš pratiti i zatvorenih očiju", haptics, { haptics = it; s.haptics = it })
                 SettingRow(NeboIcon.Wave, CALM, "Zvuk prirode", "Vjetar, ptice danju, cvrčci noću, kiša", ambient, { ambient = it; s.ambient = it }, last = true)
@@ -246,6 +248,55 @@ fun SettingsScreen(go: (Screen) -> Unit) {
             val version = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() }
             Text("Nebo ${version ?: ""} · sve što snimiš i zapišeš ostaje na telefonu.", style = SmallStyle.copy(fontSize = 12.sp),
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp))
+        }
+    }
+}
+
+/**
+ * The sky behind every screen: the hour, the season and the weather, each as set, and for "kako dođe" what it is
+ * today. A change shows at once on the sky behind this screen.
+ */
+@Composable
+private fun SkyGroup(host: com.grungert.nebo.SkyHost) {
+    val s = LocalContext.current.app.settings
+    var time by remember { mutableStateOf(s.timeMode) }
+    var season by remember { mutableStateOf(s.seasonMode) }
+    var weather by remember { mutableStateOf(s.weatherMode) }
+    var lake by remember { mutableStateOf(s.lakeScene) }
+    var open by remember { mutableStateOf<String?>(null) }
+    fun applySky() { host.applyWeatherSettings(season, weather); host.day.mode = time; host.lake = lake }
+    val today = com.grungert.nebo.sky.Seasons.season(season)
+    val timeLabel = when (time) { "clock" -> "po satu"; "cycle" -> "ciklus kroz dan"; else -> TIME_OPTIONS.firstOrNull { it.second == time }?.first ?: time }
+    val seasonLabel = if (season == "auto") "po kalendaru · sada ${today.label}" else today.label
+    val weatherLabel = if (weather == "auto") "kako dođe · danas ${com.grungert.nebo.sky.Seasons.weather("auto", today).label}"
+        else com.grungert.nebo.sky.Seasons.weather(weather, today).label
+    Group("Nebo") {
+        SettingRow(NeboIcon.Sun, BLUE, "Doba dana", timeLabel, null, null, onTap = { open = if (open == "time") null else "time" }, expanded = open == "time") {
+            ChipRow {
+                Chip("po satu", time == "clock", { time = "clock"; s.timeMode = time; applySky() })
+                Chip("ciklus", time == "cycle", { time = "cycle"; s.timeMode = time; applySky() })
+                for ((label, h) in TIME_OPTIONS) Chip(label, time == h, { time = h; s.timeMode = h; applySky() })
+            }
+        }
+        SettingRow(NeboIcon.Cloud, BLUE, "Vrijeme", weatherLabel, null, null, onTap = { open = if (open == "weather") null else "weather" }, expanded = open == "weather") {
+            ChipRow {
+                Chip("kako dođe", weather == "auto", { weather = "auto"; s.weatherMode = weather; applySky() })
+                for (w in com.grungert.nebo.sky.Weather.entries) Chip(w.label, weather == w.name, { weather = w.name; s.weatherMode = w.name; applySky() })
+            }
+            Text("„Kako dođe“: svaki dan drugačije, najčešće vedro, ponekad kiša, magla ili snijeg zimi.", style = SmallStyle.copy(shadow = null))
+        }
+        SettingRow(NeboIcon.Lotus, BLUE, "Godišnje doba", seasonLabel, null, null, onTap = { open = if (open == "season") null else "season" }, expanded = open == "season") {
+            ChipRow {
+                Chip("po kalendaru", season == "auto", { season = "auto"; s.seasonMode = season; applySky() })
+                for (sn in com.grungert.nebo.sky.Season.entries) Chip(sn.label, season == sn.name, { season = sn.name; s.seasonMode = sn.name; applySky() })
+            }
+        }
+        SettingRow(NeboIcon.Wave, BLUE, "Mjesto", if (lake) "jezero" else "livada", null, null, onTap = { open = if (open == "place") null else "place" }, expanded = open == "place", last = true) {
+            ChipRow {
+                Chip("livada", !lake, { lake = false; s.lakeScene = false; applySky() })
+                Chip("jezero", lake, { lake = true; s.lakeScene = true; applySky() })
+            }
+            Text("Šetnja uvijek ide livadom.", style = SmallStyle.copy(shadow = null))
         }
     }
 }
