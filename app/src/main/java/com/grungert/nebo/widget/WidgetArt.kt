@@ -80,7 +80,8 @@ object WidgetArt {
             val lobes = List(7) { floatArrayOf((r.nextFloat() - 0.5f) * 2.4f * s, -r.nextFloat() * 0.5f * s, (0.45f + 0.4f * r.nextFloat()) * s) }
             paint.color = argb(mix(pal.md, pal.skyHor, 0.25f), 0.95f)
             for (l in lobes) c.drawCircle(cx + l[0], cy + l[1], l[2], paint)
-            c.drawRect(cx - 1.6f * s, cy, cx + 1.6f * s, cy + 0.35f * s, paint)
+            // a soft base: a flat oval under the lobes, with no corners for the eye to catch
+            c.drawOval(cx - 1.75f * s, cy - 0.3f * s, cx + 1.75f * s, cy + 0.36f * s, paint)
             paint.color = argb(pal.lt, 0.95f)
             for (l in lobes) c.drawCircle(cx + l[0] - l[2] * 0.12f, cy + l[1] - l[2] * 0.2f, l[2] * 0.78f, paint)
         }

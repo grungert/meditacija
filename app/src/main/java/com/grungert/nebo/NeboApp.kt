@@ -18,6 +18,8 @@ import kotlinx.coroutines.launch
 
 class NeboApp : Application() {
     lateinit var db: Db; private set
+    /** True while a session is open: nothing from Nebo rings into a sit. */
+    @Volatile var sitting = false
     lateinit var settings: Settings; private set
     lateinit var models: ModelStore; private set
     lateinit var transcriber: Transcriber; private set

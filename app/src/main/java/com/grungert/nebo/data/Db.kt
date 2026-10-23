@@ -286,6 +286,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         writableDatabase.update("prompts", ContentValues().apply { put("fired_at", at) }, "id=?", arrayOf(id.toString()))
     }
 
+    /** A prompt moved later, when it would have come right on top of another notification. */
+    fun reschedulePrompt(id: Long, at: Long) {
+        writableDatabase.update("prompts", ContentValues().apply { put("scheduled_at", at) }, "id=?", arrayOf(id.toString()))
+    }
+
     fun markPromptAnswered(id: Long, entryId: Long) {
         writableDatabase.update("prompts", ContentValues().apply { put("answered_entry_id", entryId) }, "id=?", arrayOf(id.toString()))
     }

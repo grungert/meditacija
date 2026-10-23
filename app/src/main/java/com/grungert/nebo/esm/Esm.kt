@@ -22,8 +22,11 @@ import kotlin.random.Random
  * minutes late, also while the phone lies still in Doze. A missed prompt is simply missed.
  */
 object Esm {
-    const val CHANNEL = "zapazanja"
-    private const val REMIND_CHANNEL = "podsjetnici"
+    // the channels carry the bell of the sessions as their sound; a channel's sound cannot change once made, so these
+    // are new ones, and the old ones without a bell are removed (see ensureChannel)
+    const val CHANNEL = "zapazanja_zvono"
+    private const val REMIND_CHANNEL = "podsjetnici_zvono"
+    private val OLD_CHANNELS = listOf("zapazanja", "podsjetnici", "pedeset")
     const val EXTRA_PROMPT = "prompt_id"
     const val EXTRA_WEEK = "week_review"
     private const val EXTRA_MOOD = "mood"
@@ -45,7 +48,9 @@ object Esm {
     const val EXTRA_FOLLOW = "follow_up"
     private const val ACTION_FOLLOW = "com.grungert.nebo.FOLLOW"
     private const val ACTION_EVENING = "com.grungert.nebo.EVENING"
-    private const val FIFTY_CHANNEL = "pedeset"
+    private const val FIFTY_CHANNEL = "pedeset_zvono"
+    private const val ACTION_LATER = "com.grungert.nebo.LATER"
+    private const val EXTRA_WHAT = "what"
     private val FIFTY_LINES = listOf(
         "Pola pažnje u tijelu, pola napolju. Stopala na podu, i zvukovi oko tebe.",
         "Osjeti dah, i u isto vrijeme vidi svjetlo oko sebe.",
@@ -56,15 +61,40 @@ object Esm {
 
     fun ensureChannel(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
+        fun bell(raw: Int) = android.net.Uri.parse("android.resource://${ctx.packageName}/$raw")
+        val attrs = android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Zapažanja tokom dana", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Nekoliko puta dnevno, u nasumično vrijeme: kako si sada?"
+            setSound(bell(R.raw.nebo_bell_soft), attrs)
         })
         nm.createNotificationChannel(NotificationChannel(REMIND_CHANNEL, "Podsjetnici", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Vrijeme za tišinu, pitanje za danas i pogled na sedmicu."
+            setSound(bell(R.raw.nebo_bell), attrs)
         })
         nm.createNotificationChannel(NotificationChannel(FIFTY_CHANNEL, "50-50", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Nekoliko puta dnevno: pola pažnje u tijelu, pola u svijetu oko tebe."
+            setSound(bell(R.raw.nebo_bell_soft), attrs)
         })
+        OLD_CHANNELS.forEach { nm.deleteNotificationChannel(it) }
+    }
+
+    /** Every Nebo notification: the small icon tinted in the warm gold of the app. */
+    private fun builder(ctx: Context, channel: String) = Notification.Builder(ctx, channel)
+        .setSmallIcon(R.drawable.ic_notification).setColor(0xFFE0A04E.toInt())
+
+    /** When another Nebo notification came in the last ten minutes, this one waits: two at once feel like a nudge, not a pause. */
+    private fun crowded(ctx: Context): Boolean {
+        val now = System.currentTimeMillis()
+        return ctx.getSystemService(NotificationManager::class.java).activeNotifications.any { now - it.postTime < 10 * 60_000L }
+    }
+
+    /** The same notification again in twenty minutes: after a sit that was going on, or when another just came. */
+    private fun later(ctx: Context, action: String) {
+        val pi = PendingIntent.getBroadcast(ctx, (ACTION_LATER + action).hashCode(),
+            Intent(ctx, EsmReceiver::class.java).setAction(ACTION_LATER).putExtra(EXTRA_WHAT, action),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        arm(ctx.getSystemService(AlarmManager::class.java), System.currentTimeMillis() + 20 * 60_000L, pi)
     }
 
     fun today(c: Calendar = Calendar.getInstance()) = c.get(Calendar.YEAR) * 10000 + (c.get(Calendar.MONTH) + 1) * 100 + c.get(Calendar.DAY_OF_MONTH)
@@ -233,8 +263,7 @@ object Esm {
         val open = PendingIntent.getActivity(ctx, 11, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FIFTY, true)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val line = FIFTY_LINES.random()
-        ctx.getSystemService(NotificationManager::class.java).notify(FIFTY_NOTIFICATION_ID, Notification.Builder(ctx, FIFTY_CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification).setContentTitle("50-50").setContentText(line)
+        ctx.getSystemService(NotificationManager::class.java).notify(FIFTY_NOTIFICATION_ID, builder(ctx, FIFTY_CHANNEL).setContentTitle("50-50").setContentText(line)
             .setStyle(Notification.BigTextStyle().bigText(line + "\nDodirni za vježbu od jednog minuta."))
             .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(20 * 60_000L).build())
     }
@@ -291,9 +320,20 @@ object Esm {
 
     internal fun onAlarm(ctx: Context, intent: Intent) {
         val s = ctx.app.settings
+        // a moment asked for later comes back here as itself
+        if (intent.action == ACTION_LATER) {
+            val what = intent.getStringExtra(EXTRA_WHAT) ?: return
+            return onAlarm(ctx, Intent(intent).setAction(what))
+        }
+        val sitting = ctx.app.sitting
         when (intent.action) {
             ACTION_FIRE -> {
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)
+                // in a sit the question waits, and so it does when another notification just came
+                if ((sitting || crowded(ctx)) && ctx.app.db.prompt(id)?.firedAt == null) {
+                    ctx.app.db.reschedulePrompt(id, System.currentTimeMillis() + 20 * 60_000L)
+                    return refresh(ctx)
+                }
                 // a prompt taken away by a change in the settings, or already shown, stays quiet
                 val fresh = ctx.app.db.prompt(id)?.let { it.firedAt == null } == true
                 ctx.app.db.markPromptFired(id, System.currentTimeMillis())
@@ -313,25 +353,30 @@ object Esm {
                 val entryId = db.insertEntry(com.grungert.nebo.data.Entry(createdAt = System.currentTimeMillis(), kind = "esm",
                     promptId = id.takeIf { it > 0 }, text = typed?.ifBlank { null }, moods = listOfNotNull(mood)))
                 if (id > 0) db.markPromptAnswered(id, entryId)
-                nm.notify(NOTIFICATION_ID, Notification.Builder(ctx, CHANNEL).setSmallIcon(R.drawable.ic_notification).setOnlyAlertOnce(true)
+                nm.notify(NOTIFICATION_ID, builder(ctx, CHANNEL).setOnlyAlertOnce(true)
                     .setContentTitle("Zapisano").setContentText("Hvala. Vrati se onome što si radio.").setTimeoutAfter(2500).build())
                 // its themes are found when the app is next opened, not here, where the meaning model would load for one note
                 return
             }
             ACTION_REMIND, ACTION_SNOOZE -> {
-                val doneToday = ctx.app.db.sessions(midnight().timeInMillis).isNotEmpty()
+                // a sit already under way is what the reminder asks for; and a start of a few seconds is no sit
+                val doneToday = sitting || ctx.app.db.sessions(midnight().timeInMillis).any { it.actualSec >= 30 }
                 ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
                 if (s.reminderOn && !(s.reminderSkipIfDone && doneToday)) {
                     val open = PendingIntent.getActivity(ctx, 4, Intent(ctx, MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    val start = PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_START, true)
+                    // what is for you now, as in the app and on the widget
+                    val entries = ctx.app.db.entries()
+                    val now = com.grungert.nebo.ui.suggestNow(entries, com.grungert.nebo.koan.WhatHelps.find(ctx.app.db.sessions(), entries),
+                        com.grungert.nebo.koan.Links.part(System.currentTimeMillis()))
+                    val start = PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE, now.type)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                    val name = com.grungert.nebo.ui.SESSION_TYPES.firstOrNull { it.id == now.type }?.name ?: "Kreni"
                     // or just the three-minute breathing space, for a full day
                     val short = PendingIntent.getActivity(ctx, 6, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_HOURGLASS, true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
-                        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Vrijeme za tišinu")
-                        .setContentText("Nekoliko minuta disanja ispod neba?").setContentIntent(open).setAutoCancel(true)
+                    ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Vrijeme za tišinu · $name")
+                        .setContentText(now.why).setStyle(Notification.BigTextStyle().bigText(now.why)).setContentIntent(open).setAutoCancel(true)
                         .setTimeoutAfter(3 * 60 * 60_000L)
                         .addAction(Notification.Action.Builder(null, "Započni", start).build())
                         .addAction(Notification.Action.Builder(null, "3 minuta", short).build())
@@ -345,6 +390,20 @@ object Esm {
                 arm(ctx.getSystemService(AlarmManager::class.java), System.currentTimeMillis() + 15 * 60_000L, pending(ctx, ACTION_SNOOZE, 0))
                 return
             }
+            ACTION_DAILY, ACTION_EVENING, ACTION_FOLLOW, ACTION_WEEK -> if (sitting) { later(ctx, intent.action!!); return } else dayNote(ctx, intent)
+            ACTION_FIFTY -> if (s.fiftyOn && !sitting) { if (crowded(ctx)) later(ctx, ACTION_FIFTY) else notifyFifty(ctx) }
+            ACTION_SILENCE -> {
+                s.esmSilencedDay = today()
+                ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
+            }
+        }
+        refresh(ctx)
+    }
+
+    /** The notes of the day: a question for the morning, the evening's look back, the next-day return, the week. */
+    private fun dayNote(ctx: Context, intent: Intent) {
+        val s = ctx.app.settings
+        when (intent.action) {
             ACTION_DAILY -> {
                 val lib = ctx.app.library
                 // the week's koan question when one is being carried, otherwise a question from the library
@@ -353,8 +412,7 @@ object Esm {
                 if (s.dailyQuestion && q != null) {
                     val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
-                        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Pitanje za danas").setContentText(q)
+                    ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Pitanje za danas").setContentText(q)
                         .setStyle(Notification.BigTextStyle().bigText(q + (item.title?.let { "\n— $it" } ?: "")))
                         .setContentIntent(open).setAutoCancel(true).build())
                 }
@@ -363,8 +421,7 @@ object Esm {
                 val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_WEEK, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 if (s.weekReviewed != weekKey(reviewWeekStart())) {
-                    ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
-                        .setSmallIcon(R.drawable.ic_notification).setContentTitle("Sedmica je iza tebe")
+                    ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Sedmica je iza tebe")
                         .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
                 }
             }
@@ -373,26 +430,18 @@ object Esm {
                 val open = PendingIntent.getActivity(ctx, 8, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FOLLOW, note.id)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 val about = com.grungert.nebo.koan.FollowUp.about(note)
-                ctx.getSystemService(NotificationManager::class.java).notify(FOLLOW_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
-                    .setSmallIcon(R.drawable.ic_notification).setContentTitle("Kako je danas?")
+                ctx.getSystemService(NotificationManager::class.java).notify(FOLLOW_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je danas?")
                     .setContentText(if (about != null) "Juče ti je bilo teško ($about)." else "Juče ti je bilo teško.")
                     .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(6 * 60 * 60_000L).build())
             }
             ACTION_EVENING -> if (s.eveningReview && !eveningDone(ctx)) {
                 val open = PendingIntent.getActivity(ctx, 7, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_EVENING, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                ctx.getSystemService(NotificationManager::class.java).notify(EVENING_NOTIFICATION_ID, Notification.Builder(ctx, REMIND_CHANNEL)
-                    .setSmallIcon(R.drawable.ic_notification).setContentTitle("Kako je prošao dan?")
+                ctx.getSystemService(NotificationManager::class.java).notify(EVENING_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je prošao dan?")
                     .setContentText("Šta je bilo dobro, šta teško, i šta sutra drugačije.").setContentIntent(open).setAutoCancel(true)
                     .setTimeoutAfter(4 * 60 * 60_000L).build())
             }
-            ACTION_FIFTY -> if (s.fiftyOn) notifyFifty(ctx)
-            ACTION_SILENCE -> {
-                s.esmSilencedDay = today()
-                ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
-            }
         }
-        refresh(ctx)
     }
 
     private const val NOTIFICATION_ID = 7
@@ -409,8 +458,7 @@ object Esm {
         val reply = Notification.Action.Builder(null, "Napiši", pending(ctx, ACTION_REPLY, promptId, mutable = true))
             .addRemoteInput(android.app.RemoteInput.Builder(KEY_TEXT).setLabel("Šta je u tebi?").build()).build()
         fun mood(m: String) = Notification.Action.Builder(null, m, pending(ctx, ACTION_REPLY, promptId, mood = m)).build()
-        val n = Notification.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification)
+        val n = builder(ctx, CHANNEL)
             .setContentTitle("Kako si sada?")
             .setContentText("Dodirni da govoriš, ili odgovori odmah ovdje.")
             .setContentIntent(open)

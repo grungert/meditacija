@@ -286,6 +286,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
     }
 
+    DisposableEffect(Unit) { app.sitting = true; onDispose { app.sitting = false } }
     DisposableEffect(Unit) {
         view.keepScreenOn = true
         // by the lake, if that is where the person sits; the walk always goes through the meadow
