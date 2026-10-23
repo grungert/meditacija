@@ -104,7 +104,7 @@ fun SettingsScreen(go: (Screen) -> Unit) {
                     .clickable(role = androidx.compose.ui.semantics.Role.Button) { go(Screen.Help) }.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Text("?", style = HeadStyle.copy(color = Ink.accent, shadow = null)) }
+                Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = if (Ink.day) 0.45f else 0.2f)), contentAlignment = Alignment.Center) { Text("?", style = HeadStyle.copy(color = Ink.accentInk, shadow = null)) }
                 Column(Modifier.weight(1f)) {
                     Text("Kako radi Nebo", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
                     Text("Vrste sesija, bilješke, niti, podsjetnici i privatnost", style = SmallStyle.copy(shadow = null))
@@ -254,7 +254,7 @@ private fun ModelRow(choice: ModelChoice, refresh: Int, selected: Boolean?, onSe
             Text("${choice.note} · $mb", style = SmallStyle)
             val p = progress
             when {
-                ready -> Text("Preuzeto", style = SmallStyle.copy(color = Ink.accent))
+                ready -> Text("Preuzeto", style = SmallStyle.copy(color = Ink.accentInk))
                 p != null -> Text("Preuzimam… %d%%".format((p * 100).toInt()), style = SmallStyle)
             }
         }
@@ -313,7 +313,7 @@ private fun BackupPanel() {
         Text("Bilješke, snimci i podešavanja postoje samo na ovom telefonu. Sačuvaj kopiju na Google Drive ili računar, " +
             "da ih ne izgubiš ako se telefon izgubi ili pokvari.", style = SmallStyle)
         Text(if (last > 0) "Zadnja kopija: " + df.format(java.util.Date(last)) else "Kopija još nije pravljena.",
-            style = SmallStyle.copy(color = if (last > 0) Ink.accent else Ink.soft))
+            style = SmallStyle.copy(color = if (last > 0) Ink.accentInk else Ink.soft))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GlassButton("Sačuvaj kopiju", { save.launch(com.grungert.nebo.data.Backup.fileName()) }, strong = true)
             GlassButton("Vrati iz kopije", { open.launch(arrayOf("application/zip", "application/octet-stream")) })
@@ -391,7 +391,7 @@ private fun ReminderPanel() {
                     context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                         android.net.Uri.parse("package:" + context.packageName)))
                 })
-            } else Text("Podsjetnik stiže u minut tačno.", style = SmallStyle.copy(color = Ink.accent))
+            } else Text("Podsjetnik stiže u minut tačno.", style = SmallStyle.copy(color = Ink.accentInk))
         }
     }
 }

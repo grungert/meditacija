@@ -159,8 +159,8 @@ fun HoldIconButton(icon: NeboIcon, label: String, onTap: () -> Unit, onHold: () 
                 val w = 3.dp.toPx()
                 val inset = w / 2
                 val arcSize = androidx.compose.ui.geometry.Size(size.width - w, size.height - w)
-                drawArc(Ink.accent.copy(alpha = 0.22f), 0f, 360f, false, androidx.compose.ui.geometry.Offset(inset, inset), arcSize, style = Stroke(w))
-                drawArc(Ink.accent, -90f, 360f * p, false, androidx.compose.ui.geometry.Offset(inset, inset), arcSize, style = Stroke(w, cap = StrokeCap.Round))
+                drawArc((if (Ink.day) Color(0xFFE0A04E) else Ink.accent).copy(alpha = 0.22f), 0f, 360f, false, androidx.compose.ui.geometry.Offset(inset, inset), arcSize, style = Stroke(w))
+                drawArc((if (Ink.day) Color(0xFFE0A04E) else Ink.accent), -90f, 360f * p, false, androidx.compose.ui.geometry.Offset(inset, inset), arcSize, style = Stroke(w, cap = StrokeCap.Round))
             }
         }
         Text(label, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink.text), maxLines = 1, softWrap = false)
@@ -175,13 +175,13 @@ fun SessionInfoSheet(id: String, name: String, icon: NeboIcon, start: String, on
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).clickable(interactionSource = null, indication = null, onClick = onClose)) {
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().heightIn(max = 640.dp)
-                .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Color(0xF20C1630))
+                .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Ink.sheet)
                 .clickable(interactionSource = null, indication = null) {}
                 .navigationBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(46.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(icon, Ink.accent, 24.dp) }
+                Box(Modifier.size(46.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(icon, Ink.accentInk, 24.dp) }
                 Column(Modifier.weight(1f)) {
                     Text(name, style = HeadStyle.copy(shadow = null))
                     Text(help.length, style = SmallStyle.copy(shadow = null))

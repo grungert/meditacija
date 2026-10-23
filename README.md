@@ -21,7 +21,7 @@ Android aplikacija za meditaciju i razumijevanje vlastitih uvida. Nebo s oblacim
 - **Rezervna kopija:** sve u jednom zip fajlu, vraćanje iz kopije, automatska kopija jednom sedmično u izabrani folder.
 - **Dnevnik, pregled i izvoz:** minute po sedmici, doba dana, teme koje se vraćaju, „prije → poslije". Izvoz je u običan tekst. Bez nizova i bodova.
 
-Fontovi: Manrope za interfejs i Cormorant Garamond za koane (SIL Open Font License, licence u `content/fonts/`).
+Fontovi: Manrope za interfejs i Newsreader za koane i tvoje bilješke (SIL Open Font License, licence u `content/fonts/`). Ikonice: Phosphor (MIT).
 
 ## Build
 

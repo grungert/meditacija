@@ -25,6 +25,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -102,6 +103,9 @@ private fun figureOf(notes: List<Entry>, center: Offset, radius: Float, aspect: 
     return pts.map { Offset(it.x - mx + center.x, it.y - my + center.y) }
 }
 
+/** Which sky opens: the threads as constellations (0), or the things that come together (1). */
+var constellationsMode = 0
+
 /**
  * The journal as a night sky: every note a star in the colour of its point, every thread a constellation joining its
  * notes from the first to the last. Touching a constellation opens its thread; touching a lone star shows the note.
@@ -115,6 +119,9 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
     var threads by remember { mutableStateOf<List<InsightThread>?>(null) }
     var peek by remember { mutableStateOf<Entry?>(null) }
     var t by remember { mutableFloatStateOf(0f) }
+    var mode by remember { mutableIntStateOf(constellationsMode) }
+    LaunchedEffect(mode) { constellationsMode = mode }
+    var web by remember { mutableStateOf<com.grungert.nebo.koan.Links.Web?>(null) }
 
     DisposableEffect(Unit) {
         host.day.mode = "23.5"; host.lake = false
@@ -123,6 +130,7 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
     LaunchedEffect(Unit) {
         val all = withContext(Dispatchers.IO) { app.db.entries() }.filter { it.words.isNotBlank() }
         entries = all
+        web = withContext(Dispatchers.Default) { com.grungert.nebo.koan.Links.web(all) }
         threads = app.recommender.threads(all).take(SLOTS.size)
     }
     LaunchedEffect(Unit) {
@@ -135,11 +143,21 @@ fun ConstellationsScreen(host: SkyHost, go: (Screen) -> Unit) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x66040A1C), Color(0x33040A1C), Color(0xCC040A1C)))))
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Column(Modifier.screenPadding().padding(top = 8.dp)) {
-                ScreenHeader("Nebo zapisa", { go(Screen.Journal) })
-                Text("Svaki zapis je zvijezda u boji svoje tačke. Niti su sazviježđa: dodirni jedno da ga otvoriš.",
+                ScreenHeader("Sazviježđa", { go(Screen.Journal) })
+                PillTabs(listOf("Niti", "Veze"), mode, { mode = it }, Modifier.padding(bottom = 8.dp))
+                Text(if (mode == 0) "Svaki zapis je zvijezda u boji svoje tačke. Niti su sazviježđa: dodirni jedno da ga otvoriš."
+                    else "Svaka zvijezda je nešto što se vraća u bilješkama. Linija spaja ono što dolazi zajedno. Dodirni zvijezdu.",
                     style = SmallStyle, modifier = Modifier.padding(bottom = 6.dp))
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            if (mode == 1) Box(Modifier.weight(1f).fillMaxWidth()) {
+                val w = web
+                when {
+                    w == null -> Text("Tražim veze…", style = SmallStyle, modifier = Modifier.align(Alignment.TopCenter))
+                    w.links.isEmpty() -> Text("Veze se pokažu kad se nešto u bilješkama vrati bar ${w.threshold} puta zajedno. Zapisuj, i nebo će se popuniti.",
+                        style = BodyStyle, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.Center).screenPadding())
+                    else -> ThingsSky(w, { th -> go(Screen.Focus(th.point, th.label)) }, Modifier.fillMaxSize())
+                }
+            } else BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val density = LocalDensity.current
                 val wPx = with(density) { maxWidth.toPx() }
                 val hPx = with(density) { maxHeight.toPx() }

@@ -1,5 +1,20 @@
 package com.grungert.nebo.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import com.grungert.nebo.esm.Esm
+import com.grungert.nebo.koan.Links
+import com.grungert.nebo.koan.Thing
 import androidx.compose.foundation.Canvas
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.FlowRow
@@ -81,6 +96,10 @@ import java.util.Locale
 
 private val dayFmt = SimpleDateFormat("EEEE, d. MMMM", Locale.forLanguageTag("sr-Latn-ME"))
 private val timeFmt = SimpleDateFormat("HH:mm", Locale.ROOT)
+private val monthFmt = SimpleDateFormat("LLLL yyyy", Locale.forLanguageTag("sr-Latn-ME"))
+
+/** The weekday names in our ijekavian: the system's Serbian locale says "ponedeljak" and "sreda". */
+internal fun ijekavian(s: String) = s.replace("onedeljak", "onedjeljak").replace("Sreda", "Srijeda").replace("sreda", "srijeda")
 
 /** "Danas", "Juče", or the weekday and date. */
 internal fun dayLabel(t: Long): String {
@@ -90,20 +109,31 @@ internal fun dayLabel(t: Long): String {
     if (same(c, today)) return "Danas"
     today.add(Calendar.DAY_OF_YEAR, -1)
     if (same(c, today)) return "Juče"
-    return dayFmt.format(Date(t)).replaceFirstChar { it.uppercase() }
+    return ijekavian(dayFmt.format(Date(t))).replaceFirstChar { it.uppercase() }
 }
 
-/** The filter last used, so coming back from a thread or a note returns to the same view. */
+/** The view last used, so coming back from a thread or a note returns to the same one. */
 private var lastFilter = 0
 
-/** The journal: a quiet feed by day, searchable, filtered to insights, notes or sessions. */
+/** A day in the timeline: its name, the moods it held (most frequent first), and the colour of the first. */
+private class DayHead(val label: String, val moods: List<String>, val first: Boolean)
+/** The sessions of one day, folded into one line that opens on a touch. */
+private class SessionsOfDay(val day: String, val sessions: List<Session>)
+/** A note in the timeline, and whether the rail above it should be drawn. */
+private class NoteRow(val entry: Entry)
+
+/**
+ * The journal: the sky above with the week's moods, and a sheet of paper over it with three views. "Sve" is a timeline,
+ * notes first and each day's sessions folded into one line; "Uvidi" holds the notes saved as insights, one of them
+ * coming back each day; "Niti" shows what keeps returning. The words in a note can be touched, to see what comes with them.
+ */
 @Composable
 fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val app = context.app
     val transcribed by app.transcriber.done.collectAsState()
     var rows by remember { mutableStateOf<List<Any>?>(null) }
-    var filter by remember { mutableIntStateOf(lastFilter) }   // 0 all, 1 insights, 2 notes, 3 sessions, 4 threads
+    var filter by remember { mutableIntStateOf(lastFilter.coerceIn(0, 2)) }   // 0 all, 1 insights, 2 threads
     LaunchedEffect(filter) { lastFilter = filter }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
@@ -113,96 +143,152 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf<Entry?>(null) }
     var followed by remember { mutableStateOf<Map<Long, Entry>>(emptyMap()) }   // the hard notes that next-day notes answer
+    var week by remember { mutableStateOf<List<Pair<Long, String?>>>(emptyList()) }   // this week's days and each one's first mood
+    var starred by remember { mutableStateOf<List<Entry>?>(null) }
+    var threadOf by remember { mutableStateOf<Map<Long, com.grungert.nebo.koan.InsightThread>>(emptyMap()) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     LaunchedEffect(editing) { host.sheetOpen = editing != null }
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false; player.stop() } }
+    val open: (Thing) -> Unit = { t -> player.stop(); go(Screen.Focus(t.point, t.label)) }
 
-    LaunchedEffect(transcribed, filter, query, reload) {
+    LaunchedEffect(transcribed, query, reload) {
         rows = withContext(Dispatchers.IO) {
             val q = query.trim().lowercase()
-            val entries = if (filter == 3) emptyList() else app.db.entries().filter { e ->
-                (filter != 1 || e.starred) && (q.isEmpty() || byWords(e, q))
-            }
-            val sessions = if (filter == 1 || filter == 2 || q.isNotEmpty()) emptyList() else app.db.sessions()
+            val all = app.db.entries()
+            val entries = all.filter { e -> q.isEmpty() || byWords(e, q) }
+            // sessions under half a minute were only a start; they stay out of the timeline
+            val sessions = if (q.isNotEmpty()) emptyList() else app.db.sessions().filter { it.actualSec >= 30 }
             followed = entries.mapNotNull { it.follows }.mapNotNull { app.db.entry(it) }.associateBy { it.id }
+            starred = all.filter { it.starred }.sortedByDescending { it.createdAt }
+            // the week strip: Monday to Sunday, each day with the colour of its most frequent mood
+            val monday = weekStart()
+            week = (0 until 7).map { i ->
+                val from = monday + i * 86_400_000L
+                from to all.filter { it.createdAt in from until from + 86_400_000L }.flatMap { it.moods }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+            }
             val out = ArrayList<Any>()
-            var lastLabel = ""
-            for ((t, item) in (sessions.map { it.startedAt to it } + entries.map { it.createdAt to it }).sortedByDescending { it.first }) {
-                val label = dayLabel(t)
-                if (label != lastLabel) { out += label; lastLabel = label }
-                out += item
+            val byDay = (sessions.map { it.startedAt to (it as Any) } + entries.map { it.createdAt to (it as Any) }).sortedByDescending { it.first }
+                .groupBy { dayLabel(it.first) }
+            var first = true
+            for ((label, items) in byDay) {
+                val moods = items.mapNotNull { it.second as? Entry }.flatMap { it.moods }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key }
+                out += DayHead(label, moods, first); first = false
+                val ss = items.mapNotNull { it.second as? Session }
+                var sessionsPlaced = false
+                for ((t, item) in items) when (item) {
+                    is Entry -> out += NoteRow(item)
+                    is Session -> if (!sessionsPlaced) { out += SessionsOfDay(label, ss); sessionsPlaced = true }
+                }
             }
             out
         }
     }
+    // the threads, to say which one a saved insight belongs to
+    LaunchedEffect(filter, reload) {
+        if (filter != 1) return@LaunchedEffect
+        val all = withContext(Dispatchers.IO) { app.db.entries() }
+        threadOf = app.recommender.threads(all).flatMap { th -> th.entries.map { it.id to th } }.toMap()
+    }
 
     // the same search by meaning, a moment after typing stops: notes close in sense that do not use the words
-    LaunchedEffect(query, filter, reload) {
+    LaunchedEffect(query, reload) {
         meaning = null
         val q = query.trim()
-        if (q.length < 3 || filter == 3 || !app.recommender.usesMeaning) { meaning = emptyList(); return@LaunchedEffect }
+        if (q.length < 3 || !app.recommender.usesMeaning) { meaning = emptyList(); return@LaunchedEffect }
         delay(450)
-        val all = withContext(Dispatchers.IO) { app.db.entries() }.filter { filter != 1 || it.starred }
+        val all = withContext(Dispatchers.IO) { app.db.entries() }
         meaning = app.recommender.searchByMeaning(q, all, all.filter { byWords(it, q.lowercase()) }.map { it.id }.toSet())
     }
 
+    fun toggle(e: Entry) {
+        scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(e.copy(starred = !e.starred), Col.STARRED) }; reload++ }
+    }
+
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
     Box(Modifier.fillMaxSize()) {
-        Scrim(Modifier.fillMaxSize())
-        Column(Modifier.fillMaxSize().statusBarsPadding().screenPadding().padding(top = 8.dp)) {
-            ScreenHeader("Dnevnik", null) {
-                RoundAction(NeboIcon.Stars, "Nebo zapisa") { go(Screen.Constellations) }
-                RoundAction(NeboIcon.Search, if (searching) "Zatvori pretragu" else "Traži") { searching = !searching; if (!searching) query = "" }
-                RoundAction(NeboIcon.Share, "Izvezi") {
+        // the sky stays visible above the sheet, with just enough shade for the white title
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0x4D14326E), 0.3f to Color(0x0D14326E))))
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 12.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(monthFmt.format(Date()).uppercase(), style = LabelStyle.copy(color = Ink.onSky.copy(alpha = 0.9f), shadow = skyShadow, letterSpacing = 1.8.sp))
+                    Text("Dnevnik", style = TitleStyle.copy(color = Ink.onSky, shadow = skyShadow, fontSize = 38.sp, lineHeight = 42.sp))
+                }
+                SkyAction(NeboIcon.Search, if (searching) "Zatvori pretragu" else "Traži") { searching = !searching; if (!searching) query = "" }
+                SkyAction(NeboIcon.Stars, "Sazviježđa") { constellationsMode = 1; go(Screen.Constellations) }
+                SkyAction(NeboIcon.Share, "Izvezi") {
                     scope.launch { Export.share(context, app.db, app.library, app.recommender.threads(withContext(Dispatchers.IO) { app.db.entries() })) }
                 }
             }
-            AnimatedVisibility(searching) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(16.dp)).background(Ink.surfaceHigh).padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(Modifier.weight(1f)) {
-                        if (query.isEmpty()) Text(if (app.recommender.usesMeaning) "Riječ ili kratka rečenica" else "Traži po riječima ili raspoloženju",
-                            style = BodyStyle.copy(color = Ink.faint, shadow = null))
-                        BasicTextField(query, { query = it }, singleLine = true, textStyle = BodyStyle.copy(shadow = null),
-                            cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth())
-                    }
-                }
+            WeekStrip(week, Modifier.padding(horizontal = 14.dp, vertical = 14.dp)) { day ->
+                // a touch on a day goes to it in the timeline
+                filter = 0
+                val i = rows?.indexOfFirst { it is DayHead && it.label == dayLabel(day) } ?: -1
+                if (i >= 0) scope.launch { list.animateScrollToItem(i) }
             }
-            Spacer(Modifier.height(12.dp))
-            Segmented(listOf("Sve", "Uvidi", "Bilješke", "Sesije", "Niti"), filter, { filter = it })
-            if (filter == 4) { ThreadsList(go); return@Column }
-            val r = rows
-            val m = meaning
-            val bySense = query.trim().length >= 3 && app.recommender.usesMeaning && filter != 3
-            if (r != null && r.isEmpty() && (query.isBlank() || !bySense || m?.isEmpty() == true)) Text(when {
-                query.isNotBlank() -> "Ništa ne odgovara pretrazi."
-                filter == 1 -> "Označi zvjezdicom bilješke koje su ti nešto otvorile. Ovdje će se skupljati."
-                else -> "Ovdje će se pojaviti tvoje sesije i zapažanja."
-            }, style = BodyStyle.copy(color = Ink.soft), modifier = Modifier.padding(top = 24.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 130.dp)) {
-                items(r ?: emptyList()) { row ->
-                    when (row) {
-                        is String -> Text(row, style = HeadStyle.copy(fontSize = 18.sp), modifier = Modifier.padding(top = 18.dp, bottom = 2.dp))
-                        is Session -> SessionRow(row, app.library.byId(row.koanId)?.title)
-                        is Entry -> EntryCard(row, player, followed = row.follows?.let { followed[it] }, onStar = {
-                            scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(row.copy(starred = !row.starred), Col.STARRED) }; reload++ }
-                        }, onSimilar = { go(Screen.Similar(row.id)) }, onEdit = { player.stop(); editing = row })
-                    }
-                }
-                if (query.isNotBlank() && bySense) {
-                    if (m == null) item { Text("Tražim i po značenju…", style = SmallStyle, modifier = Modifier.padding(top = 14.dp)) }
-                    else if (m.isNotEmpty()) {
-                        item {
-                            Column(Modifier.padding(top = 18.dp, bottom = 2.dp)) {
-                                Text("Po značenju", style = HeadStyle.copy(fontSize = 18.sp))
-                                Text("Bilješke bliske po smislu, i bez tih riječi.", style = SmallStyle)
+            AnimatedVisibility(shown, Modifier.weight(1f), enter = slideInVertically(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessLow)) { it / 3 } + fadeIn()) {
+                val sheetShape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp)
+                Column(Modifier.fillMaxSize().clip(sheetShape).background(if (Ink.day) Color(0xEBFAF7F0) else Color(0xE60E1834))) {
+                    Box(Modifier.padding(top = 10.dp).size(40.dp, 5.dp).clip(CircleShape).background(Ink.text.copy(alpha = 0.18f)).align(Alignment.CenterHorizontally))
+                    AnimatedVisibility(searching) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 12.dp).clip(RoundedCornerShape(18.dp)).background(Ink.surfaceHigh).padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(NeboIcon.Search, Ink.soft, 18.dp)
+                            Box(Modifier.weight(1f)) {
+                                if (query.isEmpty()) Text(if (app.recommender.usesMeaning) "Riječ ili kratka rečenica" else "Traži po riječima ili raspoloženju",
+                                    style = BodyStyle.copy(color = Ink.faint, shadow = null))
+                                BasicTextField(query, { query = it; filter = 0 }, singleLine = true, textStyle = BodyStyle.copy(shadow = null),
+                                    cursorBrush = SolidColor(Ink.accentInk), modifier = Modifier.fillMaxWidth())
                             }
                         }
-                        items(m) { (e, z) ->
-                            EntryCard(e, player, onStar = {
-                                scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(e.copy(starred = !e.starred), Col.STARRED) }; reload++ }
-                            }, onSimilar = { go(Screen.Similar(e.id)) }, onEdit = { player.stop(); editing = e },
-                                footer = dayLabel(e.createdAt) + " · " + when { z >= 2.3f -> "vrlo blisko"; z >= 1.9f -> "blisko"; else -> "slično" })
+                    }
+                    PillTabs(listOf("Sve", "Uvidi", "Niti"), filter, { filter = it }, Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp))
+                    when (filter) {
+                        2 -> Box(Modifier.padding(horizontal = 16.dp)) { ThreadsList(go) }
+                        1 -> InsightsList(starred, threadOf, player, open, { toggle(it) }, { player.stop(); editing = it }, go)
+                        else -> {
+                            val r = rows
+                            val m = meaning
+                            val bySense = query.trim().length >= 3 && app.recommender.usesMeaning
+                            if (r != null && r.isEmpty() && (query.isBlank() || !bySense || m?.isEmpty() == true)) Text(
+                                if (query.isNotBlank()) "Ništa ne odgovara pretrazi." else "Ovdje će se pojaviti tvoje sesije i zapažanja.",
+                                style = BodyStyle.copy(color = Ink.soft, shadow = null), modifier = Modifier.padding(24.dp))
+                            LazyColumn(state = list, contentPadding = PaddingValues(start = 10.dp, end = 18.dp, top = 6.dp, bottom = 140.dp)) {
+                                items(r ?: emptyList(), key = { row ->
+                                    when (row) { is DayHead -> "d" + row.label; is SessionsOfDay -> "s" + row.day; is NoteRow -> "n" + row.entry.id; else -> row.hashCode() }
+                                }) { row ->
+                                    Box(Modifier.animateItem()) {
+                                        when (row) {
+                                            is DayHead -> TimelineDay(row)
+                                            is SessionsOfDay -> TimelineSessions(row)
+                                            is NoteRow -> TimelineRow(timeFmt.format(Date(row.entry.createdAt)), 10.dp, row.entry.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.faint) {
+                                                EntryCard(row.entry, player, onStar = { toggle(row.entry) }, onSimilar = { go(Screen.Similar(row.entry.id)) },
+                                                    onEdit = { player.stop(); editing = row.entry }, followed = row.entry.follows?.let { followed[it] }, onThing = open)
+                                            }
+                                        }
+                                    }
+                                }
+                                if (query.isNotBlank() && bySense) {
+                                    if (m == null) item { Text("Tražim i po značenju…", style = SmallStyle.copy(shadow = null), modifier = Modifier.padding(start = 16.dp, top = 14.dp)) }
+                                    else if (m.isNotEmpty()) {
+                                        item {
+                                            Column(Modifier.padding(start = 16.dp, top = 18.dp, bottom = 8.dp)) {
+                                                Text("Po značenju", style = HeadStyle.copy(fontSize = 18.sp, shadow = null))
+                                                Text("Bilješke bliske po smislu, i bez tih riječi.", style = SmallStyle.copy(shadow = null))
+                                            }
+                                        }
+                                        items(m, key = { "m" + it.first.id }) { (e, z) ->
+                                            Box(Modifier.padding(start = 8.dp, bottom = 12.dp)) {
+                                                EntryCard(e, player, onStar = { toggle(e) }, onSimilar = { go(Screen.Similar(e.id)) }, onEdit = { player.stop(); editing = e },
+                                                    footer = dayLabel(e.createdAt) + " · " + when { z >= 2.3f -> "vrlo blisko"; z >= 1.9f -> "blisko"; else -> "slično" }, onThing = open)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -231,6 +317,197 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
     }
 }
 
+/** A round action that sits right on the sky: frosted white, a white icon. */
+@Composable
+private fun SkyAction(icon: NeboIcon, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).tap(label, shape = CircleShape, onClick = onClick).background(Color(0x33FFFFFF), CircleShape)
+            .border(1.dp, Color(0x66FFFFFF), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, Color.White, 21.dp) }
+}
+
+private val WEEKDAYS = listOf("P", "U", "S", "Č", "P", "S", "N")
+
+/** Monday to Sunday: a ring in the colour of each day's mood, today filled in. The rings come out one after the other. */
+@Composable
+private fun WeekStrip(days: List<Pair<Long, String?>>, modifier: Modifier = Modifier, onDay: (Long) -> Unit) {
+    val today = Esm.midnight().timeInMillis
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        days.forEachIndexed { i, (day, mood) ->
+            val k = remember { androidx.compose.animation.core.Animatable(0f) }
+            LaunchedEffect(day) { delay(60L * i); k.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)) }
+            val isToday = day == today
+            val future = day > today
+            val ring = mood?.let { MOOD_COLORS[it] } ?: Color.White.copy(alpha = if (future) 0.25f else 0.4f)
+            Column(
+                Modifier.weight(1f).tap(dayLabel(day), shape = RoundedCornerShape(16.dp), enabled = !future) { onDay(day) }.padding(vertical = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(WEEKDAYS[i], style = LabelStyle.copy(color = Color.White.copy(alpha = 0.88f), shadow = skyShadow))
+                Box(
+                    Modifier.size(40.dp).graphicsLayer { scaleX = k.value; scaleY = k.value }.clip(CircleShape)
+                        .background(if (isToday) Color.White else if (future) Color.Transparent else Color(0x38FFFFFF))
+                        .border(3.dp, ring, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(Calendar.getInstance().apply { timeInMillis = day }.get(Calendar.DAY_OF_MONTH).toString(),
+                        style = SmallStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = if (isToday) Ink.ink else Color.White, shadow = null))
+                }
+            }
+        }
+    }
+}
+
+private val GAP = 4.dp
+
+/**
+ * One row of the timeline: the time on the left, the rail with its dot, and the content. The rail stops a few pixels
+ * short of the dot on both sides, so each dot sits in a little clear space.
+ */
+@Composable
+private fun TimelineRow(time: String, dot: androidx.compose.ui.unit.Dp, color: Color, first: Boolean = false, center: androidx.compose.ui.unit.Dp = 20.dp,
+    bottom: androidx.compose.ui.unit.Dp = 14.dp, content: @Composable () -> Unit) {
+    val line = Ink.text.copy(alpha = 0.16f)
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+        Text(time, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, shadow = null, fontFeatureSettings = "tnum"), textAlign = TextAlign.End,
+            modifier = Modifier.width(44.dp).padding(top = 13.dp))
+        Canvas(Modifier.width(26.dp).fillMaxHeight()) {
+            val x = size.width / 2
+            val cy = center.toPx()
+            val r = dot.toPx() / 2
+            val w = 2.dp.toPx()
+            if (!first) drawLine(line, Offset(x, 0f), Offset(x, cy - r - GAP.toPx()), w, StrokeCap.Round)
+            drawCircle(color, r, Offset(x, cy))
+            drawLine(line, Offset(x, cy + r + GAP.toPx()), Offset(x, size.height), w, StrokeCap.Round)
+        }
+        Box(Modifier.weight(1f).padding(start = 4.dp, bottom = bottom)) { content() }
+    }
+}
+
+@Composable
+private fun TimelineDay(d: DayHead) {
+    val color = d.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.faint
+    TimelineRow("", 12.dp, color, first = d.first, center = 18.dp, bottom = 10.dp) {
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(d.label, style = BodyStyle.copy(fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, shadow = null))
+            if (d.moods.isNotEmpty()) Text(d.moods.take(2).joinToString(", "), style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+        }
+    }
+}
+
+/** A day's sessions as one quiet line, "2 sesije · 15 min"; a touch opens them one by one. */
+@Composable
+private fun TimelineSessions(s: SessionsOfDay) {
+    var open by remember { mutableStateOf(false) }
+    val total = s.sessions.sumOf { it.actualSec }
+    val first = s.sessions.first()
+    TimelineRow(timeFmt.format(Date(first.startedAt)), 8.dp, Ink.soft, center = 19.dp, bottom = 10.dp) {
+        Column(Modifier.fillMaxWidth().animateContentSize(spring(stiffness = Spring.StiffnessMediumLow)).clip(RoundedCornerShape(18.dp)).background(Ink.text.copy(alpha = 0.06f))) {
+            Row(
+                Modifier.fillMaxWidth().tap(if (open) "Sakrij sesije" else "Prikaži sesije", shape = RoundedCornerShape(18.dp)) { open = !open }.padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(SESSION_TYPES.firstOrNull { it.id == first.type }?.icon ?: NeboIcon.Breath, Ink.text, 19.dp)
+                Text(if (s.sessions.size == 1) (TYPE_LABEL[first.type] ?: first.type) else "${s.sessions.size} ${plural(s.sessions.size, "sesija", "sesije", "sesija")}",
+                    style = BodyStyle.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
+                Text(if (total < 60) "$total s" else "${total / 60} min", style = SmallStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
+                if (s.sessions.size > 1) {
+                    val turn by animateFloatAsState(if (open) 90f else 0f, label = "caret")
+                    Icon(NeboIcon.Forward, Ink.soft, 14.dp, Modifier.graphicsLayer { rotationZ = turn })
+                }
+            }
+            if (open && s.sessions.size > 1) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp)) {
+                for (row in s.sessions) SessionLine(row)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SessionLine(row: Session) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(SESSION_TYPES.firstOrNull { it.id == row.type }?.icon ?: NeboIcon.Breath, Ink.soft, 16.dp)
+        Column(Modifier.weight(1f)) {
+            Text((TYPE_LABEL[row.type] ?: row.type) + (if (row.thoughts > 0) " · oblaka ${row.thoughts}" else ""), style = BodyStyle.copy(fontSize = 14.sp, shadow = null))
+            if (row.urge != null) Text("poriv: " + row.urge.removePrefix("da ") + (row.urgeBefore?.let { " · $it" } ?: "") + (row.urgeAfter?.let { " → $it" } ?: ""),
+                style = SmallStyle.copy(color = Ink.accentInk, shadow = null))
+        }
+        Text((if (row.actualSec < 60) "${row.actualSec} s" else "${row.actualSec / 60} min") + " · " + timeFmt.format(Date(row.startedAt)), style = SmallStyle.copy(shadow = null))
+    }
+}
+
+/**
+ * The saved insights: one older insight comes back each day on top ("Vraća ti se"), then all of them by month,
+ * each with the thread it belongs to.
+ */
+@Composable
+private fun InsightsList(starred: List<Entry>?, threadOf: Map<Long, com.grungert.nebo.koan.InsightThread>, player: NotePlayer, open: (Thing) -> Unit,
+    onStar: (Entry) -> Unit, onEdit: (Entry) -> Unit, go: (Screen) -> Unit) {
+    val s = starred ?: return
+    if (s.isEmpty()) {
+        Text("Označi bilješku koja ti je nešto otvorila, oznakom gore desno. Ovdje će se skupljati, a starije će ti se povremeno vraćati.",
+            style = BodyStyle.copy(color = Ink.soft, shadow = null), modifier = Modifier.padding(24.dp))
+        return
+    }
+    // one from at least two weeks ago, a different one each day
+    val old = s.filter { it.createdAt < System.currentTimeMillis() - 14 * 86_400_000L }
+    val back = old.getOrNull((Esm.today() % old.size.coerceAtLeast(1)).toInt())
+    LazyColumn(contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Text("${s.size} ${plural(s.size, "uvid", "uvida", "uvida")}", style = KickerStyle)
+        }
+        if (back != null) item(key = "back") {
+            val shape = RoundedCornerShape(24.dp)
+            Column(
+                Modifier.fillMaxWidth().clip(shape).background(Ink.accent.copy(alpha = if (Ink.day) 0.42f else 0.12f)).border(1.dp, Ink.accent.copy(alpha = 0.35f), shape).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("VRAĆA TI SE · " + ago(back.createdAt).uppercase(), style = KickerStyle)
+                Text(back.words, style = ReadStyle.copy(fontSize = 20.sp, lineHeight = 28.sp), maxLines = 6)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(dayLabel(back.createdAt), style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
+                    if (back.audioPath != null) Row(
+                        Modifier.tap("Preslušaj", shape = RoundedCornerShape(16.dp)) { player.play(back.audioPath) {} }.background(if (Ink.day) Ink.ink else Ink.accent, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(NeboIcon.Play, if (Ink.day) Ink.accent else Ink.ink, 14.dp, filled = true)
+                        Text("Preslušaj", style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = if (Ink.day) Ink.accent else Ink.ink, shadow = null))
+                    }
+                }
+            }
+        }
+        var lastMonth = ""
+        for (e in s) {
+            val month = monthFmt.format(Date(e.createdAt)).substringBefore(' ').uppercase()
+            if (month != lastMonth) { lastMonth = month; item(key = "m$month${e.id}") { Text(month, style = LabelStyle.copy(shadow = null), modifier = Modifier.padding(top = 6.dp)) } }
+            item(key = e.id) {
+                Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    EntryCard(e, player, onStar = { onStar(e) }, onSimilar = { go(Screen.Similar(e.id)) }, onEdit = { onEdit(e) }, onThing = open,
+                        footer = dayLabel(e.createdAt))
+                    threadOf[e.id]?.let { th ->
+                        Text("nit · ${th.title}", style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.text, shadow = null),
+                            modifier = Modifier.tap("Otvori nit", shape = RoundedCornerShape(12.dp)) { go(Screen.Thread(th.entries.map { it.id }, th.title)) }
+                                .background(Ink.text.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "prije 3 sedmice", "prije mjesec dana". */
+private fun ago(t: Long): String {
+    val days = ((System.currentTimeMillis() - t) / 86_400_000L).toInt()
+    return when {
+        days < 21 -> "prije ${days / 7} ${plural(days / 7, "sedmicu", "sedmice", "sedmica")}"
+        days < 45 -> "prije mjesec dana"
+        days < 330 -> "prije ${days / 30} ${plural(days / 30, "mjesec", "mjeseca", "mjeseci")}"
+        else -> "prije godinu dana"
+    }
+}
+
 /** A note found by the words of a search, in any of their forms, or by a mood. */
 private fun byWords(e: Entry, q: String): Boolean {
     val stems = SearchWords.stems(q)
@@ -250,9 +527,9 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry, Array<Col>)
     val points = remember { FourPointsState(e.points) }
     var confirmDelete by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(onBack = onClose)
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).clickable(interactionSource = null, indication = null, onClick = onClose)) {
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).clickable(interactionSource = null, indication = null, onClick = onClose)) {
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Color(0xFF0C1630))
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp)).background(Ink.sheet)
                 .clickable(interactionSource = null, indication = null) {}.navigationBarsPadding().imePadding()
                 .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -269,8 +546,8 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry, Array<Col>)
             Text("Uredi bilješku", style = HeadStyle.copy(shadow = null))
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.surface).padding(16.dp)) {
                 if (text.isEmpty()) Text("Šta je bilo u tebi…", style = BodyStyle.copy(color = Ink.faint, shadow = null))
-                BasicTextField(text, { text = it }, textStyle = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null),
-                    cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp))
+                BasicTextField(text, { text = it }, textStyle = ReadStyle.copy(fontSize = 18.sp, lineHeight = 26.sp, color = Ink.text),
+                    cursorBrush = SolidColor(Ink.accentInk), modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp))
             }
             FourPointsCard(points, moods)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -299,15 +576,9 @@ private fun EditEntry(e: Entry, onClose: () -> Unit, onSave: (Entry, Array<Col>)
 }
 
 @Composable
-private fun RoundAction(icon: NeboIcon, label: String, onClick: () -> Unit) {
-    Box(Modifier.size(44.dp).clip(CircleShape).background(Ink.surfaceHigh).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
-        contentAlignment = Alignment.Center) { Icon(icon, Ink.text, 20.dp) }
-}
-
-@Composable
 private fun SmallAction(icon: NeboIcon, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(Ink.surfaceHigh).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 12.dp, vertical = 8.dp),
+        Modifier.tap(label, shape = RoundedCornerShape(12.dp), onClick = onClick).background(Ink.text.copy(alpha = 0.06f), RoundedCornerShape(12.dp)).padding(horizontal = 11.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Icon(icon, Ink.text, 15.dp)
@@ -315,55 +586,64 @@ private fun SmallAction(icon: NeboIcon, label: String, onClick: () -> Unit) {
     }
 }
 
+/** The bookmark that saves a note as an insight: soft green when saved, and it pops a little when touched. */
 @Composable
-private fun SessionRow(row: Session, koanTitle: String?) {
-    val t = SESSION_TYPES.firstOrNull { it.id == row.type }
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.surface.copy(alpha = 0.55f)).padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(Modifier.size(34.dp).clip(CircleShape).background(Ink.surfaceHigh), contentAlignment = Alignment.Center) { Icon(t?.icon ?: NeboIcon.Breath, Ink.accent, 18.dp) }
-        Column(Modifier.weight(1f)) {
-            Text("${TYPE_LABEL[row.type] ?: row.type} · " + (if (row.actualSec < 60) "${row.actualSec} s" else "${row.actualSec / 60} min") + (if (row.thoughts > 0) " · oblaka ${row.thoughts}" else ""),
-                style = BodyStyle.copy(fontSize = 15.sp, shadow = null))
-            if (row.urge != null) Text("poriv: " + row.urge.removePrefix("da ") + (row.urgeBefore?.let { " · $it" } ?: "") + (row.urgeAfter?.let { " → $it" } ?: ""),
-                style = SmallStyle.copy(color = Ink.accent, shadow = null))
-            if (koanTitle != null) Text(koanTitle, style = SmallStyle.copy(color = Ink.accent, shadow = null))
+private fun InsightMark(on: Boolean, onClick: () -> Unit) {
+    val pop = remember { androidx.compose.animation.core.Animatable(1f) }
+    val scope = rememberCoroutineScope()
+    val bg by animateColorAsState(if (on) Ink.insightBg else Color.Transparent, label = "mark")
+    Box(
+        Modifier.size(34.dp).graphicsLayer { scaleX = pop.value; scaleY = pop.value }
+            .tap(if (on) "Ukloni iz uvida" else "Sačuvaj kao uvid", shape = CircleShape) {
+                onClick()
+                scope.launch { pop.snapTo(0.7f); pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = Spring.StiffnessMedium)) }
+            }.background(bg, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) { Icon(NeboIcon.Bookmark, if (on) Ink.insight else Ink.faint, 17.dp, filled = on) }
+}
+
+/** The things of a note as small chips in their points' colours; each opens what tends to come with it. */
+@Composable
+private fun ThingChips(e: Entry, onThing: (Thing) -> Unit) {
+    val things = remember(e) { Links.things(e).filter { it.point != FourPointsReader.EMOTIONS } }
+    if (things.isEmpty()) return
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (t in things.take(6)) {
+            val c = POINT_COLORS.getValue(t.point)
+            Text(t.label, style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (Ink.day) Ink.ink.copy(alpha = 0.85f) else lerp(c, Color.White, 0.45f), shadow = null),
+                modifier = Modifier.tap(t.label, shape = RoundedCornerShape(12.dp)) { onThing(t) }.background(c.copy(alpha = if (Ink.day) 0.35f else 0.22f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp))
         }
-        Text(timeFmt.format(Date(row.startedAt)), style = SmallStyle.copy(shadow = null))
     }
 }
 
-/** One note: a stripe in its mood's colour, the words large, small actions underneath. */
+/** One note on its card: when and what kind, the bookmark, the words in the reading face, its things to touch, small actions. */
 @Composable
 internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSimilar: (() -> Unit)?, footer: String? = null, onEdit: (() -> Unit)? = null,
-    followed: Entry? = null) {
-    val stripe = row.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.hairline
-    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).clip(RoundedCornerShape(24.dp)).background(Ink.surface)) {
-        Box(Modifier.width(5.dp).fillMaxHeight().background(stripe))
-        Column(Modifier.weight(1f).padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("${timeFmt.format(Date(row.createdAt))} · ${KIND_LABEL[row.kind] ?: row.kind}" +
-                    (if (row.moods.isNotEmpty()) " · " + row.moods.joinToString(", ") else ""), style = SmallStyle.copy(shadow = null), modifier = Modifier.weight(1f))
-                Box(Modifier.size(36.dp).clip(CircleShape).clickable(onClickLabel = if (row.starred) "Ukloni oznaku uvida" else "Označi kao uvid", onClick = onStar),
-                    contentAlignment = Alignment.Center) {
-                    Icon(if (row.starred) NeboIcon.StarFilled else NeboIcon.Star, if (row.starred) Ink.accent else Ink.faint, 19.dp)
-                }
-            }
+    followed: Entry? = null, onThing: ((Thing) -> Unit)? = null) {
+    val shape = RoundedCornerShape(22.dp)
+    Column(Modifier.fillMaxWidth().lift(shape, 6.dp).clip(shape).background(Ink.card).padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 13.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text((KIND_LABEL[row.kind] ?: row.kind) + (if (row.moods.isNotEmpty()) " · " + row.moods.joinToString(", ") else ""),
+                style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
+            InsightMark(row.starred, onStar)
+        }
+        Column(Modifier.padding(end = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // a note from the day after a hard one carries that one with it: yesterday, then today
             followed?.let { y ->
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ink.surfaceHigh).padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Ink.text.copy(alpha = 0.05f)).padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Juče" + (if (y.moods.isNotEmpty()) " · " + y.moods.joinToString(", ") else ""), style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
                     if (y.words.isNotBlank()) Text("„" + y.words.take(140) + (if (y.words.length > 140) "…" else "") + "“", style = SmallStyle.copy(color = Ink.text, shadow = null))
                 }
             }
             val words = row.words
             when {
-                words.isNotBlank() -> Text(words, style = BodyStyle.copy(fontSize = 17.sp, lineHeight = 25.sp, shadow = null))
+                words.isNotBlank() -> Text(words, style = ReadStyle.copy(fontStyle = if (row.kind == "rain") FontStyle.Italic else FontStyle.Normal))
                 row.audioPath != null && row.transcript == null -> Text("Snimak čeka da postane tekst.", style = SmallStyle.copy(shadow = null))
             }
-            row.points.summary().takeIf { it.isNotBlank() }?.let { Text(it, style = SmallStyle.copy(shadow = null)) }
-            if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accent, shadow = null))
+            if (onThing != null) ThingChips(row, onThing)
+            if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accentInk, fontWeight = FontWeight.SemiBold, shadow = null))
             if (row.audioPath != null || (onSimilar != null && words.isNotBlank()) || onEdit != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (row.audioPath != null) SmallAction(NeboIcon.Play, "Preslušaj") { player.play(row.audioPath) {} }
                 if (onSimilar != null && words.isNotBlank()) SmallAction(NeboIcon.Similar, "Slične") { onSimilar() }
@@ -395,7 +675,7 @@ fun SimilarScreen(sc: Screen.Similar, go: (Screen) -> Unit) {
             ScreenHeader("Slično ranije", { player.stop(); go(Screen.Journal) })
             target?.let { t ->
                 PaperCard {
-                    Text(dayFmt.format(Date(t.createdAt)).replaceFirstChar { it.uppercase() } + " · " + timeFmt.format(Date(t.createdAt)), style = PaperSmall)
+                    Text(ijekavian(dayFmt.format(Date(t.createdAt))).replaceFirstChar { it.uppercase() } + " · " + timeFmt.format(Date(t.createdAt)), style = PaperSmall)
                     Text(t.words, style = PaperText)
                 }
             }
@@ -406,228 +686,12 @@ fun SimilarScreen(sc: Screen.Similar, go: (Screen) -> Unit) {
                 else -> {
                     Text(if (app.recommender.usesMeaning) "Najbliže po značenju, od najsličnijeg:" else "Bilješke s istim temama ili raspoloženjem:", style = SmallStyle)
                     for ((e, score) in r) EntryCard(e, player, onStar = {}, onSimilar = null,
-                        footer = dayFmt.format(Date(e.createdAt)).replaceFirstChar { it.uppercase() } + " · " + app.recommender.closeness(score))
+                        footer = ijekavian(dayFmt.format(Date(e.createdAt))).replaceFirstChar { it.uppercase() } + " · " + app.recommender.closeness(score))
                 }
             }
         }
     }
 }
-
-/** A calm overview: no streaks, no scores, just what happened and what keeps returning. */
-@Composable
-fun StatsScreen(go: (Screen) -> Unit) {
-    val app = LocalContext.current.app
-    var data by remember { mutableStateOf<StatsData?>(null) }
-    LaunchedEffect(Unit) { data = withContext(Dispatchers.IO) { computeStats(app.db.sessions(), app.db.entries(), app.db.prompts(0)) } }
-
-    Box(Modifier.fillMaxSize()) {
-        Scrim(Modifier.fillMaxSize())
-        Column(
-            Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState())
-                .screenPadding().padding(top = 8.dp, bottom = 130.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            ScreenHeader("Pregled", null) {
-                GlassButton("Sedmica", { go(Screen.CheckIn("week")) }, icon = NeboIcon.Week)
-            }
-            val d = data ?: return@Column
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("${d.weekMinutes}", "min ove sedmice", Modifier.weight(1f))
-                StatTile("${d.weekSessions}", plural(d.weekSessions, "sesija", "sesije", "sesija"), Modifier.weight(1f))
-                StatTile("${d.weekNotes}", plural(d.weekNotes, "zapis", "zapisa", "zapisa"), Modifier.weight(1f))
-            }
-            Panel {
-                SectionLabel("Minute po sedmici")
-                Bars(d.weeks.map { it.toFloat() }, d.weekLabels, highlightLast = true)
-            }
-            Panel {
-                SectionLabel("Kada meditiraš")
-                val parts = listOf("Jutro" to NeboIcon.Sun, "Dan" to NeboIcon.Sun, "Veče" to NeboIcon.Moon, "Noć" to NeboIcon.Moon)
-                val max = d.dayParts.maxOrNull()?.coerceAtLeast(1) ?: 1
-                parts.forEachIndexed { i, (label, icon) -> MeterRow(icon, label, d.dayParts[i], max, "min") }
-            }
-            if (d.moodWeeks.any { it.isNotEmpty() }) Panel {
-                SectionLabel("Raspoloženja kroz sedmice")
-                MoodTrend(d.moodWeeks, d.weekLabels)
-                val seen = d.moodWeeks.flatMap { it.keys }.distinct()
-                ChipRow { for (m in seen) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(9.dp).clip(CircleShape).background(MOOD_COLORS[m] ?: Ink.soft))
-                    Text(" $m", style = SmallStyle.copy(shadow = null))
-                } }
-            }
-            Panel {
-                SectionLabel("Teme koje se vraćaju")
-                if (d.themes.isEmpty()) Text("Kad snimiš ili zapišeš nekoliko zapažanja, ovdje će se pokazati šta se ponavlja.", style = SmallStyle.copy(shadow = null))
-                else {
-                    val top = d.themes.first().second.coerceAtLeast(1)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for ((t, n) in d.themes) {
-                            // more frequent themes stand out a little more
-                            val k = n.toFloat() / top
-                            Row(Modifier.clip(RoundedCornerShape(14.dp)).background(Ink.accent.copy(alpha = 0.10f + 0.25f * k)).padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text(THEME_NAMES[t] ?: t, style = BodyStyle.copy(fontSize = (13 + 4 * k).sp, fontWeight = FontWeight.SemiBold, shadow = null))
-                                Text("  $n", style = SmallStyle.copy(shadow = null))
-                            }
-                        }
-                    }
-                }
-            }
-            Panel {
-                SectionLabel("Kako su povezani")
-                if (d.links.isEmpty()) Text("Kad u bilješkama primijetiš i tijelo i nagone, ovdje će se pokazati šta najčešće ide uz koju emociju.",
-                    style = SmallStyle.copy(shadow = null))
-                else {
-                    Text("Uz koju emociju najčešće ide koje stanje tijela i koji nagon:", style = SmallStyle.copy(shadow = null))
-                    for (l in d.links) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        @Composable fun pill(text: String, color: Color) = Text(text, style = SmallStyle.copy(color = Ink.inkOnPaper, fontWeight = FontWeight.SemiBold, shadow = null),
-                            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(color).padding(horizontal = 10.dp, vertical = 5.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                pill(l.mood, MOOD_COLORS[l.mood] ?: POINT_COLORS.getValue(FourPointsReader.EMOTIONS))
-                                l.body?.let { Text("→", style = SmallStyle.copy(shadow = null)); pill(it, POINT_COLORS.getValue(FourPointsReader.BODY)) }
-                                l.urge?.let { Text("→", style = SmallStyle.copy(shadow = null)); pill(it, POINT_COLORS.getValue(FourPointsReader.URGES)) }
-                            }
-                        }
-                        Text("${l.times}×", style = SmallStyle.copy(shadow = null))
-                    }
-                }
-            }
-            d.helps?.let { h ->
-                Panel {
-                    SectionLabel("Šta mi pomaže")
-                    if (h.kinds.isEmpty()) {
-                        Text("Kad uz sesiju zapišeš kako si prije i poslije, ovdje se vidi šta ti stvarno pomaže.", style = BodyStyle.copy(shadow = null))
-                        Text("Sesija sa oba zapisa: ${h.pairs}. Za prvi zaključak treba ${com.grungert.nebo.koan.WhatHelps.ENOUGH} iste vrste. " +
-                            "Bilješke prije i poslije uključuješ u podešavanju sesije.", style = SmallStyle.copy(shadow = null))
-                    } else {
-                        for (k in h.kinds.take(4)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(SESSION_TYPES.firstOrNull { it.id == k.type }?.icon ?: NeboIcon.Breath, Ink.accent, 18.dp)
-                            Text("Poslije ${AFTER_TYPE[k.type] ?: k.type} si ${k.lighter} od ${k.count} puta bio lakše.",
-                                style = BodyStyle.copy(fontSize = 15.sp, shadow = null), modifier = Modifier.weight(1f))
-                        }
-                        h.partFor?.let { (t, better, worse) ->
-                            Text("${TYPE_LABEL[t] ?: t} ti više pomaže ${PART_WHEN[better]} nego ${PART_WHEN[worse]}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
-                        }
-                        Text("Iz bilješki prije i poslije sesije: koliko je raspoloženje poslije bilo lakše.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
-                    }
-                }
-            }
-            if (d.waves.isNotEmpty()) Panel {
-                SectionLabel("Talasi")
-                val all = d.waves.sumOf { it.count }
-                val before = d.waves.sumOf { (it.before * it.count).toDouble() } / all
-                val after = d.waves.sumOf { (it.after * it.count).toDouble() } / all
-                // whole numbers stay whole: "sa 8 na 3", and "sa 7,5 na 4" only when it is a half
-                fun num(x: Double) = if (kotlin.math.abs(x - kotlin.math.round(x)) < 0.05) "%d".format(kotlin.math.round(x).toInt()) else "%.1f".format(x).replace('.', ',')
-                Text("Poriv je u prosjeku pao sa ${num(before)} na ${num(after)}, za $all ${plural(all, "talas", "talasa", "talasa")}.",
-                    style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
-                for (w in d.waves.take(5)) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(w.urge.removePrefix("da "), style = BodyStyle.copy(fontSize = 14.sp, shadow = null), modifier = Modifier.weight(1f))
-                    Text("${w.count}× · %.0f → %.0f".format(w.before, w.after), style = SmallStyle.copy(shadow = null))
-                }
-                Text("Talas ne traži da poriv nestane, samo da ga vidiš kako prolazi.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
-            }
-            Panel {
-                SectionLabel("Gdje nosiš napetost")
-                if (d.tension.isEmpty()) Text("Kad uradiš skeniranje tijela, ili u bilješci označiš tačku tijelo, ovdje se vidi gdje najčešće nosiš napetost.",
-                    style = SmallStyle.copy(shadow = null))
-                else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                    BodyMap(d.tension, Modifier.width(104.dp).height(220.dp))
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val ranked = d.tension.entries.sortedByDescending { it.value }
-                        // "most often" only when one place leads, and has been named more than once
-                        if (ranked.first().value >= 2 && ranked.getOrNull(1)?.value != ranked.first().value)
-                            bodyRegion(ranked.first().key)?.let { Text("Najčešće je nosiš ${it.where}.", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null)) }
-                        val top = ranked.first().value.coerceAtLeast(1)
-                        for ((id, n) in ranked.take(5)) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(Modifier.size(9.dp).clip(CircleShape).background(TENSION.copy(alpha = 0.35f + 0.65f * n / top)))
-                            Text(bodyRegion(id)?.name ?: id, style = BodyStyle.copy(fontSize = 14.sp, shadow = null), modifier = Modifier.weight(1f))
-                            Text("$n×", style = SmallStyle.copy(shadow = null))
-                        }
-                        Text(if (d.scans > 0) "Iz skeniranja tijela i iz bilješki s tačkom tijelo." else "Iz bilješki s tačkom tijelo. Skeniranje tijela dodaje još.",
-                            style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
-                    }
-                }
-            }
-            Panel {
-                SectionLabel("Navike uma")
-                Text("Ovo nisu greške, nego navike koje ima svaki um. Kad ih primijetiš, manje te vode.", style = SmallStyle.copy(shadow = null))
-                if (d.times.isEmpty() && d.habits.isEmpty() && d.wander.isEmpty())
-                    Text("Kad zapisuješ misli, ovdje se pokaže šta se u njima ponavlja: „moram“, „šta ako“, „uvijek“ i „nikad“, i da li je um više u prošlosti ili u budućnosti.",
-                        style = SmallStyle.copy(shadow = null))
-                if (d.times.isNotEmpty()) {
-                    // a sentence only when one time clearly leads, over at least three notes; the bar always shows the mix
-                    val ranked = d.times.entries.sortedByDescending { it.value }
-                    if (d.times.values.sum() >= 3 && ranked.getOrNull(1)?.value != ranked[0].value)
-                        Text("Posljednjih 30 dana um je najčešće bio ${ranked[0].key.label}: ${ranked[0].key.about}.", style = BodyStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
-                    TimeBar(d.times)
-                }
-                for ((id, n) in d.habits) MindHabits.habit(id)?.let { h ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(h.name, style = BodyStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, shadow = null))
-                            Text(h.about, style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
-                        }
-                        Text("$n×", style = SmallStyle.copy(shadow = null))
-                    }
-                }
-                if (d.wander.isNotEmpty()) Text("U „Oblacima“ um je najčešće odlazio u: " + d.wander.take(3).joinToString(", ") { "${it.first} (${it.second})" } + ".",
-                    style = SmallStyle.copy(shadow = null))
-            }
-            if (d.shifts.isNotEmpty()) Panel {
-                SectionLabel("Prije → poslije sesije")
-                for ((s, n) in d.shifts) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s, style = BodyStyle.copy(shadow = null), modifier = Modifier.weight(1f))
-                    Text("$n×", style = SmallStyle.copy(shadow = null))
-                }
-            }
-            if (d.types.isNotEmpty()) Panel {
-                SectionLabel("Vrste sesija")
-                val max = d.types.maxOf { it.second }
-                for ((t, n) in d.types) MeterRow(SESSION_TYPES.firstOrNull { it.id == t }?.icon ?: NeboIcon.Breath, TYPE_LABEL[t] ?: t, n, max, "")
-            }
-            Panel {
-                SectionLabel("Zapažanja tokom dana")
-                if (d.promptsFired == 0) Text("Pozivi su isključeni ili još nijesu stigli.", style = SmallStyle.copy(shadow = null)) else {
-                    Text("${d.promptsAnswered} od ${d.promptsFired}", style = NumberStyle.copy(fontSize = 30.sp))
-                    Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(Ink.surfaceHigh)) {
-                        Box(Modifier.fillMaxWidth(d.promptsAnswered.toFloat() / d.promptsFired).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(Ink.accent))
-                    }
-                    Text("poziva s odgovorom. Propušten poziv je samo propušten.", style = SmallStyle.copy(shadow = null))
-                }
-            }
-        }
-    }
-}
-
-/** The mind's time as one bar in three parts: the past, here and now, the future. */
-@Composable
-private fun TimeBar(times: Map<MindHabits.Time, Int>) {
-    val total = times.values.sum().coerceAtLeast(1)
-    val colors = mapOf(MindHabits.Time.PAST to POINT_COLORS.getValue(FourPointsReader.THOUGHTS), MindHabits.Time.NOW to POINT_COLORS.getValue(FourPointsReader.BODY),
-        MindHabits.Time.FUTURE to POINT_COLORS.getValue(FourPointsReader.EMOTIONS))
-    Row(Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)).background(Ink.surfaceHigh)) {
-        for (t in MindHabits.Time.entries) {
-            val n = times[t] ?: 0
-            if (n > 0) Box(Modifier.weight(n.toFloat()).fillMaxHeight().background(colors.getValue(t)))
-        }
-    }
-    val pct = percents(MindHabits.Time.entries.map { times[it] ?: 0 })
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        for ((i, t) in MindHabits.Time.entries.withIndex()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(colors.getValue(t)))
-            Text("${t.label} ${pct[i]}%", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
-        }
-    }
-}
-
-/** "Poslije …": each kind of session after the word "after". */
-private val AFTER_TYPE = mapOf(
-    "breath" to "disanja", "walk" to "šetnje", "thoughts" to "oblaka", "silence" to "tišine", "points" to "4 tačke",
-    "hourglass" to "pješčanog sata", "bodyscan" to "skeniranja tijela", "urge" to "talasa", "rain" to "RAIN-a",
-)
-private val PART_WHEN = listOf("ujutru", "danju", "uveče", "noću")
 
 /** Whole percentages that add up to 100: each part rounded down, the points left over going to the largest remainders. */
 fun percents(counts: List<Int>): List<Int> {
@@ -637,19 +701,6 @@ fun percents(counts: List<Int>): List<Int> {
     val out = exact.map { it.toInt() }.toMutableList()
     exact.indices.sortedByDescending { exact[it] - out[it] }.take(100 - out.sum()).forEach { out[it]++ }
     return out
-}
-
-/** An icon, a label, a thin bar for the value and the value itself. */
-@Composable
-private fun MeterRow(icon: NeboIcon, label: String, value: Int, max: Int, unit: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(icon, Ink.soft, 16.dp)
-        Text(label, style = BodyStyle.copy(fontSize = 14.sp, shadow = null), modifier = Modifier.width(78.dp))
-        Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(Ink.surfaceHigh)) {
-            if (value > 0) Box(Modifier.fillMaxWidth(value.toFloat() / max).fillMaxHeight().clip(RoundedCornerShape(4.dp)).background(Ink.accent))
-        }
-        Text(if (unit.isEmpty()) "$value" else "$value $unit", style = SmallStyle.copy(shadow = null), modifier = Modifier.width(52.dp), textAlign = TextAlign.End)
-    }
 }
 
 class StatsData(
@@ -669,6 +720,14 @@ class StatsData(
     val waves: List<WaveSummary> = emptyList(),
     /** What helps: sessions with a note before and after, and what they show. */
     val helps: com.grungert.nebo.koan.WhatHelps.Finding? = null,
+    /** Minutes on each day of this week, Monday to Sunday; -1 for the days still ahead. */
+    val weekDays: List<Int> = List(7) { -1 },
+    /** Sessions in the morning, by day, in the evening and at night. */
+    val dayPartSessions: List<Int> = List(4) { 0 },
+    /** The first mood before and the first after a session, and how many sessions went that way. */
+    val flows: List<Triple<String, String, Int>> = emptyList(),
+    /** Sessions with a note both before and after. */
+    val flowPairs: Int = 0,
 )
 
 /** Where tension was named: each scan counts a part once, each note once for each part its body point names. */
@@ -727,10 +786,18 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         ts.forEach { themeCount[it] = (themeCount[it] ?: 0) + 1 }
     }
     val shifts = HashMap<String, Int>()
+    val flows = HashMap<Pair<String, String>, Int>()
     for (s in sessions) {
         val b = entries.firstOrNull { it.sessionId == s.id && it.kind == "before" }?.moods?.firstOrNull() ?: continue
         val a = entries.firstOrNull { it.sessionId == s.id && it.kind == "after" }?.moods?.firstOrNull() ?: continue
         val k = "$b → $a"; shifts[k] = (shifts[k] ?: 0) + 1
+        flows[b to a] = (flows[b to a] ?: 0) + 1
+    }
+    val now = System.currentTimeMillis()
+    val weekDays = (0 until 7).map { i ->
+        val from = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i) }.timeInMillis
+        val to = (cal.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, i + 1) }.timeInMillis
+        if (from > now) -1 else sessions.filter { it.startedAt in from until to }.sumOf { it.actualSec } / 60
     }
     val fired = prompts.filter { it.firedAt != null }
     val esm = entries.filter { it.kind == "esm" }
@@ -753,6 +820,10 @@ fun computeStats(sessions: List<Session>, entries: List<Entry>, prompts: List<co
         wander = sessions.flatMap { it.wander }.groupingBy { it }.eachCount().toList().sortedByDescending { it.second },
         waves = waveSummaries(sessions),
         helps = com.grungert.nebo.koan.WhatHelps.find(sessions, entries),
+        weekDays = weekDays,
+        dayPartSessions = IntArray(4).also { a -> sessions.filter { it.actualSec >= 30 }.forEach { a[dayPart(it.startedAt)]++ } }.toList(),
+        flows = flows.entries.sortedByDescending { it.value }.map { Triple(it.key.first, it.key.second, it.value) },
+        flowPairs = flows.values.sum(),
     )
 }
 
@@ -764,36 +835,13 @@ fun Bars(values: List<Float>, labels: List<String>, highlightLast: Boolean = fal
         values.forEachIndexed { i, v ->
             val hot = highlightLast && i == values.lastIndex
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (v > 0) v.toInt().toString() else "", style = SmallStyle.copy(fontSize = 11.sp, color = if (hot) Ink.accent else Ink.soft, shadow = null))
+                Text(if (v > 0) v.toInt().toString() else "", style = SmallStyle.copy(fontSize = 11.sp, fontWeight = if (hot) FontWeight.ExtraBold else FontWeight.Medium, color = if (hot) Ink.text else Ink.soft, shadow = null))
+                val k = rememberReveal(values, 900 + 60 * i)
+                val rest = Ink.text
                 Canvas(Modifier.fillMaxWidth().height(96.dp)) {
-                    val h = (size.height * (v / max)).coerceAtLeast(if (v > 0) 6f else 3f)
-                    drawRoundRect(if (hot) Ink.accent else Color.White.copy(alpha = if (v > 0) 0.42f else 0.12f),
+                    val h = (size.height * (v / max) * k).coerceAtLeast(if (v > 0) 6f else 3f)
+                    drawRoundRect(if (hot) Ink.accent else rest.copy(alpha = if (v > 0) 0.16f else 0.08f),
                         topLeft = Offset(size.width * 0.15f, size.height - h), size = Size(size.width * 0.7f, h), cornerRadius = CornerRadius(size.width * 0.35f))
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(labels.getOrElse(i) { "" }, style = SmallStyle.copy(fontSize = 10.sp, shadow = null), maxLines = 1)
-            }
-        }
-    }
-}
-
-/** One column per week: the moods noted that week, stacked in their colours. No scores, just the mix. */
-@Composable
-fun MoodTrend(weeks: List<Map<String, Int>>, labels: List<String>) {
-    val max = weeks.maxOf { it.values.sum() }.coerceAtLeast(1)
-    Row(Modifier.fillMaxWidth().height(124.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-        weeks.forEachIndexed { i, w ->
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Canvas(Modifier.fillMaxWidth().height(96.dp)) {
-                    val bw = size.width * 0.7f
-                    val x = size.width * 0.15f
-                    drawRoundRect(Color.White.copy(alpha = 0.08f), topLeft = Offset(x, 0f), size = Size(bw, size.height), cornerRadius = CornerRadius(bw / 2))
-                    var y = size.height
-                    for ((mood, n) in w.entries.sortedBy { it.key }) {
-                        val h = size.height * n / max
-                        drawRect(MOOD_COLORS[mood] ?: Color.White, topLeft = Offset(x, y - h), size = Size(bw, h))
-                        y -= h
-                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(labels.getOrElse(i) { "" }, style = SmallStyle.copy(fontSize = 10.sp, shadow = null), maxLines = 1)

@@ -59,7 +59,13 @@ sealed class Screen {
     data object Constellations : Screen()
     data object Intro : Screen()
     data object Help : Screen()
+    /** One thing from the notes, and what tends to come with it. */
+    data class Focus(val point: String, val label: String) : Screen()
 }
+
+/** The screens read in daylight when the sun is up; sessions and check-ins keep the night look. */
+private fun readsInDaylight(sc: Screen) = sc is Screen.Home || sc is Screen.Journal || sc is Screen.Stats || sc is Screen.Settings ||
+    sc is Screen.Thread || sc is Screen.Similar || sc is Screen.Focus || sc is Screen.Setup
 
 /** The one sky shared by every screen, plus hooks the current screen can set. */
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
@@ -70,6 +76,8 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var lake by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
+    /** Whether the sun is up behind the screens, with some slack so dusk does not flicker between the two looks. */
+    var sunUp by mutableStateOf(false)
 
     fun applyWeatherSettings(seasonMode: String, weatherMode: String) {
         season = com.grungert.nebo.sky.Seasons.season(seasonMode)
@@ -80,6 +88,9 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
 
     /** Keeps the meadow's sound in step with the sky: wind and breath, birds by day, crickets by night. */
     fun tuneAmbience(pal: com.grungert.nebo.sky.Palette, sunAmount: Float) {
+        // by the clock, not the light through the clouds: a rainy noon is still day
+        val sun = com.grungert.nebo.sky.DayCycle.sunAmount(day.hour)
+        if (!sunUp && sun > 0.55f) sunUp = true else if (sunUp && sun < 0.3f) sunUp = false
         val e = engine
         ambience.wind = e.wind
         ambience.swell = if (!e.paced) 0.25f else when (e.phase) {
@@ -161,6 +172,7 @@ class MainActivity : ComponentActivity() {
                 is Screen.Similar -> Screen.Journal
                 is Screen.Thread -> Screen.Journal
                 Screen.Constellations -> Screen.Journal
+                is Screen.Focus -> Screen.Journal
                 Screen.Fifty -> Screen.Home
                 Screen.Help -> Screen.Settings
                 Screen.Intro -> { app.settings.introSeen = true; Screen.Home }
@@ -183,7 +195,13 @@ class MainActivity : ComponentActivity() {
                 foreground = host.foreground,
                 lake = host.lake,
             )
-            AnimatedContent(screen, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "screen") { sc ->
+            // the light of the screens follows the sky, but only where they read in daylight
+            val light = host.sunUp && readsInDaylight(screen)
+            if (com.grungert.nebo.ui.Ink.day != light) com.grungert.nebo.ui.Ink.day = light
+            AnimatedContent(screen, transitionSpec = {
+                (fadeIn(androidx.compose.animation.core.tween(320)) + androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(380), initialScale = 0.97f))
+                    .togetherWith(fadeOut(androidx.compose.animation.core.tween(200)))
+            }, label = "screen") { sc ->
                 when (sc) {
                     Screen.Home -> HomeScreen(host, go)
                     Screen.Setup -> SetupScreen(host, go)
@@ -201,6 +219,7 @@ class MainActivity : ComponentActivity() {
                     Screen.Intro -> com.grungert.nebo.ui.IntroScreen(go)
                     Screen.Help -> com.grungert.nebo.ui.HelpScreen(go)
                     is Screen.KoanNotes -> com.grungert.nebo.ui.KoanNotesScreen(sc, go)
+                    is Screen.Focus -> com.grungert.nebo.ui.FocusScreen(sc, go)
                 }
             }
             // the four main places share a bottom bar; sessions and notes take the whole screen
@@ -221,7 +240,7 @@ class MainActivity : ComponentActivity() {
                         com.grungert.nebo.ui.Tab.OVERVIEW -> Screen.Stats
                         com.grungert.nebo.ui.Tab.SETTINGS -> Screen.Settings
                     }
-                }, Modifier.navigationBarsPadding().padding(bottom = 10.dp))
+                }, onMic = { screen = Screen.CheckIn("note") }, Modifier.navigationBarsPadding().padding(bottom = 12.dp))
             }
         }
     }

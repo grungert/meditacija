@@ -155,7 +155,7 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
                 GlassButton(if (kept || r.starred) "Sačuvano među uvidima" else "Sačuvaj kao uvid", {
                     kept = true
                     scope.launch { withContext(Dispatchers.IO) { app.db.updateEntry(r.copy(starred = true), Col.STARRED) } }
-                }, icon = if (kept || r.starred) NeboIcon.StarFilled else NeboIcon.Star, enabled = !(kept || r.starred))
+                }, icon = NeboIcon.Bookmark, enabled = !(kept || r.starred))
             }
 
             Panel {
@@ -184,7 +184,7 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
                 Text("TVOJIM RIJEČIMA", style = LabelStyle)
                 for ((t, e) in d.quotes) PaperCard {
                     Text((THEME_NAMES[t] ?: t).replaceFirstChar { it.uppercase() } + " · " +
-                        SimpleDateFormat("EEEE", Locale.forLanguageTag("sr-Latn-ME")).format(Date(e.createdAt)), style = PaperSmall)
+                        ijekavian(SimpleDateFormat("EEEE", Locale.forLanguageTag("sr-Latn-ME")).format(Date(e.createdAt))), style = PaperSmall)
                     Text("„${e.words}“", style = PaperText.copy(fontStyle = FontStyle.Italic, fontSize = 20.sp))
                 }
             }

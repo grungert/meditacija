@@ -73,17 +73,17 @@ fun ThreadsList(go: (Screen) -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("Ono što se vraća kroz tvoje bilješke, po značenju" + if (app.recommender.usesMeaning) "." else " i temama.",
                         style = SmallStyle.copy(shadow = null))
-                    GlassButton("Vidi ih kao sazviježđa", { go(Screen.Constellations) }, Modifier.fillMaxWidth(), icon = NeboIcon.Stars)
+                    GlassButton("Vidi ih kao sazviježđa", { constellationsMode = 0; go(Screen.Constellations) }, Modifier.fillMaxWidth(), icon = NeboIcon.Stars, strong = true)
                 }
             }
-            items(t) { (th, face) -> ThreadCard(th, face) { go(Screen.Thread(th.entries.map { it.id }, th.title)) } }
+            items(t, key = { it.first.entries.first().id }) { (th, face) -> Box(Modifier.animateItem()) { ThreadCard(th, face) { go(Screen.Thread(th.entries.map { it.id }, th.title)) } } }
         }
     }
 }
 
 /** The colour of a thread's phase: warm while it wakes, lilac while it returns, mint as it settles. */
 private fun phaseColor(p: ThreadPhase) = when (p) {
-    ThreadPhase.WAKING -> Ink.accent
+    ThreadPhase.WAKING -> Color(0xFFE0A04E)
     ThreadPhase.RETURNING -> POINT_COLORS.getValue(com.grungert.nebo.koan.FourPointsReader.THOUGHTS)
     ThreadPhase.SETTLING -> POINT_COLORS.getValue(com.grungert.nebo.koan.FourPointsReader.BODY)
 }
@@ -102,24 +102,24 @@ private fun lit(face: ThreadFace) = face.strength.mapValues { it.value >= 0.2f }
 
 @Composable
 private fun ThreadCard(th: InsightThread, face: ThreadFace, onOpen: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.surface)
-            .clickable(role = Role.Button, onClickLabel = "Otvori nit", onClick = onOpen).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().tap("Otvori nit", shape = shape, onClick = onOpen).lift(shape, 6.dp).background(Ink.card, shape).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(th.title, style = HeadStyle.copy(fontSize = 20.sp, shadow = null))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(th.title, style = HeadStyle.copy(fontSize = 19.sp, fontWeight = FontWeight.Bold, shadow = null))
                 Text("${notes(th.entries.size)} · ${dayLabel(th.entries.first().createdAt)} → ${dayLabel(th.entries.last().createdAt)}",
                     style = SmallStyle.copy(shadow = null))
             }
-            // the thread's face: which of the four points it holds, and how strongly
-            PointsConstellation(lit(face), Modifier.width(76.dp).height(60.dp), labels = false, strength = face.strength, nodeSize = 13.dp)
+            // the thread's own web: which of the four points it holds, and how much they touch
+            ThreadWeb(th.entries, Modifier.width(84.dp))
         }
         PhasePill(face)
-        if (face.sentence.isNotBlank()) Text(face.sentence, style = SmallStyle.copy(color = Ink.text, shadow = null))
+        if (face.sentence.isNotBlank()) Text(face.sentence, style = SmallStyle.copy(color = Ink.text, fontSize = 13.5.sp, shadow = null))
         MoodDots(th.entries)
-        Text("„" + th.entries.last().words.take(160) + "“", style = BodyStyle.copy(fontSize = 15.sp, fontStyle = FontStyle.Italic, color = Ink.soft, shadow = null),
+        Text("„" + th.entries.last().words.take(160) + "“", style = ReadStyle.copy(fontSize = 16.sp, lineHeight = 23.sp, fontStyle = FontStyle.Italic, color = Ink.soft),
             maxLines = 2)
     }
 }
@@ -160,8 +160,19 @@ fun ThreadScreen(sc: Screen.Thread, go: (Screen) -> Unit) {
             Text("${notes(list.size)} · ${dayLabel(first.createdAt)} → ${dayLabel(last.createdAt)}", style = SmallStyle)
             // the face of the thread: its four points, when it comes and with what, where it is, and a practice for it
             Panel {
+                val web = remember(list) { com.grungert.nebo.koan.Links.web(list) }
+                val top = remember(web) { web.counts.entries.groupBy { it.key.point }.mapValues { (_, v) -> v.maxBy { it.value }.key.label } }
+                PointsWeb(web.pointShare, web.pointPairs, Modifier.fillMaxWidth().height(210.dp), words = top)
+                // the things that come back in this thread: each opens what comes with it
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for ((t, n) in web.counts.entries.sortedByDescending { it.value }.take(8)) {
+                        val c = POINT_COLORS.getValue(t.point)
+                        Text("${t.label} · $n", style = SmallStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (Ink.day) Ink.ink else Color.White, shadow = null),
+                            modifier = Modifier.tap(t.label, shape = RoundedCornerShape(12.dp)) { player.stop(); go(Screen.Focus(t.point, t.label)) }
+                                .background(c.copy(alpha = if (Ink.day) 0.35f else 0.25f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    PointsConstellation(lit(face), Modifier.width(150.dp).height(112.dp), labels = false, strength = face.strength)
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (k in listOf(com.grungert.nebo.koan.FourPointsReader.THOUGHTS, com.grungert.nebo.koan.FourPointsReader.EMOTIONS,
                             com.grungert.nebo.koan.FourPointsReader.BODY, com.grungert.nebo.koan.FourPointsReader.URGES)) {

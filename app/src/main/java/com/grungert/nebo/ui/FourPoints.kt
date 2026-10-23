@@ -97,7 +97,7 @@ fun PointsConstellation(
                 // threads bow gently towards the middle, like strings, and are drawn twice for a soft glow
                 val ctrl = Offset((pa.x + pb.x) / 2 * 0.8f + mid.x * 0.2f, (pa.y + pb.y) / 2 * 0.8f + mid.y * 0.2f)
                 val path = Path().apply { moveTo(pa.x, pa.y); quadraticTo(ctrl.x, ctrl.y, pb.x, pb.y) }
-                val tone = if (lit) lerp(POINT_COLORS.getValue(a), POINT_COLORS.getValue(b), 0.5f) else Color.White
+                val tone = if (lit) lerp(POINT_COLORS.getValue(a), POINT_COLORS.getValue(b), 0.5f) else Ink.text
                 val both = minOf(power(a), power(b)).coerceIn(0.25f, 1f)
                 if (lit) drawPath(path, tone.copy(alpha = (0.18f + 0.12f * glow) * both), style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
                 drawPath(path, tone.copy(alpha = if (lit) 0.85f * both else 0.13f), style = Stroke((if (lit) 1.6f else 1f).dp.toPx(), cap = StrokeCap.Round))
@@ -125,7 +125,7 @@ fun PointsConstellation(
                 Box(
                     Modifier.size(size).clip(CircleShape)
                         .background(if (on) c else Ink.surfaceHigh.copy(alpha = if (dim) 0.5f else 1f))
-                        .then(if (selected == k) Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), CircleShape) else Modifier)
+                        .then(if (selected == k) Modifier.border(2.dp, Ink.text.copy(alpha = 0.9f), CircleShape) else Modifier)
                         .then(if (!on) Modifier.border(1.5.dp, c.copy(alpha = if (dim) 0.3f else 0.7f), CircleShape) else Modifier),
                     contentAlignment = Alignment.Center,
                 ) { if (node >= 20.dp) Icon(POINT_ICONS.getValue(k), if (on) Ink.inkOnPaper else c.copy(alpha = if (dim) 0.45f else 1f), size * 0.46f) }
@@ -185,7 +185,7 @@ fun FourPointsCard(state: FourPointsState, moods: SnapshotStateList<String>, sta
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.weight(1f)) { SectionLabel("Četiri tačke (po želji)") }
-            Text(if (explain) "Sakrij" else "Šta je ovo?", style = SmallStyle.copy(color = Ink.accent, shadow = null),
+            Text(if (explain) "Sakrij" else "Šta je ovo?", style = SmallStyle.copy(color = Ink.accentInk, shadow = null),
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { explain = !explain }.padding(4.dp))
         }
         if (explain) Text("Misli, emocije, tijelo i nagoni utiču jedni na druge: misao probudi strah, strah stegne stomak, " +

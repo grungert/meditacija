@@ -1,5 +1,31 @@
 package com.grungert.nebo.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import com.grungert.nebo.koan.Links
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -126,15 +152,63 @@ private fun describe(c: SessionConfig): String {
     return t.name + " · " + length + (if (c.paced) " · " + patternById(c.pattern).ratio else "")
 }
 
+/** The three ways in, each in the colour of its point: to calm down, to look inside, and for when it is hard. */
+private class SessionGroup(val name: String, val color: Color, val types: List<String>)
+private val GROUPS = listOf(
+    SessionGroup("Smiri se", Color(0xFF8ED6C0), listOf("breath", "hourglass", "silence", "walk")),
+    SessionGroup("Pogledaj unutra", Color(0xFFB9AEF2), listOf("thoughts", "points", "bodyscan")),
+    SessionGroup("Kad je teško", Color(0xFFF2A88E), listOf("urge", "rain", "hourglass")),
+)
+
+/** What a card says under the name: the length it will likely have. */
+private fun lengthOf(type: String, last: SessionConfig) = when {
+    type == "hourglass" -> "pješčani sat"
+    type == "rain" -> "koliko treba"
+    type == last.type -> if (last.minutes == 0) "slobodno" else "${last.minutes} min"
+    type == "urge" -> "5 min"
+    type == "breath" || type == "points" -> "5 min"
+    else -> "10 min"
+}
+
+/** The part of the day for "Za sada", in words for the label. */
+private val PART_LABEL = listOf("UJUTRU", "USRED DANA", "UVEČE", "KASNO UVEČE")
+
+/** The suggestion for now: a session, why it, and the label above it. */
+private class Now(val type: String, val why: String)
+
 /**
- * Today: a greeting, the week's koan if one is carried, and one big way in. The orb starts the last
- * session; the shapes below start a kind of session straight away; the microphone takes a note.
+ * What to do now, in this order: something that keeps coming at this time of day in the notes, met with a practice
+ * that fits it; else what has most often helped; else what suits the hour.
+ */
+private fun suggestNow(entries: List<com.grungert.nebo.data.Entry>, helps: String?, part: Int): Now {
+    val recent = Links.seen(entries.filter { it.createdAt >= System.currentTimeMillis() - 60 * 86_400_000L })
+    val web = Links.webOf(recent.map { it.first })
+    val heavy = setOf("nemirno", "zabrinuto", "tužno", "ljuto", "umorno", "zbunjeno")
+    val now = web.counts.filter { (t, n) -> n >= 3 && (t.point != com.grungert.nebo.koan.FourPointsReader.EMOTIONS || t.label in heavy) }.keys
+        .map { Links.focusOf(recent, it) }.filter { it.part == part }.maxByOrNull { it.notes }
+    if (now != null) {
+        val (type, _) = practiceFor(now.thing)
+        return Now(type, "${Links.PART_WHEN[part].replaceFirstChar { it.uppercase() }} ti često dođe „${now.thing.label.trim('„', '“')}“.")
+    }
+    if (helps != null) return Now(helps, "Najčešće ti pomaže.")
+    return when (part) {
+        0 -> Now("breath", "Nekoliko mirnih daha za početak dana.")
+        1 -> Now("hourglass", "Tri minute da se vratiš sebi.")
+        2 -> Now("bodyscan", "Da dan izađe iz tijela.")
+        else -> Now("bodyscan", "Od stopala do tjemena, pa u san.")
+    }
+}
+
+/**
+ * Today: a greeting over the sky, the week in two chips, and below one suggestion for now that says why, then the
+ * kinds of session in three groups. A card tells what it is on a touch and starts when held (a ring fills around it),
+ * so nothing begins by accident. The microphone for a note waits in the bar below.
  */
 @Composable
 fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     val context = LocalContext.current
     val s = context.app.settings
-    var info by remember { mutableStateOf<String?>(null) }   // the kind of session whose card is open ("note" for a note)
+    var info by remember { mutableStateOf<String?>(null) }   // the kind of session whose card is open
     var holdLearned by remember { mutableStateOf(s.holdLearned) }
     LaunchedEffect(info) { host.sheetOpen = info != null }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
@@ -147,18 +221,18 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
         host.applyWeatherSettings(s.seasonMode, s.weatherMode)
     }
     var weekMinutes by remember { mutableIntStateOf(0) }
-    var weekSessions by remember { mutableIntStateOf(0) }
     var weekNotes by remember { mutableIntStateOf(0) }
     var reviewHeld by remember { mutableIntStateOf(0) }   // notes and sessions in the week a review would look back on
     var eveningDue by remember { mutableStateOf(false) }
-    var helps by remember { mutableStateOf<String?>(null) }   // the kind of session that most often left things lighter
     var followUp by remember { mutableStateOf<com.grungert.nebo.data.Entry?>(null) }   // yesterday's hard note, to come back to
     var silenced by remember { mutableStateOf(s.esmSilencedDay == Esm.today()) }
+    val part = Links.part(System.currentTimeMillis())
+    var now by remember { mutableStateOf<Now?>(null) }
+    var group by remember { mutableIntStateOf(if (part >= 2) 1 else 0) }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             val ss = context.app.db.sessions(weekStart())
             weekMinutes = ss.sumOf { it.actualSec } / 60
-            weekSessions = ss.size
             weekNotes = context.app.db.entries(weekStart()).size
             val from = Esm.reviewWeekStart().timeInMillis
             val to = (Esm.reviewWeekStart().apply { add(Calendar.WEEK_OF_YEAR, 1) }).timeInMillis
@@ -167,7 +241,9 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
             val start = if (s.eveningReview) s.eveningHour - 1 else 20
             followUp = Esm.followUpNote(context)
-            helps = com.grungert.nebo.koan.WhatHelps.suggestion(com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), context.app.db.entries()))
+            val all = context.app.db.entries()
+            val helps = com.grungert.nebo.koan.WhatHelps.suggestion(com.grungert.nebo.koan.WhatHelps.find(context.app.db.sessions(), all))
+            now = suggestNow(all, helps, part)
             val today = Esm.midnight().timeInMillis
             eveningDue = hour >= start && !Esm.eveningDone(context) &&
                 (s.eveningReview || context.app.db.sessions(today).isNotEmpty() || context.app.db.entries(today).isNotEmpty())
@@ -187,40 +263,35 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { shown = true }
 
-    // a soft dusk under the controls, so they read even over a bright cloud
+    // a soft shade under the greeting, so white type reads even over a bright cloud; by night a dusk under the controls too
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(
-        0f to Color(0x40081830), 0.22f to Color.Transparent, 0.42f to Color.Transparent, 1f to Color(0xB3081830),
+        0f to Color(0x40081830), 0.22f to Color.Transparent, 0.5f to Color.Transparent,
+        1f to (if (Ink.day) Color(0x33F4F1EA) else Color(0xB3081830)),
     )))
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
-            .screenPadding().padding(top = 20.dp, bottom = 110.dp),
+            .padding(horizontal = 18.dp).padding(top = 20.dp, bottom = 110.dp),
     ) {
-        val date = SimpleDateFormat("EEEE, d. MMMM", Locale.forLanguageTag("sr-Latn-ME")).format(Date())
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(date.uppercase(), style = LabelStyle, modifier = Modifier.weight(1f))
+        val date = ijekavian(SimpleDateFormat("EEEE, d. MMMM", Locale.forLanguageTag("sr-Latn-ME")).format(Date()))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+            Text(date.uppercase(), style = LabelStyle.copy(color = Ink.onSky.copy(alpha = 0.92f), shadow = skyShadow, letterSpacing = 1.8.sp), modifier = Modifier.weight(1f))
             if (s.esmEnabled) Text(if (silenced) "Pozivi utišani" else "Utišaj pozive",
-                style = SmallStyle.copy(fontWeight = FontWeight.SemiBold, color = if (silenced) Ink.accent else Ink.text, shadow = null),
-                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Ink.surfaceHigh).clickable {
-                    silenced = !silenced; s.esmSilencedDay = if (silenced) Esm.today() else 0
-                }.padding(horizontal = 12.dp, vertical = 6.dp))
+                style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = if (silenced) Ink.ink else Color.White, shadow = null),
+                modifier = Modifier.tap(shape = RoundedCornerShape(14.dp)) { silenced = !silenced; s.esmSilencedDay = if (silenced) Esm.today() else 0 }
+                    .background(if (silenced) Ink.accent else Color(0x33FFFFFF), RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 6.dp))
         }
-        Spacer(Modifier.height(10.dp))
-        Text(greeting(DayCycle.clockHour()), style = TitleStyle.copy(fontSize = 40.sp, lineHeight = 44.sp))
-        if (weekMinutes > 0 || weekNotes > 0) Text(listOfNotNull(
-            if (weekMinutes > 0) "$weekMinutes min ove sedmice" else null,
-            if (weekNotes > 0) "$weekNotes ${plural(weekNotes, "zapis", "zapisa", "zapisa")}" else null,
-        ).joinToString(" · "), style = SmallStyle.copy(fontSize = 15.sp), modifier = Modifier.padding(top = 4.dp))
-        // what most often helps, from the person's own notes before and after; offered, never pressed
-        helps?.takeIf { it != last.type }?.let { h -> SESSION_TYPES.firstOrNull { it.id == h } }?.let { t ->
-            Text("Probaj danas: ${t.name} · najčešće ti pomaže", style = SmallStyle.copy(color = Ink.accent, fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable(role = Role.Button) { startType(t.id) }.padding(vertical = 4.dp))
+        Spacer(Modifier.height(8.dp))
+        Text(greeting(DayCycle.clockHour()), style = TitleStyle.copy(fontSize = 42.sp, lineHeight = 46.sp, color = Ink.onSky, shadow = skyShadow), modifier = Modifier.padding(horizontal = 4.dp))
+        if (weekMinutes > 0 || weekNotes > 0) Row(Modifier.padding(top = 10.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (weekMinutes > 0) SkyChip("$weekMinutes min ove sedmice")
+            if (weekNotes > 0) SkyChip("$weekNotes ${plural(weekNotes, "zapis", "zapisa", "zapisa")}")
         }
 
         if (weekKoan != null) {
             Spacer(Modifier.height(18.dp))
             Column(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Ink.paper.copy(alpha = 0.94f))
-                    .clickable(role = Role.Button) { go(Screen.KoanNotes(weekKoan.id)) }.padding(horizontal = 18.dp, vertical = 14.dp),
+                Modifier.fillMaxWidth().tap(shape = RoundedCornerShape(24.dp)) { go(Screen.KoanNotes(weekKoan.id)) }.background(Ink.paper.copy(alpha = 0.94f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 18.dp, vertical = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text("KOAN SEDMICE · ${s.weekKoanDay()}. DAN", style = LabelStyle.copy(color = Ink.seal, shadow = null))
@@ -228,70 +299,69 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
             }
         }
 
-        Spacer(Modifier.height(if (weekKoan != null) 90.dp else 200.dp))
-        AnimatedVisibility(shown, enter = fadeIn() + slideInVertically { it / 8 }) {
+        Spacer(Modifier.height(if (weekKoan != null) 70.dp else 150.dp))
+        AnimatedVisibility(shown, enter = fadeIn(tween(500)) + slideInVertically(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow)) { it / 6 }) {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 followUp?.let { note ->
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
-                            .clickable(role = Role.Button) { go(Screen.CheckIn("followup", follows = note.id)) }.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    ) {
-                        Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(NeboIcon.Heart, Ink.accent, 22.dp) }
-                        Column(Modifier.weight(1f)) {
-                            Text("Kako je danas?", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
-                            Text(com.grungert.nebo.koan.FollowUp.about(note)?.let { "Juče ti je bilo teško: $it" } ?: "Juče ti je bilo teško", style = SmallStyle.copy(shadow = null), maxLines = 1)
-                        }
+                    NudgeCard(NeboIcon.Heart, "Kako je danas?", com.grungert.nebo.koan.FollowUp.about(note)?.let { "Juče ti je bilo teško: $it" } ?: "Juče ti je bilo teško") {
+                        go(Screen.CheckIn("followup", follows = note.id))
                     }
                 }
-                if (eveningDue) Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
-                        .clickable(role = Role.Button) { go(Screen.CheckIn("evening")) }.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(NeboIcon.Moon, Ink.accent, 22.dp) }
-                    Column(Modifier.weight(1f)) {
-                        Text("Večernji pregled", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
-                        Text("Šta je danas bilo dobro, a šta teško", style = SmallStyle.copy(shadow = null))
-                    }
-                }
-                if (reviewDue) Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(Ink.surface)
-                        .clickable(role = Role.Button) { go(Screen.CheckIn("week")) }.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = 0.2f)), contentAlignment = Alignment.Center) { Icon(NeboIcon.Week, Ink.accent, 22.dp) }
-                    Column(Modifier.weight(1f)) {
-                        Text("Sedmični pregled", style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
-                        Text("Šta se vraćalo, i šta ti primjećuješ", style = SmallStyle.copy(shadow = null))
-                    }
-                }
+                if (eveningDue) NudgeCard(NeboIcon.Moon, "Večernji pregled", "Šta je danas bilo dobro, a šta teško") { go(Screen.CheckIn("evening")) }
+                if (reviewDue) NudgeCard(NeboIcon.Week, "Sedmični pregled", "Šta se vraćalo, i šta ti primjećuješ") { go(Screen.CheckIn("week")) }
 
-                // the main way in: one tap starts the session set up last time
+                // the main way in: one suggestion for now, and why
+                val n = now
+                val type = SESSION_TYPES.firstOrNull { it.id == (n?.type ?: last.type) } ?: SESSION_TYPES[0]
+                val shape = RoundedCornerShape(30.dp)
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(32.dp)).background(Ink.surface).padding(14.dp),
+                    Modifier.fillMaxWidth().tap("Kreni: ${type.name}", shape = shape) { startType(type.id) }.lift(shape, 16.dp)
+                        .background(Ink.surface, shape).then(if (Ink.day) Modifier.border(1.dp, Color(0xCCFFFFFF), shape) else Modifier)
+                        .padding(start = 14.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Orb { go(Screen.Session(last)) }
-                    Column(Modifier.weight(1f)) {
-                        Text("Kreni", style = HeadStyle.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold, shadow = null))
-                        Text(describe(last), style = SmallStyle.copy(shadow = null))
+                    Orb()
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("ZA SADA · " + PART_LABEL[part], style = KickerStyle)
+                        Text(type.name, style = HeadStyle.copy(fontSize = 21.sp, fontWeight = FontWeight.Bold, shadow = null))
+                        Text(n?.why ?: describe(last), style = SmallStyle.copy(fontSize = 13.5.sp, shadow = null), maxLines = 2)
                     }
-                    Box(Modifier.size(44.dp).clip(CircleShape).background(Ink.surfaceHigh).clickable(role = Role.Button, onClickLabel = "Podesi sesiju") { go(Screen.Setup) },
-                        contentAlignment = Alignment.Center) { Icon(NeboIcon.Settings, Ink.text, 20.dp) }
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(if (Ink.day) Ink.ink else Ink.accent), contentAlignment = Alignment.Center) {
+                        Icon(NeboIcon.Play, if (Ink.day) Ink.accent else Ink.ink, 18.dp, filled = true)
+                    }
                 }
 
-                // or a kind of session, five to a row, and the microphone for a note at the end: a tap says what it is,
-                // holding starts it (a ring fills around the icon), so nothing begins by accident
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (!holdLearned) Text("Dodirni ikonicu za opis · drži je za početak", style = SmallStyle.copy(color = Ink.accent, fontWeight = FontWeight.SemiBold),
-                        modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 2.dp))
-                    fun learned() { if (!holdLearned) { holdLearned = true; s.holdLearned = true } }
-                    val items: List<SessionType?> = SESSION_TYPES + null
-                    for (row in items.chunked(5)) Row(Modifier.fillMaxWidth()) {
-                        for (t in row) if (t != null) HoldIconButton(t.icon, t.short, { info = t.id }, { learned(); startType(t.id) }, Modifier.weight(1f), selected = t.id == last.type)
-                            else HoldIconButton(NeboIcon.Mic, "Zapiši", { info = "note" }, { learned(); go(Screen.CheckIn("note")) }, Modifier.weight(1f))
-                        repeat(5 - row.size) { Box(Modifier.weight(1f)) }
+                // the kinds of session, in three groups; the gear sets up a session in detail
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for ((i, g) in GROUPS.withIndex()) {
+                        val on = i == group
+                        val bg by animateColorAsState(if (on) Ink.accent else Ink.surface, label = "group")
+                        Text(g.name, style = SmallStyle.copy(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = if (on) Ink.ink else Ink.text, shadow = null),
+                            maxLines = 1, softWrap = false,
+                            modifier = Modifier.tap(role = Role.Tab, shape = RoundedCornerShape(18.dp)) { group = i }.background(bg, RoundedCornerShape(18.dp))
+                                .padding(horizontal = 13.dp, vertical = 8.dp))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Box(Modifier.size(38.dp).tap("Podesi sesiju", shape = CircleShape) { go(Screen.Setup) }.background(Ink.surface, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(NeboIcon.Settings, Ink.text, 18.dp)
+                    }
+                }
+                if (!holdLearned) Text("Dodirni karticu za opis · drži je za početak", style = SmallStyle.copy(color = Ink.accentInk, fontWeight = FontWeight.Bold),
+                    modifier = Modifier.align(Alignment.CenterHorizontally))
+                fun learned() { if (!holdLearned) { holdLearned = true; s.holdLearned = true } }
+                AnimatedContent(group, transitionSpec = {
+                    (fadeIn(tween(260)) + slideInHorizontally(tween(320)) { if (targetState > initialState) it / 6 else -it / 6 })
+                        .togetherWith(fadeOut(tween(160)))
+                }, label = "group") { gi ->
+                    val g = GROUPS[gi]
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (row in g.types.chunked(2)) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            for (id in row) {
+                                val t = SESSION_TYPES.first { it.id == id }
+                                HoldCard(t.icon, t.short.let { if (it == t.name) t.name else it }, lengthOf(id, last), g.color, { info = id }, { learned(); startType(id) }, Modifier.weight(1f))
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -308,17 +378,113 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     }
 }
 
-/** The big round start button: a slowly breathing sphere of light. */
+/** A small chip of frosted glass right on the sky. */
 @Composable
-private fun Orb(onClick: () -> Unit) {
-    val pulse = com.grungert.nebo.sky.slowPulse(4000)
-    Box(Modifier.size(72.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = "Kreni", onClick = onClick), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(72.dp)) {
-            val r = size.minDimension / 2
-            drawCircle(Brush.radialGradient(listOf(Ink.accent.copy(alpha = 0.55f), Color.Transparent), center, r), r)
-            drawCircle(Brush.radialGradient(listOf(Color.White, Ink.paper, Ink.accent), Offset(center.x - r * 0.2f, center.y - r * 0.25f), r * 0.9f), r * (0.62f + 0.08f * pulse))
+private fun SkyChip(text: String) {
+    Text(text, style = SmallStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White, shadow = null),
+        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x33FFFFFF)).border(1.dp, Color(0x59FFFFFF), RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp))
+}
+
+/** A gentle card for something waiting today: the day after a hard one, the evening look back, the week's review. */
+@Composable
+private fun NudgeCard(icon: NeboIcon, title: String, sub: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        Modifier.fillMaxWidth().tap(title, shape = shape, onClick = onClick).lift(shape).background(Ink.surface, shape).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Ink.accent.copy(alpha = if (Ink.day) 0.5f else 0.2f)), contentAlignment = Alignment.Center) { Icon(icon, Ink.accentInk, 22.dp) }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = BodyStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+            Text(sub, style = SmallStyle.copy(shadow = null), maxLines = 1)
         }
-        Icon(NeboIcon.Play, Ink.inkOnPaper, 22.dp)
+    }
+}
+
+/**
+ * A kind of session as a card: its icon in the group's colour, its name and length. A touch opens what it is; holding
+ * starts it, a ring filling around the icon, so nothing begins by accident.
+ */
+@Composable
+private fun HoldCard(icon: NeboIcon, name: String, length: String, tint: Color, onTap: () -> Unit, onHold: () -> Unit, modifier: Modifier = Modifier, holdMillis: Int = 700) {
+    val progress = remember { androidx.compose.animation.core.Animatable(0f) }
+    val press = remember { androidx.compose.animation.core.Animatable(1f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val tap by rememberUpdatedState(onTap)
+    val hold by rememberUpdatedState(onHold)
+    val shape = RoundedCornerShape(24.dp)
+    Row(
+        modifier.height(78.dp).graphicsLayer { scaleX = press.value; scaleY = press.value }.lift(shape, 8.dp).clip(shape).background(Ink.surface)
+            .then(if (Ink.day) Modifier.border(1.dp, Color(0xCCFFFFFF), shape) else Modifier)
+            .semantics {
+                role = Role.Button
+                onClick(label = "Opis") { tap(); true }
+                customActions = listOf(CustomAccessibilityAction("Pokreni odmah") { hold(); true })
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(onPress = {
+                    val start = System.currentTimeMillis()
+                    var done = false
+                    scope.launch { press.animateTo(0.96f, spring(stiffness = Spring.StiffnessMedium)) }
+                    val fill = scope.launch {
+                        delay(110)   // a quick tap should not flash the ring
+                        progress.animateTo(1f, tween(holdMillis - 110, easing = LinearEasing))
+                        done = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hold()
+                    }
+                    val released = tryAwaitRelease()
+                    scope.launch { press.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium)) }
+                    if (!done) {
+                        fill.cancel()
+                        if (released && System.currentTimeMillis() - start < 300) tap()
+                        scope.launch { progress.animateTo(0f, tween(220)) }
+                    }
+                })
+            }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(17.dp)).background(tint.copy(alpha = if (Ink.day) 0.4f else 0.25f)), contentAlignment = Alignment.Center) {
+                Icon(icon, Ink.text, 24.dp)
+            }
+            Canvas(Modifier.size(54.dp)) {
+                val p = progress.value
+                if (p <= 0f) return@Canvas
+                val w = 3.dp.toPx()
+                val r = androidx.compose.ui.geometry.CornerRadius(19.dp.toPx())
+                val ring = androidx.compose.ui.graphics.Path().apply {
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(w / 2, w / 2, size.width - w / 2, size.height - w / 2, r))
+                }
+                val measure = androidx.compose.ui.graphics.PathMeasure().apply { setPath(ring, false) }
+                val part = androidx.compose.ui.graphics.Path()
+                measure.getSegment(0f, measure.length * p, part, true)
+                val c = if (Ink.day) Color(0xFFE0A04E) else Ink.accent
+                drawPath(ring, c.copy(alpha = 0.2f), style = Stroke(w))
+                drawPath(part, c, style = Stroke(w, cap = StrokeCap.Round))
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Text(name, style = BodyStyle.copy(fontSize = 15.5.sp, fontWeight = FontWeight.Bold, shadow = null), maxLines = 1, softWrap = false)
+            Text(length, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, shadow = null), maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** The light of "Za sada": a slowly breathing sphere of warm light with a lotus in it. */
+@Composable
+private fun Orb() {
+    val pulse = com.grungert.nebo.sky.slowPulse(4000)
+    Box(Modifier.size(68.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(68.dp)) {
+            val r = size.minDimension / 2
+            drawCircle(Brush.radialGradient(listOf(Ink.accent.copy(alpha = 0.6f), Color.Transparent), center, r), r)
+            drawCircle(Brush.radialGradient(listOf(Color.White, Ink.paper, Ink.accent), Offset(center.x - r * 0.2f, center.y - r * 0.25f), r * 0.9f), r * (0.74f + 0.06f * pulse))
+        }
+        Icon(NeboIcon.Lotus, Ink.ink.copy(alpha = 0.85f), 28.dp)
     }
 }
 
@@ -389,7 +555,7 @@ fun SetupScreen(host: SkyHost, go: (Screen) -> Unit) {
             Panel {
                 SectionLabel("Trajanje")
                 val lengths = lengthsFor(type)
-                if (lengths.isEmpty()) Text("Uvijek tri minute: po jedna za svaki dio.", style = SmallStyle.copy(shadow = null))
+                if (lengths.isEmpty()) Text(if (type == "rain") "Koliko treba: četiri koraka, svojim tempom." else "Uvijek tri minute: po jedna za svaki dio.", style = SmallStyle.copy(shadow = null))
                 else ChipRow { for (m in lengths) Chip(if (m == 0) "slobodno" else "$m min", minutes == m, { minutes = m }) }
                 if (paced) {
                     SectionLabel("Ritam disanja")
