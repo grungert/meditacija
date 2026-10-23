@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The light of the opening screen: a sand orb with a faint ring of breath. The loader in the app picks up from it. -->
+<!-- The light of the opening screen: a sand orb with a faint ring of breath. The loader in the app picks up from it.
+     The system shows only a circle of 36 units around the middle: orb and ring stay inside it, breathing included. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -7,7 +8,7 @@
     android:viewportHeight="108">
     <group android:name="ring" android:pivotX="54" android:pivotY="54">
         <path android:name="ringPath" android:strokeColor="#40FFD9A0" android:strokeWidth="1.5" android:fillColor="#00000000"
-            android:pathData="M54,24a30,30 0,1 1,0 60a30,30 0,1 1,0 -60z" />
+            android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
     </group>
     <group android:name="orb" android:pivotX="54" android:pivotY="54">
         <path android:fillColor="#FFFFD9A0" android:pathData="M54,32a22,22 0,1 1,0 44a22,22 0,1 1,0 -44z" />
