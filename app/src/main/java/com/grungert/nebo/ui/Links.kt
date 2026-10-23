@@ -452,14 +452,18 @@ fun FocusMany(foci: List<Links.Focus>, onToggle: (Thing) -> Unit, modifier: Modi
             val d = Offset(p.x - mid.x, p.y - mid.y)
             if (d.getDistance() < 1f) -PI / 2 else kotlin.math.atan2(d.y.toDouble(), d.x.toDouble())
         }
-        val order = around.indices.sortedBy { want[it] }
+        // evenly spaced places, turned a little off the axes so nothing lines up with the middle row;
+        // the strongest thing takes the free place nearest to the side it wants, then the next
         val n = around.size.coerceAtLeast(1)
-        val start = if (order.isEmpty()) 0.0 else want[order.first()]
+        val slots = (0 until n).map { -PI / 2 + (it + 0.25) * 2 * PI / n }
+        val free = slots.indices.toMutableList()
         val out = Array(around.size) { Offset.Zero }
-        for ((rank, i) in order.withIndex()) {
-            val a = start + rank * 2 * PI / n
-            // further out when several share the middle, so a thing around never sits on one of them
-            val far = if (foci.size > 1) 1.13f else 1f
+        val far = if (foci.size > 1) 1.13f else 1f
+        for (i in around.indices.sortedByDescending { around[it].strongest.third }) {
+            fun gap(x: Double) = kotlin.math.abs(((x - want[i]) % (2 * PI) + 3 * PI) % (2 * PI) - PI)
+            val slot = free.minBy { gap(slots[it]) }
+            free.remove(slot)
+            val a = slots[slot]
             out[i] = Offset(mid.x + w * 0.38f * far * cos(a).toFloat(), mid.y + h * 0.33f * far * sin(a).toFloat())
         }
         return out.toList()

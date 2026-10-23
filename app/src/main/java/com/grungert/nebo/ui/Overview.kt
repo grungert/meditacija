@@ -731,17 +731,10 @@ private fun FocusCard(w: Links.Web, seen: List<Pair<Set<com.grungert.nebo.koan.T
                 val on = c in chosen
                 val pc = POINT_COLORS.getValue(c.point)
                 val bg by animateColorAsState(if (on) pc else pc.copy(alpha = if (Ink.day) 0.22f else 0.14f), label = "focus-chip")
-                Row(
-                    Modifier.tap(c.label, androidx.compose.ui.semantics.Role.Checkbox, shape = RoundedCornerShape(14.dp)) { toggle(c) }.background(bg, RoundedCornerShape(14.dp))
-                        .padding(start = 8.dp, end = 11.dp, top = 6.dp, bottom = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Box(Modifier.size(15.dp).clip(RoundedCornerShape(4.dp)).background(if (on) Ink.ink.copy(alpha = 0.85f) else Color.Transparent)
-                        .border(1.5.dp, if (on) Color.Transparent else Ink.text.copy(alpha = 0.45f), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
-                        if (on) Icon(NeboIcon.Check, Color.White, 11.dp, filled = true)
-                    }
-                    Text(c.label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on || Ink.day) Ink.ink else Color.White, shadow = null))
-                }
+                // several can be on at once: a chosen one in its full colour, the others pale
+                Text(c.label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on || Ink.day) Ink.ink else Color.White, shadow = null),
+                    modifier = Modifier.tap(c.label, androidx.compose.ui.semantics.Role.Checkbox, shape = RoundedCornerShape(14.dp)) { toggle(c) }
+                        .background(bg, RoundedCornerShape(14.dp)).padding(horizontal = 11.dp, vertical = 6.dp))
             }
         }
         if (foci.all { it.with.isEmpty() }) Text("Uz ovo još ništa ne dolazi dovoljno često.", style = SmallStyle.copy(shadow = null))
