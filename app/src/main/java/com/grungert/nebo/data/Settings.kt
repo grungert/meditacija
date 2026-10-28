@@ -134,6 +134,11 @@ class Settings(private val context: Context) {
         get() = p.getInt("esmPerDay", 3)
         set(v) = p.edit { putInt("esmPerDay", v) }
     /** yyyyMMdd of a day the prompts are silenced, or 0. */
+    /** A few words the person keeps in sight on the home screen, as a reminder to themself ("50-50"). */
+    var selfNote: String
+        get() = p.getString("selfNote", "")!!
+        set(v) = p.edit { putString("selfNote", v) }
+
     var esmSilencedDay: Int
         get() = p.getInt("esmSilenced", 0)
         set(v) = p.edit { putInt("esmSilenced", v) }

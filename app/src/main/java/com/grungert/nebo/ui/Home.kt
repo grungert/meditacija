@@ -63,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -303,9 +304,15 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(greeting(DayCycle.clockHour()), style = TitleStyle.copy(fontSize = 42.sp, lineHeight = 46.sp, color = Ink.onSky, shadow = skyShadow), modifier = Modifier.padding(horizontal = 4.dp))
-        if (weekMinutes > 0 || weekNotes > 0) Row(Modifier.padding(top = 10.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        var selfNote by remember { mutableStateOf(s.selfNote) }
+        var writingNote by remember { mutableStateOf(false) }
+        Row(Modifier.padding(top = 10.dp, start = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (weekMinutes > 0) SkyChip("$weekMinutes min ove sedmice")
             if (weekNotes > 0) SkyChip("$weekNotes ${plural(weekNotes, "zapis", "zapisa", "zapisa")}")
+            if (selfNote.isEmpty() && !writingNote) SkyChip("+ Podsjetnik", Modifier.tap("Napiši sebi podsjetnik", shape = RoundedCornerShape(16.dp)) { writingNote = true })
+        }
+        SelfNote(selfNote, writingNote, onWrite = { writingNote = true }) { written ->
+            selfNote = written.trim(); s.selfNote = selfNote; writingNote = false
         }
 
         weekKoan?.let { weekKoan ->
@@ -409,10 +416,51 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
 
 /** A small chip of frosted glass right on the sky. */
 @Composable
-private fun SkyChip(text: String) {
+private fun SkyChip(text: String, modifier: Modifier = Modifier) {
     Text(text, style = SmallStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White, shadow = null),
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x33FFFFFF)).border(1.dp, Color(0x59FFFFFF), RoundedCornerShape(16.dp))
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x33FFFFFF)).border(1.dp, Color(0x59FFFFFF), RoundedCornerShape(16.dp))
             .padding(horizontal = 12.dp, vertical = 6.dp))
+}
+
+/**
+ * The person's own reminder to themself, a few words kept in sight under the greeting ("50-50"): written in the hand of
+ * the koans, with a thin line of sand before it. A tap writes it anew; written empty, it is gone.
+ */
+@Composable
+private fun SelfNote(note: String, writing: Boolean, onWrite: () -> Unit, onDone: (String) -> Unit) {
+    val sand = Color(0xFFFFD9A0)
+    AnimatedVisibility(writing || note.isNotEmpty(), enter = fadeIn(tween(400)) + expandVertically(clip = false), exit = fadeOut(tween(250)) + shrinkVertically(clip = false)) {
+        if (writing) {
+            var draft by remember { mutableStateOf(note) }
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(Unit) { focus.requestFocus() }
+            Row(
+                Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Color(0x40081830))
+                    .border(1.dp, sand.copy(alpha = 0.7f), RoundedCornerShape(18.dp)).padding(start = 16.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.weight(1f).padding(vertical = 12.dp)) {
+                    if (draft.isEmpty()) Text("npr. 50-50", style = ReadStyle.copy(fontSize = 20.sp, fontStyle = FontStyle.Italic, color = Color.White.copy(alpha = 0.55f), shadow = null))
+                    androidx.compose.foundation.text.BasicTextField(draft, { draft = it.take(60) }, singleLine = true,
+                        textStyle = ReadStyle.copy(fontSize = 20.sp, fontStyle = FontStyle.Italic, color = Color.White, shadow = null),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(sand),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { onDone(draft) }))
+                }
+                Box(Modifier.size(40.dp).tap("Sačuvaj podsjetnik", shape = CircleShape) { onDone(draft) }, contentAlignment = Alignment.Center) {
+                    Icon(NeboIcon.Check, sand, 20.dp)
+                }
+            }
+        } else Row(   // no press layer here: it would cut the words' soft shadow into a box
+            Modifier.padding(top = 14.dp).clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClickLabel = "Promijeni podsjetnik", onClick = onWrite)
+                .padding(vertical = 4.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(Modifier.width(3.dp).height(30.dp).background(sand, RoundedCornerShape(2.dp)))
+            Text(note, style = ReadStyle.copy(fontSize = 24.sp, lineHeight = 30.sp, fontStyle = FontStyle.Italic, color = Ink.onSky, shadow = skyShadow))
+        }
+    }
 }
 
 /** A gentle card for something waiting today: the day after a hard one, the evening look back, the week's review. */
