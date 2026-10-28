@@ -161,7 +161,7 @@ private class WetGlass(private val dp: Float) {
 }
 
 /** One drop on the glass, drawn once and stretched for all: a body of faint light, a darker rim, light gathered at the bottom, a glint at the top. */
-private fun dropSprite(): Bitmap {
+internal fun dropSprite(): Bitmap {
     val s = 96f; val c = s / 2; val r = s / 2 - 1
     val b = Bitmap.createBitmap(s.toInt(), s.toInt(), Bitmap.Config.ARGB_8888)
     val cv = android.graphics.Canvas(b)

@@ -110,6 +110,13 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
         }
         // under a rainy sky, rain on the glass too
         if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = e.reducedMotion)
+        // in the mist, the glass mists over too, and a finger wipes it
+        if (host.weather == com.grungert.nebo.sky.Weather.FOG) FoggedGlass(
+            night = !Ink.day,
+            breathOut = { val b = host.engine; if (b.paced && b.phase == com.grungert.nebo.sky.Phase.OUT) kotlin.math.sin(Math.PI * b.progress).toFloat() else 0f },
+            onTap = { host.onTap?.invoke(it) },
+            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true },
+        )
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val h = maxHeight
