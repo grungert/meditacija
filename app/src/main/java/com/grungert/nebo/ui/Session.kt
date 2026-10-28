@@ -416,6 +416,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // the far shore, reeds and lily pads, when sitting by the lake
         val lakeShown by animateFloatAsState(if (host.lake) 1f else 0f, tween(900), label = "lake")
         if (lakeShown > 0.01f) LakeShore(host, visible = lakeShown)
+        // under a rainy sky, rain on the glass too
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion)
 
         // time along the edge of the screen: a thin line that goes once around, clockwise from the top
         if (planned > 0) {
