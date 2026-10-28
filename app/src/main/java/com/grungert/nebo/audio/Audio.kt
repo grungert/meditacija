@@ -30,7 +30,7 @@ class Recorder {
     val isRecording get() = recording
 
     @SuppressLint("MissingPermission")
-    suspend fun record(out: File, maxSeconds: Int, onLevel: (Float) -> Unit = {}): Float = withContext(Dispatchers.IO) {
+    suspend fun record(out: File, maxSeconds: Int, onLevel: (Float) -> Unit = {}, onSamples: ((ShortArray, Int) -> Unit)? = null): Float = withContext(Dispatchers.IO) {
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, SAMPLE_RATE))
@@ -56,6 +56,7 @@ class Recorder {
                 level = peak / 32768f
                 this@Recorder.peak = maxOf(this@Recorder.peak, level)
                 onLevel(level)
+                onSamples?.invoke(buf, n)
             }
         } finally {
             recording = false

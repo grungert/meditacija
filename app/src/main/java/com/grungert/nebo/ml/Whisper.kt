@@ -145,6 +145,20 @@ class Transcriber(private val db: Db, private val models: ModelStore, private va
         return load + settings.speechRate(choice.id) * audioSeconds + 0.5f
     }
 
+    /**
+     * Whether this phone turns speech into text fast enough to follow a voice as it speaks: the model on the phone
+     * works well under real time (Parakeet does; Whisper on a phone usually does not).
+     */
+    fun canFollow(): Boolean = models.readyWhisper()?.let { settings.speechRate(it.id) < 0.6f } == true
+
+    /** One piece of a voice still speaking, heard as soon as it ends (see [LiveDictation]). */
+    suspend fun transcribePiece(pcm: FloatArray): String? = withContext(Dispatchers.Default) {
+        lock.withLock {
+            val choice = models.readyWhisper() ?: return@withLock null
+            open(choice)?.let { heard(it, pcm) }
+        }.also { releaseLater() }
+    }
+
     /** Transcribes one recording straight away, for showing the text while the person is still on the screen. */
     suspend fun transcribeNow(file: File): String? = withContext(Dispatchers.Default) {
         lock.withLock {

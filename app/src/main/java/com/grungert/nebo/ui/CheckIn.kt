@@ -99,6 +99,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var askedMic by remember { mutableStateOf(false) }
     var silent by remember { mutableStateOf(false) }
     var transcribing by remember { mutableStateOf(false) }
+    var following by remember { mutableStateOf(false) }          // the words appear while the person speaks
     var expected by remember { mutableFloatStateOf(1f) }       // about how long the text will take, in seconds
     var waited by remember { mutableFloatStateOf(0f) }
     var heard by remember { mutableStateOf<String?>(null) }      // what the speech model heard in the current recording
@@ -148,37 +149,49 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         val f = File(context.filesDir, "audio/${System.currentTimeMillis()}.wav")
         recording = true; seconds = 0f; levels.clear(); taking = f
         app.transcriber.prepare()
+        // a new take replaces the words the last one brought
+        if (fieldFromVoice) { text = ""; fieldFromVoice = false }
+        // text while speaking, when the phone hears fast enough: piece by piece, at the voice's own pauses
+        val dict = if (app.transcriber.readyModel() != null && app.transcriber.canFollow())
+            com.grungert.nebo.ml.LiveDictation(app.scope) { app.transcriber.transcribePiece(it) } else null
+        following = dict != null
+        val shown = dict?.let { d -> scope.launch {
+            d.text.collect { t ->
+                // into the field, unless the person has typed there themselves
+                if (t.isNotBlank() && (text.isBlank() || fieldFromVoice)) { text = t; fieldFromVoice = true }
+            }
+        } }
         scope.launch {
             val dur = try {
-                recorder.record(f, MAX_SECONDS) { lv ->
+                recorder.record(f, MAX_SECONDS, { lv ->
                     scope.launch { levels.add(lv); if (levels.size > 56) levels.removeAt(0) }
-                }
+                }, dict?.let { d -> { samples: ShortArray, n: Int -> d.feed(samples, n) } })
             } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
                 // the microphone is busy (a call, another app): nothing was recorded
                 -1f
             }
-            recording = false; taking = null
+            recording = false; taking = null; following = false
             silent = recorder.peak < Recorder.SILENCE
             if (dur > 0.6f && !silent) {
                 audio?.delete(); audio = f; audioSeconds = dur; live = null
-                if (fieldFromVoice) { text = ""; fieldFromVoice = false }
                 heard = null
                 model = app.transcriber.readyModel()
                 if (model != null) {
-                    expected = app.transcriber.estimateSeconds(dur).coerceAtLeast(1f); waited = 0f
+                    // followed while speaking: only the last piece is left to hear
+                    expected = (if (dict != null) 1.5f else app.transcriber.estimateSeconds(dur)).coerceAtLeast(1f); waited = 0f
                     transcribing = true
-                    val job = app.scope.async { app.transcriber.transcribeNow(f) }
+                    val job = app.scope.async { if (dict != null) dict.finish().also { shown?.cancel() } else app.transcriber.transcribeNow(f) }
                     live = job
                     val t = job.await()
                     transcribing = false
                     if (audio == f && t != null) {
                         heard = t
-                        if (text.isBlank() && t.isNotBlank()) { text = t; fieldFromVoice = true }
+                        if ((text.isBlank() || fieldFromVoice) && t.isNotBlank()) { text = t; fieldFromVoice = true }
                         // the four points, read from what was said; the person's own picks always stay
                         if (t.isNotBlank() && !points.touched) points.fillFrom(app.recommender.readFourPoints(t), moods)
                     }
                 }
-            } else f.delete()
+            } else { f.delete(); dict?.cancel(); shown?.cancel() }
         }
         scope.launch { while (recorder.isRecording || recording) { delay(100); seconds += 0.1f } }
     }
@@ -308,6 +321,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     }
                     Text(
                         when {
+                            recording && following -> clock(seconds) + " · tekst se pojavljuje dok govoriš"
                             recording -> clock(seconds) + " / " + clock(MAX_SECONDS.toFloat())
                             silent -> "Ne čujem ništa. Provjeri da li je mikrofon uključen, pa pokušaj ponovo."
                             transcribing -> (expected - waited).let { left ->
@@ -333,7 +347,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                         Text(if (fieldFromVoice) "TVOJE RIJEČI · MOŽEŠ ISPRAVITI" else "ILI NAPIŠI", style = KickerStyle.copy(color = Ink.soft))
                     }
                     Box {
-                        if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else "Šta je u tebi…", style = ReadStyle.copy(color = Ink.faint))
+                        if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else if (recording && following) "Slušam…" else "Šta je u tebi…", style = ReadStyle.copy(color = Ink.faint))
                         BasicTextField(text, { text = it }, textStyle = ReadStyle.copy(color = Ink.text),
                             cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp))
                     }
