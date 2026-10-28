@@ -106,8 +106,10 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
         Canvas(Modifier.fillMaxSize()) {
             if (clock < 0f) return@Canvas   // reading clock redraws every frame
             treeline(treeColor(host), clock)
-            lakeLife(clock, elapsed, e.breath, ripples)
+            lakeLife(clock, elapsed, e.breath, ripples, rainy = host.weather == com.grungert.nebo.sky.Weather.RAIN)
         }
+        // under a rainy sky, rain on the glass too
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = e.reducedMotion)
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val h = maxHeight
@@ -157,7 +159,7 @@ private fun PromptPair(label: String, words: String, color: Color, modifier: Mod
 }
 
 /** Everything that lives on and around the water, drawn over the painted lake. */
-private fun DrawScope.lakeLife(t: Float, elapsed: Float, breath: Float, ripples: List<Float>) {
+private fun DrawScope.lakeLife(t: Float, elapsed: Float, breath: Float, ripples: List<Float>, rainy: Boolean) {
     val w = size.width; val h = size.height
     val shore = h * SHORE
     val heart = Offset(w / 2, h * 0.80f)
@@ -189,5 +191,5 @@ private fun DrawScope.lakeLife(t: Float, elapsed: Float, breath: Float, ripples:
     if (half > 1f) drawLine(Brush.horizontalGradient(listOf(COOL.copy(alpha = 0f), WARM.copy(alpha = 0.9f), COOL.copy(alpha = 0f)), w / 2 - half, w / 2 + half),
         Offset(w / 2 - half, shore), Offset(w / 2 + half, shore), 2.2f * px, StrokeCap.Round)
 
-    lakeDecor(t)
+    lakeDecor(t, rainy = rainy)
 }

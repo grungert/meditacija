@@ -283,7 +283,9 @@ private fun SkyGroup(host: com.grungert.nebo.SkyHost) {
                 Chip("kako dođe", weather == "auto", { weather = "auto"; s.weatherMode = weather; applySky() })
                 for (w in com.grungert.nebo.sky.Weather.entries) Chip(w.label, weather == w.name, { weather = w.name; s.weatherMode = w.name; applySky() })
             }
-            Text("„Kako dođe“: svaki dan drugačije, najčešće vedro, ponekad kiša, magla ili snijeg zimi.", style = SmallStyle.copy(shadow = null))
+            Text("„Kako dođe“: svaki dan drugačije, najčešće vedro, ponekad kiša, magla ili snijeg zimi. Kiša se sama mijenja, od rominjanja do pljuska.", style = SmallStyle.copy(shadow = null))
+            var thunder by remember { mutableStateOf(s.thunder) }
+            SwitchRow("Grmljavina", thunder, { thunder = it; s.thunder = it; com.grungert.nebo.sky.Storm.thunder = it }, sub = "U jakom pljusku, munja i grom iz daljine")
         }
         SettingRow(NeboIcon.Lotus, BLUE, "Godišnje doba", seasonLabel, null, null, onTap = { open = if (open == "season") null else "season" }, expanded = open == "season") {
             ChipRow {

@@ -7,10 +7,12 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 import kotlin.random.Random
+import com.grungert.nebo.sky.Storm
 
 /**
  * The sound of the meadow, synthesised as it plays: wind through grass that swells on the out-breath,
- * birds by day and crickets by night. Nothing is recorded; every sound comes from filtered noise and sines.
+ * birds by day and crickets by night, rain as hard as the [Storm] says and its thunder far off.
+ * Nothing is recorded; every sound comes from filtered noise and sines.
  */
 class Ambience {
     @Volatile var volume = 0.6f
@@ -57,7 +59,11 @@ class Ambience {
         var lp1 = 0f; var lp2 = 0f
         var fade = 0f
         val a2 = 1f - exp(-2f * PI.toFloat() * 110f / sr)
-        var rlp = 0f; var drop = 0.0; var dropHz = 2000.0; var dropPhase = 0.0
+        var rlp = 0f; var rlp2 = 0f; var drop = 0.0; var dropHz = 2000.0; var dropPhase = 0.0
+        // thunder: brown noise, low and rolling, after each strike the storm brings
+        var heardSlot = Long.MIN_VALUE
+        var rumbleT = 99.0; var rumbleDur = 5.0; var rumbleAmp = 0f; var rumbleFar = 0f; var rumblePh = 0.0
+        var brown = 0f; var rl1 = 0f; var rl2 = 0f
         // birds
         var birdWait = 2.0; var notesLeft = 0; var noteT = 0.0; var noteDur = 0.1; var f0 = 3000.0; var f1 = 4000.0; var gap = 0.0; var phaseB = 0.0
         // crickets: two of them, slightly out of step
@@ -70,6 +76,18 @@ class Ambience {
         fun alive() = running && gen == generation
         while (alive() || fade > 0.001f) {
             val target = if (alive()) volume else 0f
+            // the storm's mood, once a buffer: how hard it rains, and whether a strike's thunder has reached us
+            val now = Storm.now()
+            val heavy = Storm.intensity(now)
+            if (rain > 0.02f) for (slot in Storm.slotOf(now) - 1..Storm.slotOf(now)) {
+                val st = Storm.strikeIn(slot) ?: continue
+                if (slot != heardSlot && now >= st.heard && now < st.heard + 2.0) {
+                    heardSlot = slot
+                    rumbleT = 0.0; rumbleDur = 4.0 + 4.0 * st.far + rnd.nextDouble() * 2.0
+                    rumbleAmp = st.strength; rumbleFar = st.far; rumblePh = rnd.nextDouble() * 6.28
+                }
+            }
+            val ra = 1f - exp(-2f * PI.toFloat() * (190f - 90f * rumbleFar) / sr)
             for (i in buf.indices) {
                 fade += (target - fade) * fadeRate
                 t += 1.0 / sr
@@ -82,12 +100,25 @@ class Ambience {
                 lp2 += a2 * (lp1 - lp2)
                 var s = (lp1 - 0.7f * lp2) * (0.18f + 0.32f * wind * gust + 0.45f * swell)
 
-                // rain: high hiss and the odd heavier drop
+                // rain: a high hiss and the odd heavier drop, and in a downpour a deeper roar under it
                 if (rain > 0.02f) {
                     rlp += 0.3f * (n - rlp)
-                    s += (n - rlp) * 0.09f * rain
-                    if (rnd.nextFloat() < 0.0009f * rain) { drop = 1.0; dropHz = 1400.0 + rnd.nextDouble() * 3200.0 }
+                    rlp2 += 0.06f * (n - rlp2)
+                    s += (n - rlp) * (0.04f + 0.08f * heavy) * rain
+                    s += rlp2 * 0.22f * heavy * heavy * rain
+                    if (rnd.nextFloat() < (0.0004f + 0.0012f * heavy) * rain) { drop = 1.0; dropHz = 1400.0 + rnd.nextDouble() * 3200.0 }
                     if (drop > 0.001) { dropPhase += 2 * PI * dropHz / sr; s += (0.10 * drop * sin(dropPhase)).toFloat(); drop *= 0.992 }
+                }
+                // thunder: a crack when it is near, then the long roll, swelling and fading
+                if (rumbleT < rumbleDur) {
+                    rumbleT += 1.0 / sr
+                    brown = (brown + 0.02f * (rnd.nextFloat() * 2f - 1f)) * 0.998f
+                    rl1 += ra * (brown - rl1)
+                    rl2 += ra * (rl1 - rl2)
+                    val roll = 0.55 + 0.45 * sin(rumbleT * 2.1 + rumblePh) * sin(rumbleT * 0.83 + rumblePh * 1.7)
+                    val env = minOf(1.0, rumbleT / (0.06 + 0.4 * rumbleFar)) * exp(-rumbleT / (rumbleDur * 0.38)) * roll
+                    s += (rl2 * 1.6f * rumbleAmp * env).toFloat()
+                    if (rumbleT < 0.25) s += (n * 0.12f * (1f - rumbleFar) * rumbleAmp * exp(-rumbleT / 0.05)).toFloat()
                 }
                 // birds by day: short rising or falling chirps in little phrases
                 if (day > 0.02f) {

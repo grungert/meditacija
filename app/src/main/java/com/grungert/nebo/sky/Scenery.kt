@@ -68,7 +68,11 @@ class Scenery(private val u: Float) {
     private val leaves = List(12) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
     private var season = Season.SUMMER
     private var weather = Weather.CLEAR
-    private val drops = List(140) { floatArrayOf(rand(), rand(), 0.6f + rand() * 0.8f) }   // x, y (0..1), speed
+    private val drops = List(300) { floatArrayOf(rand(), rand(), 0.6f + rand() * 0.8f) }   // x, y (0..1), speed (and nearness)
+    // where the near drops hit the ground: x, y, age (s), size
+    private val splashes = ArrayList<FloatArray>()
+    private val boltPath = Path()
+    private var boltSeed = -1
     private val flakes = List(110) { floatArrayOf(rand(), rand(), 0.5f + rand(), rand() * 6.28f) } // x, y, size, phase
     // banks of mist, each at its own depth: 0 far by the hills, 1 near on the ground before you
     private class Wisp(var x: Float, val d: Float, val ph: Float, val sp: Float, val tall: Float)
@@ -189,12 +193,15 @@ class Scenery(private val u: Float) {
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
         // half the mist lies behind the grass, so the blades stand out of it
         if (weather == Weather.FOG) drawWisps(c, pal, t, dt, e.wind, behind = true)
+        // lightning beyond the hills, behind the meadow
+        val stormT = Storm.now()
+        if (weather == Weather.RAIN) drawBolt(c, stormT)
         if (!flags.lake) drawMeadow(c, pal, t, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
         if (flags.foreground && !flags.lake) drawForeground(c, pal, t, e.wind, e.reducedMotion)
         if (season != Season.WINTER && weather != Weather.RAIN) drawFireflies(c, pal, t)
         when (weather) {
-            Weather.RAIN -> drawRain(c, dt, e.wind)
+            Weather.RAIN -> drawRain(c, pal, t, dt, e.wind, Storm.intensity(stormT), Storm.flash(stormT), flags.lake)
             Weather.SNOW -> drawSnow(c, t, dt, e.wind)
             Weather.FOG -> drawFog(c, pal, t, dt, e.wind)
             Weather.CLEAR -> {}
@@ -437,18 +444,101 @@ class Scenery(private val u: Float) {
     }
 
     // -------- weather --------
-    private fun drawRain(c: Canvas, dt: Float, wind: Float) {
-        stroke.color = android.graphics.Color.argb(110, 210, 222, 240)
-        stroke.strokeWidth = 1.1f * u
-        val slant = -0.18f - 0.12f * wind
-        for (d in drops) {
-            d[1] += dt * 1.4f * d[2]
-            d[0] += dt * slant * 1.4f * d[2] * H / W
+    /**
+     * Rain as hard as the storm says: a drizzle of a few faint threads, or a downpour of many, the near ones longer,
+     * brighter and quicker, slanting further in the gusts. The near ones splash where they meet the meadow; in heavy
+     * rain a grey haze hides the far hills; and the whole scene lights up for a moment when lightning strikes.
+     */
+    private fun drawRain(c: Canvas, pal: Palette, t: Float, dt: Float, wind: Float, heavy: Float, flash: Float, lake: Boolean) {
+        val night = pal.stars
+        // the haze of a downpour, thickest along the hills
+        if (heavy > 0.4f) {
+            val haze = mix(floatArrayOf(0.72f, 0.76f, 0.82f), pal.skyHor, 0.4f)
+            val a = (heavy - 0.4f) / 0.6f * (0.38f - 0.2f * night)
+            paint.shader = LinearGradient(0f, H * 0.3f, 0f, H * 0.85f, intArrayOf(argb(haze, 0f), argb(haze, a), argb(haze, a * 0.5f)),
+                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            c.drawRect(0f, H * 0.3f, W, H * 0.85f, paint)
+            paint.shader = null
+        }
+        val gust = 0.5f + 0.5f * sin(t * 0.23f) * sin(t * 0.071f + 1f)
+        val slant = -0.14f - 0.16f * wind - 0.14f * gust * heavy
+        val shown = (drops.size * (0.18f + 0.82f * heavy)).toInt()
+        val fall = 1.1f + 0.7f * heavy
+        for ((i, d) in drops.withIndex()) {
+            d[1] += dt * fall * d[2]
+            d[0] += dt * slant * fall * d[2] * H / W
+            val near = ((d[2] - 0.6f) / 0.8f).coerceIn(0f, 1f)
+            // a near drop that reaches the meadow splashes there and starts again from the top; on the lake, anywhere on the water
+            val ground = if (lake) 0.6f + 0.39f * ((i * 0.618f) % 1f) else 0.86f + 0.13f * ((i * 0.618f) % 1f)
+            if (near > 0.6f && d[1] > ground && i < shown) {
+                if (splashes.size < 60) splashes += floatArrayOf(d[0] * W, d[1] * H, 0f, 0.6f + near)
+                d[1] = -0.05f; d[0] = rand() * 1.2f
+            }
             if (d[1] > 1.05f) { d[1] = -0.05f; d[0] = rand() * 1.2f }
             if (d[0] < -0.05f) d[0] += 1.1f
-            val x = d[0] * W; val y = d[1] * H; val len = (14 + 10 * d[2]) * u
+            if (i >= shown) continue
+            val a = (40 + 110 * near) * (0.75f + 0.25f * heavy) * (1f - 0.35f * night) + 90 * flash
+            stroke.color = android.graphics.Color.argb(a.toInt().coerceAtMost(255), 210, 222, 240)
+            stroke.strokeWidth = (0.7f + 0.8f * near) * u
+            val x = d[0] * W; val y = d[1] * H; val len = (9 + 22 * near) * (0.8f + 0.4f * heavy) * u
             c.drawLine(x, y, x - slant * len, y - len, stroke)
         }
+        // splashes: a small ring opening on the ground and two beads thrown up, gone in a quarter of a second
+        stroke.strokeWidth = 0.9f * u
+        val it = splashes.iterator()
+        while (it.hasNext()) {
+            val sp = it.next()
+            sp[2] += dt
+            val k = sp[2] / 0.28f
+            if (k >= 1f) { it.remove(); continue }
+            val r = (2f + 7f * k) * sp[3] * u * (0.5f + 0.5f * sp[1] / H)   // smaller further off
+            stroke.color = android.graphics.Color.argb(((1f - k) * 150 * (1f - 0.35f * night)).toInt(), 220, 230, 245)
+            c.drawOval(sp[0] - r, sp[1] - r * 0.3f, sp[0] + r, sp[1] + r * 0.3f, stroke)
+            paint.color = stroke.color
+            if (lake) continue   // on water only the ring
+            val up = sin(k * PI.toFloat()) * 7f * sp[3] * u
+            c.drawCircle(sp[0] - r * 0.7f, sp[1] - up, 1.1f * u, paint)
+            c.drawCircle(sp[0] + r * 0.6f, sp[1] - up * 0.8f, 1.1f * u, paint)
+        }
+        // the light of a strike over everything
+        if (flash > 0.01f) {
+            paint.color = android.graphics.Color.argb((flash * (110 + 60 * night)).toInt(), 228, 234, 255)
+            c.drawRect(0f, 0f, W, H, paint)
+        }
+    }
+
+    /** The bolt itself, for the first moments of a strike: a crooked line from the clouds down behind the hills. */
+    private fun drawBolt(c: Canvas, now: Double) {
+        val s = Storm.lastStrike(now) ?: return
+        val d = (now - s.at).toFloat()
+        val f = Storm.flash(now)
+        if (d < 0f || d > 0.9f || f < 0.06f) return
+        if (boltSeed != s.seed) {
+            boltSeed = s.seed
+            val r = Mulberry(s.seed)
+            boltPath.rewind()
+            var x = s.x * W; var y = H * 0.12f
+            val bottom = H * (0.5f + 0.06f * s.far)
+            boltPath.moveTo(x, y)
+            while (y < bottom) {
+                y += (14f + r() * 26f) * u
+                x += (r() - 0.5f) * 30f * u
+                boltPath.lineTo(x, y)
+                // a short fork now and then
+                if (r() < 0.18f) { boltPath.lineTo(x + (r() - 0.5f) * 60f * u, y + (20f + r() * 30f) * u); boltPath.moveTo(x, y) }
+            }
+        }
+        val a = (1.6f * f * (1f - 0.4f * s.far)).coerceIn(0f, 1f)
+        // a wide soft glow, a narrower one, then the white core
+        stroke.strokeWidth = (14f - 6f * s.far) * u
+        stroke.color = android.graphics.Color.argb((a * 45).toInt(), 190, 205, 255)
+        c.drawPath(boltPath, stroke)
+        stroke.strokeWidth = (6f - 2.5f * s.far) * u
+        stroke.color = android.graphics.Color.argb((a * 110).toInt(), 205, 215, 255)
+        c.drawPath(boltPath, stroke)
+        stroke.strokeWidth = (2.4f - 0.9f * s.far) * u
+        stroke.color = android.graphics.Color.argb((a * 255).toInt(), 250, 250, 255)
+        c.drawPath(boltPath, stroke)
     }
 
     private fun drawSnow(c: Canvas, t: Float, dt: Float, wind: Float) {

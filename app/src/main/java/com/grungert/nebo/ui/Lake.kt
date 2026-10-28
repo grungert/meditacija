@@ -49,7 +49,7 @@ fun LakeShore(host: SkyHost, modifier: Modifier = Modifier, visible: Float = 1f)
     Canvas(modifier.fillMaxSize().alpha(visible)) {
         if (t < 0f) return@Canvas   // reading t redraws every frame
         treeline(treeColor(host), t)
-        lakeDecor(t, calm = true)
+        lakeDecor(t, calm = true, rainy = host.weather == com.grungert.nebo.sky.Weather.RAIN)
     }
 }
 
@@ -97,9 +97,9 @@ fun DrawScope.treeline(color: Color, t: Float) {
 
 /**
  * Lily pads, reeds at both edges and a dragonfly. [calm] slows the dragonfly for sitting: it moves on
- * every fourteen seconds instead of every six.
+ * every fourteen seconds instead of every six. In the rain ([rainy]) the dragonfly keeps to the reeds, out of sight.
  */
-fun DrawScope.lakeDecor(t: Float, calm: Boolean = false) {
+fun DrawScope.lakeDecor(t: Float, calm: Boolean = false, rainy: Boolean = false) {
     val w = size.width; val h = size.height
     val px = density
 
@@ -114,6 +114,7 @@ fun DrawScope.lakeDecor(t: Float, calm: Boolean = false) {
     reeds(w, w * 0.18f, h, t, -1)
 
     // a dragonfly that hovers near the reeds and darts to a new place now and then
+    if (rainy) return
     val period = if (calm) 14f else 6f
     fun spot(n: Int) = Offset(w * (0.70f + 0.12f * sin(n * 2.3f)), h * (0.64f + 0.05f * cos(n * 1.7f)))
     val hop = (t / period).toInt()

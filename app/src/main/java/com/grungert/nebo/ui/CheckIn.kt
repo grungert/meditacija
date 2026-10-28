@@ -450,6 +450,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion)
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
                 .screenPadding().padding(vertical = 24.dp),

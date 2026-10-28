@@ -35,6 +35,7 @@ class NeboApp : Application() {
         // the person's own labels for the points, read from the words like the named ones
         com.grungert.nebo.koan.FourPointsReader.custom = listOf(com.grungert.nebo.koan.FourPointsReader.EMOTIONS, com.grungert.nebo.koan.FourPointsReader.BODY,
             com.grungert.nebo.koan.FourPointsReader.URGES).associateWith { settings.customLabels(it) }
+        com.grungert.nebo.sky.Storm.thunder = settings.thunder
         models = ModelStore(this, settings)
         transcriber = Transcriber(db, models, settings)
         library = KoanLibrary(this)
