@@ -61,4 +61,19 @@ class FourPointsReaderTest {
         assertTrue(SearchWords.matches("Na poslu opet sastanak", stems))
         assertFalse(SearchWords.matches("Poslije meditacije sam mirniji", stems))
     }
+
+    @Test
+    fun ownLabelsAreReadFromTheWords() {
+        val before = FourPointsReader.custom
+        try {
+            FourPointsReader.custom = mapOf(FourPointsReader.BODY to listOf("bol u leđima"), FourPointsReader.URGES to listOf("da sve odgodim"),
+                FourPointsReader.EMOTIONS to listOf("usamljeno"))
+            val r = FourPointsReader.read("Opet me bole leđa i osjećam se usamljeno, a najradije bih sve odgodio za sutra")
+            assertTrue("bol u leđima" in r.body)
+            assertTrue("usamljeno" in r.moods)
+            assertTrue("da sve odgodim" in r.urges)
+            // all of a label's words are needed: "leđa" alone is not "bol u leđima"
+            assertFalse("bol u leđima" in FourPointsReader.read("Ležao sam na leđima i gledao nebo").body)
+        } finally { FourPointsReader.custom = before }
+    }
 }

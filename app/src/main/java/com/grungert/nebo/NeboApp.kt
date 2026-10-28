@@ -32,6 +32,9 @@ class NeboApp : Application() {
         com.grungert.nebo.data.Backup.applyPending(this)   // a restored backup takes its place before anything opens
         db = Db(this)
         settings = Settings(this)
+        // the person's own labels for the points, read from the words like the named ones
+        com.grungert.nebo.koan.FourPointsReader.custom = listOf(com.grungert.nebo.koan.FourPointsReader.EMOTIONS, com.grungert.nebo.koan.FourPointsReader.BODY,
+            com.grungert.nebo.koan.FourPointsReader.URGES).associateWith { settings.customLabels(it) }
         models = ModelStore(this, settings)
         transcriber = Transcriber(db, models, settings)
         library = KoanLibrary(this)

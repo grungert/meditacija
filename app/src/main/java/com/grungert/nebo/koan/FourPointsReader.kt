@@ -72,6 +72,15 @@ object FourPointsReader {
         "radoznalo" to listOf("radozna*", "zanima*"),
     )
 
+    /**
+     * The person's own labels, by point (emotions, body, urges), added on the note screen. Read like the others: a
+     * label is found when every word of it (of three letters or more) is in the text, in any of its forms ("bol u leđima" in "leđa me bole").
+     */
+    @Volatile var custom: Map<String, List<String>> = emptyMap()
+
+    /** The stems of a label's longer words: their start, so the endings of our language do not matter. */
+    fun stemsOf(label: String) = label.lowercase().split(Regex("[^\\p{L}]+")).filter { it.length >= 3 }.map { w -> w.take(maxOf(3, w.length - 3)) + "*" }
+
     private fun pattern(stem: String): Regex {
         val body = stem.trimEnd('*').split(' ').joinToString("\\s+") { Regex.escape(it) }
         return Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
@@ -118,7 +127,12 @@ object FourPointsReader {
         val cued = cueIn(text)
         val body = BODY_LABELS.filter { has(text, it.second, negatable = true) }.map { it.first }.toMutableList()
         val urges = URGE_LABELS.filter { has(text, it.second, cued = cued) }.map { it.first }.toMutableList()
-        val moods = MOOD_STEMS.filter { has(text, it.value, negatable = true) }.keys.toList()
+        val moods = MOOD_STEMS.filter { has(text, it.value, negatable = true) }.keys.toMutableList()
+        // the person's own labels, found by all their words
+        fun own(point: String) = custom[point].orEmpty().filter { l -> stemsOf(l).let { st -> st.isNotEmpty() && st.all { has(text, listOf(it), negatable = true) } } }
+        moods += own(EMOTIONS).filter { it !in moods }
+        body += own(BODY).filter { it !in body }
+        urges += own(URGES).filter { it !in urges }
         val thoughts = ArrayList<String>()
         for (p in pieces(text)) {
             val isBody = BODY_LABELS.any { has(p, it.second, negatable = true) }

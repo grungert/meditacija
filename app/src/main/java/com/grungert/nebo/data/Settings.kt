@@ -77,6 +77,9 @@ class Settings(private val context: Context) {
         loadSeconds?.let { putFloat("speechLoad_$model", it) }
         rate?.let { putFloat("speechRate_$model", it) }
     }
+    /** The person's own labels for a point (feelings, the body, urges), one per line, as they added them. */
+    fun customLabels(point: String): List<String> = p.getString("custom_$point", "")!!.split("\n").filter { it.isNotBlank() }
+    fun setCustomLabels(point: String, labels: List<String>) = p.edit { putString("custom_$point", labels.distinct().joinToString("\n")) }
     var ambient: Boolean
         get() = p.getBoolean("ambient", true)
         set(v) = p.edit { putBoolean("ambient", v) }

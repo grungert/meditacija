@@ -14,6 +14,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -205,12 +206,16 @@ fun IconButton(icon: NeboIcon, label: String, onClick: () -> Unit, modifier: Mod
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun Chip(text: String, selected: Boolean, onClick: () -> Unit, sub: String? = null, dot: Color? = null) {
+fun Chip(text: String, selected: Boolean, onClick: () -> Unit, sub: String? = null, dot: Color? = null, onLongClick: (() -> Unit)? = null) {
     val shape = RoundedCornerShape(16.dp)
     val bg by animateColorAsState(if (selected) Ink.accent else Ink.surfaceHigh, label = "chip")
+    val src = remember { MutableInteractionSource() }
     Row(
-        Modifier.tap(role = Role.RadioButton, shape = shape, onClick = onClick).background(bg, shape)
+        (if (onLongClick == null) Modifier.tap(role = Role.RadioButton, shape = shape, onClick = onClick)
+        else Modifier.pressScale(src).clip(shape).combinedClickable(src, LocalIndication.current, role = Role.RadioButton,
+            onLongClick = onLongClick, onLongClickLabel = "Ukloni", onClick = onClick)).background(bg, shape)
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

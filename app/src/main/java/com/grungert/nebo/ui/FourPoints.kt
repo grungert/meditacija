@@ -1,5 +1,9 @@
 package com.grungert.nebo.ui
 
+import com.grungert.nebo.app
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Brush
@@ -208,23 +212,61 @@ fun FourPointsCard(state: FourPointsState, moods: SnapshotStateList<String>, sta
                     textStyle = BodyStyle.copy(fontSize = 16.sp, lineHeight = 23.sp, shadow = null), cursorBrush = SolidColor(Ink.accent),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
             }
-            EMOTIONS -> ChipFlow(MOODS.map { it.first }, moods, { MOOD_COLORS[it] }) { state.touched = true }
-            BODY -> ChipFlow(FourPointsReader.BODY_LABELS.map { it.first }, state.body, { POINT_COLORS[BODY] }) { state.touched = true }
-            URGES -> ChipFlow(FourPointsReader.URGE_LABELS.map { it.first }, state.urges, { POINT_COLORS[URGES] }) { state.touched = true }
+            EMOTIONS -> ChipFlow(EMOTIONS, MOODS.map { it.first }, moods, { MOOD_COLORS[it] ?: POINT_COLORS[EMOTIONS] }, "npr. usamljeno") { state.touched = true }
+            BODY -> ChipFlow(BODY, FourPointsReader.BODY_LABELS.map { it.first }, state.body, { POINT_COLORS[BODY] }, "npr. bol u leđima") { state.touched = true }
+            URGES -> ChipFlow(URGES, FourPointsReader.URGE_LABELS.map { it.first }, state.urges, { POINT_COLORS[URGES] }, "npr. da sve odgodim") { state.touched = true }
         }
     }
 }
 
-/** The offered labels, plus anything chosen that is not among them (words the person said), all toggleable. */
+/**
+ * The offered labels and the person's own (kept for next time, and read from the words like the others), plus
+ * anything chosen that is among neither (words the person said); all toggleable. "+ Dodaj" adds a label of one's own:
+ * it is chosen at once and offered from then on; a long press on one's own label lets it go.
+ */
 @Composable
-private fun ChipFlow(offered: List<String>, chosen: SnapshotStateList<String>, dot: (String) -> Color?, onChange: () -> Unit) {
+private fun ChipFlow(point: String, offered: List<String>, chosen: SnapshotStateList<String>, dot: (String) -> Color?, hint: String, onChange: () -> Unit) {
+    val s = LocalContext.current.app.settings
+    var own by remember(point) { mutableStateOf(s.customLabels(point)) }
+    var adding by remember(point) { mutableStateOf(false) }
+    var draft by remember(point) { mutableStateOf("") }
+    fun saveOwn(list: List<String>) {
+        own = list; s.setCustomLabels(point, list)
+        FourPointsReader.custom = FourPointsReader.custom + (point to list)
+    }
+    fun add() {
+        val label = draft.trim().lowercase().take(40)
+        adding = false; draft = ""
+        if (label.isEmpty()) return
+        if (label !in offered && label !in own) saveOwn(own + label)
+        if (label !in chosen) { chosen.add(label); onChange() }
+    }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (label in (chosen.filter { it !in offered } + offered)) {
+        for (label in (chosen.filter { it !in offered && it !in own } + offered + own)) {
+            val mine = label in own
             Chip(label, label in chosen, {
                 if (label in chosen) chosen.remove(label) else chosen.add(label)
                 onChange()
-            }, dot = dot(label))
+            }, dot = dot(label), sub = if (mine) "tvoje" else null,
+                onLongClick = if (mine) ({ saveOwn(own - label); chosen.remove(label); onChange() }) else null)
         }
+        if (adding) Row(
+            Modifier.clip(RoundedCornerShape(16.dp)).background(Ink.surfaceHigh).border(1.dp, Ink.accent, RoundedCornerShape(16.dp)).padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            LaunchedEffect(Unit) { focus.requestFocus() }
+            Box(Modifier.width(150.dp).padding(vertical = 10.dp)) {
+                if (draft.isEmpty()) Text(hint, style = BodyStyle.copy(fontSize = 14.sp, color = Ink.faint, shadow = null))
+                BasicTextField(draft, { draft = it.take(40) }, singleLine = true, textStyle = BodyStyle.copy(fontSize = 14.sp, shadow = null),
+                    cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { add() }))
+            }
+            Box(Modifier.size(34.dp).tap("Dodaj", shape = CircleShape) { add() }, contentAlignment = Alignment.Center) { Icon(NeboIcon.Check, Ink.accentInk, 18.dp) }
+        } else Text("+ Dodaj", style = BodyStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink.accentInk, shadow = null),
+            modifier = Modifier.tap("Dodaj svoju stavku", shape = RoundedCornerShape(16.dp)) { adding = true }
+                .border(1.dp, Ink.accentInk.copy(alpha = 0.5f), RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 9.dp))
     }
 }
 

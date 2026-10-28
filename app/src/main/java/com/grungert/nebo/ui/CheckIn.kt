@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -363,7 +365,10 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             FourPointsCard(points, moods, startWith = if (scanned) com.grungert.nebo.koan.FourPointsReader.BODY else com.grungert.nebo.koan.FourPointsReader.EMOTIONS)
         }
         // the actions stay within reach at the bottom, over a soft fade so what scrolls under them does not show through
-        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+        // while the keyboard is up they step aside, so the line being typed is never under them
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        val typing = WindowInsets.isImeVisible
+        if (!typing) Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(28.dp).background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xF00A1530)))))
             Row(
                 Modifier.fillMaxWidth().background(Color(0xF00A1530)).navigationBarsPadding().imePadding().screenPadding().padding(bottom = 14.dp),

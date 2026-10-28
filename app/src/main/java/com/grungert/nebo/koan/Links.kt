@@ -30,8 +30,11 @@ object Links {
 
     /** Kinds of notes that look back over a whole day or week: written in the evening about the morning too, good and hard side by side. */
     private val LOOKING_BACK = setOf("evening", "week")
-    private val BODY_NAMES = FourPointsReader.BODY_LABELS.map { it.first }.toSet()
-    private val URGE_NAMES = FourPointsReader.URGE_LABELS.map { it.first }.toSet()
+    private val BODY_LABELS = FourPointsReader.BODY_LABELS.map { it.first }.toSet()
+    private val URGE_LABELS = FourPointsReader.URGE_LABELS.map { it.first }.toSet()
+    // the named ones, and the person's own
+    private val BODY_NAMES get() = BODY_LABELS + FourPointsReader.custom[FourPointsReader.BODY].orEmpty()
+    private val URGE_NAMES get() = URGE_LABELS + FourPointsReader.custom[FourPointsReader.URGES].orEmpty()
 
     /**
      * The things one note holds: its moods (as chosen; read from the words only when none were chosen), its body and
@@ -44,8 +47,9 @@ object Links {
         val read = if (e.points.isEmpty && e.words.isNotBlank()) FourPointsReader.read(e.words) else null
         val out = LinkedHashSet<Thing>()
         e.moods.ifEmpty { read?.moods ?: emptyList() }.distinct().forEach { out += Thing(FourPointsReader.EMOTIONS, it) }
-        e.points.body.ifEmpty { read?.body ?: emptyList() }.filter { it in BODY_NAMES }.forEach { out += Thing(FourPointsReader.BODY, it) }
-        e.points.urges.ifEmpty { read?.urges ?: emptyList() }.filter { it in URGE_NAMES }.forEach { out += Thing(FourPointsReader.URGES, it) }
+        val bodyNames = BODY_NAMES; val urgeNames = URGE_NAMES
+        e.points.body.ifEmpty { read?.body ?: emptyList() }.filter { it in bodyNames }.forEach { out += Thing(FourPointsReader.BODY, it) }
+        e.points.urges.ifEmpty { read?.urges ?: emptyList() }.filter { it in urgeNames }.forEach { out += Thing(FourPointsReader.URGES, it) }
         MindHabits.habits(MindHabits.mindOf(e)).forEach { id -> HABIT_LABEL[id]?.let { out += Thing(FourPointsReader.THOUGHTS, it) } }
         return out
     }
