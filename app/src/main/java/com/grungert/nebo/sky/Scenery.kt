@@ -28,6 +28,11 @@ class SceneFlags(
     val foreground: Boolean = true,
     /** The 50-50 lake fills the lower part of the picture: the meadow and its grass are not drawn. */
     val lake: Boolean = false,
+    /** Where the sun is on the sky (x 0..1 from the left, y 0..1 up from the bottom), and how much of it shines through. */
+    val sun: FloatArray = floatArrayOf(0.5f, 0.5f),
+    val sunAmt: Float = 0f,
+    /** 0..1: how far the weather has passed (rain, snow and mist thinning to nothing). */
+    val clearing: Float = 0f,
 )
 
 /**
@@ -65,13 +70,16 @@ class Scenery(private val u: Float) {
     private val lensP = FloatArray(4)
     private val flyP = FloatArray(4)
     private val dropClip = Path()
-    private val leaves = List(12) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
+    private val leaves = List(20) { i -> Leaf(delay = i * 1.8f + rand() * 2f) }
+    private var fade = 1f      // how much of the weather is still here (1 until it passes)
+    private var gust = 0f      // the gust of wind now, 0..1
     private var season = Season.SUMMER
     private var weather = Weather.CLEAR
     private val drops = List(300) { floatArrayOf(rand(), rand(), 0.6f + rand() * 0.8f) }   // x, y (0..1), speed (and nearness)
     // where the near drops hit the ground: x, y, age (s), size
     private val splashes = ArrayList<FloatArray>()
     private val boltPath = Path()
+    private val rayPath = Path()
     private var boltSeed = -1
     private val flakes = List(110) { floatArrayOf(rand(), rand(), 0.5f + rand(), rand() * 6.28f) } // x, y, size, phase
     // banks of mist, each at its own depth: 0 far by the hills, 1 near on the ground before you
@@ -189,24 +197,32 @@ class Scenery(private val u: Float) {
         windPhase = e.windPhase
         now = t
         season = flags.season; weather = flags.weather
-        drawLeaves(c, pal, dt, e.wind, e.reducedMotion)
-        if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
-        // half the mist lies behind the grass, so the blades stand out of it
-        if (weather == Weather.FOG) drawWisps(c, pal, t, dt, e.wind, behind = true)
-        // lightning beyond the hills, behind the meadow
+        // the weather's own strength, thinning as it passes
+        fade = 1f - flags.clearing
         val stormT = Storm.now()
-        if (weather == Weather.RAIN) drawBolt(c, stormT)
-        if (!flags.lake) drawMeadow(c, pal, t, e.wind, e.reducedMotion)
-        if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
-        if (flags.foreground && !flags.lake) drawForeground(c, pal, t, e.wind, e.reducedMotion)
-        if (season != Season.WINTER && weather != Weather.RAIN) drawFireflies(c, pal, t)
-        when (weather) {
-            Weather.RAIN -> drawRain(c, pal, t, dt, e.wind, Storm.intensity(stormT), Storm.flash(stormT), flags.lake)
-            Weather.SNOW -> drawSnow(c, t, dt, e.wind)
-            Weather.FOG -> drawFog(c, pal, t, dt, e.wind)
+        // the wind: quieter between the gusts, and still while the breath is held, whatever the gusts
+        gust = if (e.reducedMotion) 0f else Storm.gust(stormT)
+        val wind = e.wind * (0.75f + 1.1f * gust)
+        // light from the sun on a clear day, or as the weather passes
+        val clearSky = if (weather == Weather.CLEAR) 1f else flags.clearing * flags.clearing
+        if (clearSky > 0.01f && !flags.lake) drawSunRays(c, pal, t, flags.sun, flags.sunAmt * clearSky)
+        drawLeaves(c, pal, dt, wind, e.reducedMotion)
+        if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, wind)
+        // half the mist lies behind the grass, so the blades stand out of it
+        if (weather == Weather.FOG && fade > 0.01f) drawWisps(c, pal, t, dt, wind, behind = true)
+        // lightning beyond the hills, behind the meadow
+        if (weather == Weather.RAIN && fade > 0.99f) drawBolt(c, stormT)
+        if (!flags.lake) drawMeadow(c, pal, t, wind, e.reducedMotion)
+        if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, wind)
+        if (flags.foreground && !flags.lake) drawForeground(c, pal, t, wind, e.reducedMotion)
+        if (season != Season.WINTER && (weather != Weather.RAIN || fade < 0.3f)) drawFireflies(c, pal, t)
+        if (fade > 0.01f) when (weather) {
+            Weather.RAIN -> drawRain(c, pal, t, dt, wind, Storm.intensity(stormT) * fade, if (fade > 0.99f) Storm.flash(stormT) else 0f, flags.lake)
+            Weather.SNOW -> drawSnow(c, t, dt, wind)
+            Weather.FOG -> drawFog(c, pal, t, dt, wind)
             Weather.CLEAR -> {}
         }
-        drawThoughts(c, pal, t, dt, e.wind)
+        drawThoughts(c, pal, t, dt, wind)
         if (flags.showCircle) drawCircle(c, e, pal, t, dt)
     }
 
@@ -374,12 +390,14 @@ class Scenery(private val u: Float) {
     // -------- leaves and fireflies --------
     private fun drawLeaves(c: Canvas, pal: Palette, dt: Float, wind: Float, reduced: Boolean) {
         val amt = (1 - pal.stars) * if (reduced) 0f else 1f
-        if (amt < 0.02f || season == Season.WINTER || weather == Weather.RAIN) return
-        val active = when (season) { Season.AUTUMN -> 12; Season.SPRING -> 9; else -> 5 }
+        if (amt < 0.02f || season == Season.WINTER || (weather == Weather.RAIN && fade > 0.3f)) return
+        // a gust brings more of them, and quicker
+        val active = when (season) { Season.AUTUMN -> 12; Season.SPRING -> 9; else -> 5 } + (gust * 8).toInt()
         for ((li, l) in leaves.withIndex()) {
             if (li >= active) continue
             if (l.delay > 0) {
                 l.delay -= dt
+                if (gust > 0.3f) l.delay -= dt * 3 * gust
                 if (l.delay <= 0) {
                     l.x = W + (20 + rand() * 120) * u; l.y = H * (0.18f + rand() * 0.55f)
                     l.s = (5 + rand() * 6) * u; l.rot = rand() * 6.28f; l.vr = (rand() - 0.5f) * 5; l.bob = rand() * 6.28f; l.hue = rand()
@@ -389,7 +407,7 @@ class Scenery(private val u: Float) {
             if (l.x < -40 * u) { l.delay = 1 + rand() * 5; continue }
             l.x -= (55 + 120 * wind) * u * dt
             l.bob += dt * 1.6f
-            l.y += sin(l.bob) * 18 * u * dt
+            l.y += sin(l.bob) * 18 * u * dt - gust * 22 * u * dt
             l.rot += l.vr * dt * (0.4f + 0.6f * wind)
             paintLeaf(c, l, leafColor(l, pal), l.x, l.y, 1f, 0f, 0.9f * amt)
         }
@@ -443,6 +461,50 @@ class Scenery(private val u: Float) {
         paint.alpha = 255
     }
 
+    // -------- sunlight --------
+    /**
+     * Light through the air on a clear day: soft shafts from the sun that sway a little, brightening and fading as thin
+     * cloud drifts over it; when it comes out in full, a faint glint of it across the glass.
+     */
+    private fun drawSunRays(c: Canvas, pal: Palette, t: Float, sun: FloatArray, amt: Float) {
+        val a0 = amt * (1f - pal.stars)
+        if (a0 < 0.02f || sun[1] < -0.04f) return
+        val sx = sun[0] * W; val sy = H * (1f - sun[1])
+        // thin cloud over the sun now and then: out from behind it, the light is at its fullest
+        val wave = 0.5f + 0.5f * sin(t * 0.045f) * cos(t * 0.017f + 1.3f)
+        val out = wave * wave * (3 - 2 * wave)
+        val through = 0.3f + 0.7f * out
+        val len = H * 1.25f
+        val col = mix(pal.sun, floatArrayOf(1f, 0.98f, 0.92f), 0.5f)
+        paint.blendMode = BlendMode.SCREEN
+        paint.shader = RadialGradient(sx, sy, len, intArrayOf(argb(col, 1f), argb(col, 0.45f), argb(col, 0f)), floatArrayOf(0f, 0.35f, 1f), Shader.TileMode.CLAMP)
+        val n = 9
+        for (i in 0 until n) {
+            val ang = Math.toRadians((22.0 + 136.0 * (i + 0.5) / n + 5.0 * sin(i * 7.3) + 3.0 * sin(t * 0.07 + i))).toFloat()
+            val half = Math.toRadians(1.4 + 2.2 * (0.5 + 0.5 * sin(i * 3.1))).toFloat()
+            val pulse = 0.55f + 0.45f * sin(t * 0.13f * (1f + i * 0.1f) + i * 2.1f)
+            paint.alpha = (255 * a0 * through * (0.07f + 0.05f * pulse)).toInt().coerceIn(0, 255)
+            rayPath.rewind()
+            rayPath.moveTo(sx, sy)
+            rayPath.lineTo(sx + cos(ang - half) * len, sy + sin(ang - half) * len)
+            rayPath.lineTo(sx + cos(ang + half) * len, sy + sin(ang + half) * len)
+            rayPath.close()
+            c.drawPath(rayPath, paint)
+        }
+        paint.shader = null
+        // the glint: a few faint rings along the line from the sun through the middle of the glass
+        val flare = out * out * out * a0
+        if (flare > 0.02f) {
+            val dx = W / 2 - sx; val dy = H * 0.45f - sy
+            for ((k, r, a) in listOf(Triple(0.55f, 16f, 0.10f), Triple(0.9f, 34f, 0.06f), Triple(1.25f, 9f, 0.12f), Triple(1.6f, 52f, 0.05f))) {
+                paint.color = argb(mix(col, floatArrayOf(0.75f, 0.85f, 1f), k / 1.6f), flare * a)
+                c.drawCircle(sx + dx * k, sy + dy * k, r * u, paint)
+            }
+        }
+        paint.blendMode = null
+        paint.alpha = 255
+    }
+
     // -------- weather --------
     /**
      * Rain as hard as the storm says: a drizzle of a few faint threads, or a downpour of many, the near ones longer,
@@ -462,7 +524,7 @@ class Scenery(private val u: Float) {
         }
         val gust = 0.5f + 0.5f * sin(t * 0.23f) * sin(t * 0.071f + 1f)
         val slant = -0.14f - 0.16f * wind - 0.14f * gust * heavy
-        val shown = (drops.size * (0.18f + 0.82f * heavy)).toInt()
+        val shown = (drops.size * (0.18f + 0.82f * heavy) * fade).toInt()
         val fall = 1.1f + 0.7f * heavy
         for ((i, d) in drops.withIndex()) {
             d[1] += dt * fall * d[2]
@@ -543,7 +605,9 @@ class Scenery(private val u: Float) {
 
     private fun drawSnow(c: Canvas, t: Float, dt: Float, wind: Float) {
         paint.color = android.graphics.Color.argb(225, 255, 255, 255)
-        for (f in flakes) {
+        val shown = (flakes.size * fade).toInt()
+        for ((i, f) in flakes.withIndex()) {
+            if (i >= shown) continue
             f[1] += dt * 0.06f * (0.6f + f[2] * 0.6f)
             f[0] += dt * (sin(t * 0.8f + f[3]) * 0.02f - 0.015f * wind)
             if (f[1] > 1.03f) { f[1] = -0.03f; f[0] = rand() }
@@ -560,7 +624,7 @@ class Scenery(private val u: Float) {
      */
     private fun drawFog(c: Canvas, pal: Palette, t: Float, dt: Float, wind: Float) {
         val fogCol = fogColor(pal)
-        val dim = 1f - 0.5f * pal.stars
+        val dim = (1f - 0.5f * pal.stars) * fade
         // the ground mist: its top breathes between a third and a half of the way down, over a minute or so
         val top = H * (0.42f + 0.1f * sin(t * 0.09f) + 0.04f * sin(t * 0.023f + 1f))
         val thick = 0.62f + 0.1f * sin(t * 0.06f + 2f)
@@ -574,7 +638,7 @@ class Scenery(private val u: Float) {
 
     /** The banks of mist on one side of the grass: the far ones high by the hills, small and slow; the near ones low, wide and quicker. */
     private fun drawWisps(c: Canvas, pal: Palette, t: Float, dt: Float, wind: Float, behind: Boolean) {
-        val dim = 1f - 0.5f * pal.stars
+        val dim = (1f - 0.5f * pal.stars) * fade
         paint.color = argb(fogColor(pal), 1f)
         paint.isFilterBitmap = true   // the small puff is stretched wide: smoothly, not in blocks
         for ((i, w) in wisps.withIndex()) {

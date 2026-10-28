@@ -73,6 +73,13 @@ object Seasons {
     /** How much of the sun and its rays get through the weather. */
     fun sunThrough(w: Weather) = when (w) { Weather.CLEAR -> 1f; Weather.FOG -> 0.55f; Weather.SNOW -> 0.35f; Weather.RAIN -> 0.2f }
 
+    /** Between two palettes, [k] of the way from [a] to [b]. */
+    fun blend(a: Palette, b: Palette, k: Float) = Palette(
+        mix(a.skyTop, b.skyTop, k), mix(a.skyMid, b.skyMid, k), mix(a.skyHor, b.skyHor, k), mix(a.sh, b.sh, k), mix(a.md, b.md, k),
+        mix(a.lt, b.lt, k), mix(a.rim, b.rim, k), mix(a.sun, b.sun, k), mix(a.gTop, b.gTop, k), mix(a.gBot, b.gBot, k),
+        a.stars + (b.stars - a.stars) * k,
+    )
+
     /** Extra cloud cover for the shader. */
     fun cover(w: Weather) = when (w) { Weather.CLEAR -> 0f; Weather.FOG -> 0.04f; Weather.SNOW -> 0.14f; Weather.RAIN -> 0.18f }
 }

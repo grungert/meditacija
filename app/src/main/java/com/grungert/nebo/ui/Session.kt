@@ -259,6 +259,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         ended = true
         paused = false; host.engine.running = true
         host.showCircle = false; host.dark = false
+        host.clearing = true   // and the weather passes: the rain stops, the mist lifts, the frost melts
         word = ""
         host.engine.paced = false
         host.ambience.stop(slowly = true)
@@ -299,6 +300,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         e.running = true
         e.setPatternAndRestart(patternById(cfg.pattern))
         host.showCircle = cfg.paced
+        host.clearing = false
         host.dark = cfg.eyesClosed
         scenery.resetThoughts()
         if (cfg.type == "walk") scenery.resetWalkSpawns()
@@ -417,14 +419,16 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         val lakeShown by animateFloatAsState(if (host.lake) 1f else 0f, tween(900), label = "lake")
         if (lakeShown > 0.01f) LakeShore(host, visible = lakeShown)
         // under a rainy sky, rain on the glass too
-        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion)
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion, raining = !host.clearing)
         // in the mist, the glass mists over too, and a finger wipes it
         if (host.weather == com.grungert.nebo.sky.Weather.FOG) FoggedGlass(
             night = !Ink.day,
             breathOut = { val b = host.engine; if (b.paced && b.phase == com.grungert.nebo.sky.Phase.OUT) kotlin.math.sin(Math.PI * b.progress).toFloat() else 0f },
             onTap = { host.onTap?.invoke(it) },
-            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true },
+            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true }, lifting = host.clearing,
         )
+        if (host.weather == com.grungert.nebo.sky.Weather.SNOW) FrostedGlass(night = !Ink.day, onTap = { host.onTap?.invoke(it) }, melting = host.clearing,
+            hint = !app.settings.frostMelted, onMelted = { app.settings.frostMelted = true })
 
         // time along the edge of the screen: a thin line that goes once around, clockwise from the top
         if (planned > 0) {

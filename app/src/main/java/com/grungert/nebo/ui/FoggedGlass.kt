@@ -53,10 +53,10 @@ import kotlin.random.Random
  * the edges of the stroke, and the fog comes back, unevenly, a little faster on every out-breath, as if you breathed
  * on the window. Like the mind: cleared for a moment, and clouding again, and that is all right.
  * A touch that does not move is passed on ([onTap]), so the screen under the glass still answers it.
- * [breathOut]: 0..1, how much of an out-breath is happening now.
+ * [breathOut]: 0..1, how much of an out-breath is happening now. [lifting]: the mist has passed, and the glass clears.
  */
 @Composable
-fun FoggedGlass(night: Boolean, breathOut: () -> Float, onTap: (Offset) -> Unit, hint: Boolean = false, onWiped: () -> Unit = {}, modifier: Modifier = Modifier) {
+fun FoggedGlass(night: Boolean, breathOut: () -> Float, onTap: (Offset) -> Unit, hint: Boolean = false, onWiped: () -> Unit = {}, lifting: Boolean = false, modifier: Modifier = Modifier) {
     val dp = LocalDensity.current.density
     val slop = LocalViewConfiguration.current.touchSlop
     val fog = remember { Condensation(dp) }
@@ -68,13 +68,14 @@ fun FoggedGlass(night: Boolean, breathOut: () -> Float, onTap: (Offset) -> Unit,
     var misted by remember { mutableStateOf(false) }
     val tap by rememberUpdatedState(onTap)
     val breath by rememberUpdatedState(breathOut)
+    val lift by rememberUpdatedState(lifting)
     LaunchedEffect(Unit) {
         var last = withFrameNanos { it }
         while (true) {
             val now = withFrameNanos { it }
             val dt = ((now - last) / 1e9f).coerceAtMost(0.05f)
             last = now
-            if (size != IntSize.Zero) fog.step(dt, size.width, size.height, breath())
+            if (size != IntSize.Zero) fog.step(dt, size.width, size.height, breath(), lift)
             if (!misted && fog.thick > 0.8f) misted = true
             frame = now
         }
@@ -183,14 +184,15 @@ private class Condensation(private val dp: Float) {
         mask = Bitmap.createBitmap(gw, gh, Bitmap.Config.ALPHA_8)
     }
 
-    fun step(dt: Float, w: Int, h: Int, breathOut: Float) {
+    fun step(dt: Float, w: Int, h: Int, breathOut: Float, lifting: Boolean) {
         ensure(w, h)
         time += dt
-        // misting again: quickly where it is thin, slowing as it thickens; faster on an out-breath
+        // misting again: quickly where it is thin, slowing as it thickens; faster on an out-breath.
+        // Once the mist has passed, it clears instead, in patches, over a few seconds
         val k = 0.055f * (1f + 1.8f * breathOut) * dt
         var sum = 0f
         for (i in dens.indices) {
-            val d = dens[i] + (1f - dens[i]) * k * rate[i]
+            val d = if (lifting) maxOf(0f, dens[i] - 0.3f * dt * rate[i]) else dens[i] + (1f - dens[i]) * k * rate[i]
             dens[i] = d
             sum += d
             bytes[i] = (d * 255).toInt().coerceIn(0, 255).toByte()

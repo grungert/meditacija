@@ -68,6 +68,11 @@ class Settings(private val context: Context) {
         get() = p.getBoolean("fogWiped", false)
         set(v) = p.edit { putBoolean("fogWiped", v) }
 
+    /** The frost on the glass has been melted once: its hint is no longer shown. */
+    var frostMelted: Boolean
+        get() = p.getBoolean("frostMelted", false)
+        set(v) = p.edit { putBoolean("frostMelted", v) }
+
     /** Thunder and lightning far off in the heaviest rain. */
     var thunder: Boolean
         get() = p.getBoolean("thunder", true)

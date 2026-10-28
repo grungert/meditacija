@@ -38,4 +38,15 @@ class StormTest {
         assertTrue((0L until 2000L).all { Storm.strikeIn(it) == null })
         assertNull(Storm.lastStrike(12345.0))
     }
+
+    @Test
+    fun gustsComeAndGoWithQuietBetween() {
+        val g = (0 until 6000).map { Storm.gust(it * 0.5) }
+        assertTrue(g.all { it in 0f..1f })
+        val windy = g.count { it > 0.3f } / g.size.toFloat()
+        assertTrue("windy now and then, not always: $windy", windy in 0.08f..0.5f)
+        // it rises over a second or two, never in a jump
+        val fine = (0 until 30000).map { Storm.gust(it * 0.1) }
+        assertTrue(fine.zipWithNext().all { (a, b) -> kotlin.math.abs(a - b) < 0.12f })
+    }
 }

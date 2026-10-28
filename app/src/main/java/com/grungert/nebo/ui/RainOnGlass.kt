@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -36,22 +37,23 @@ import kotlin.random.Random
  * a wet line and a few beads behind it that dry away. In the spirit of Lucas Bebber's "RainEffect" (Codrops) and
  * Martijn Steinrucken's "Heartfelt", drawn by hand on a 2D canvas: a drop is a small lens of light and shade.
  * The glass follows the [Storm]: few drops in a drizzle, many and running in a downpour, and they catch the light of a
- * strike. [still]: only the fine drops, nothing runs.
+ * strike. [still]: only the fine drops, nothing runs. Once it stops [raining], nothing new lands and the glass dries.
  */
 @Composable
-fun RainOnGlass(night: Boolean, still: Boolean, modifier: Modifier = Modifier) {
+fun RainOnGlass(night: Boolean, still: Boolean, raining: Boolean = true, modifier: Modifier = Modifier) {
     val dp = LocalDensity.current.density
     val glass = remember { WetGlass(dp) }
     val sprite = remember { dropSprite().asImageBitmap() }
     var size by remember { mutableStateOf(IntSize.Zero) }
     var frame by remember { mutableLongStateOf(0L) }
+    val rainingNow by rememberUpdatedState(raining)
     LaunchedEffect(still) {
         var last = withFrameNanos { it }
         while (true) {
             val now = withFrameNanos { it }
             val dt = ((now - last) / 1e9f).coerceAtMost(0.05f)
             last = now
-            if (size != IntSize.Zero) glass.step(dt, size.width.toFloat(), size.height.toFloat(), still, Storm.intensity(Storm.now()))
+            if (size != IntSize.Zero) glass.step(dt, size.width.toFloat(), size.height.toFloat(), still, if (rainingNow) Storm.intensity(Storm.now()) else 0f)
             frame = now
         }
     }
@@ -100,7 +102,7 @@ private class WetGlass(private val dp: Float) {
     fun step(dt: Float, w: Float, h: Float, still: Boolean, heavy: Float) {
         time += dt
         // fine drops land all the time, as many as the rain is hard, more at first so the glass is not bare
-        val landing = if (beads.size < 50 * heavy) 40f else 3f + 26f * heavy
+        val landing = if (heavy <= 0f) 0f else if (beads.size < 50 * heavy) 40f else 3f + 26f * heavy
         var n = landing * dt
         while (n > 0f && beads.size < 60 + 150 * heavy) {
             if (n < 1f && rnd.nextFloat() > n) break
@@ -111,7 +113,7 @@ private class WetGlass(private val dp: Float) {
         beads.removeAll { time - it.born > it.life }
 
         // now and then a big one gathers
-        if (!still && runners.size < 4 + 10 * heavy && rnd.nextFloat() < (0.15f + 1.1f * heavy) * dt)
+        if (!still && heavy > 0f && runners.size < 4 + 10 * heavy && rnd.nextFloat() < (0.15f + 1.1f * heavy) * dt)
             runners += Runner(rnd.nextFloat() * w, rnd.nextFloat() * h * 0.8f, (6f + rnd.nextFloat() * 6f) * dp, 0.5f + rnd.nextFloat() * 2.5f, rnd.nextFloat() * 6.28f)
 
         val it = runners.iterator()

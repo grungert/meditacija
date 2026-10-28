@@ -77,6 +77,9 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var lake by mutableStateOf(false)   // a sheet covers the screen, so the bottom bar steps aside
     var season by mutableStateOf(com.grungert.nebo.sky.Season.SUMMER)
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
+    /** The weather is passing for now (a sit has ended): set again from the settings, it is back at once. */
+    var clearing by mutableStateOf(false)
+    private var rainLevel = 0f
     /** Whether the sky has drawn its first frame, for the opening loader to give way to it. */
     var skyDrawn by mutableStateOf(false)
     /** Whether the sun is up behind the screens, with some slack so dusk does not flicker between the two looks. */
@@ -85,6 +88,7 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     fun applyWeatherSettings(seasonMode: String, weatherMode: String) {
         season = com.grungert.nebo.sky.Seasons.season(seasonMode)
         weather = com.grungert.nebo.sky.Seasons.weather(weatherMode, season)
+        clearing = false
     }
     val ambience = com.grungert.nebo.audio.Ambience()
     val breath = com.grungert.nebo.audio.BreathSound()
@@ -103,10 +107,12 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
             else -> 0f
         }
         // birds stay home in rain and winter; crickets sing in the warm half of the year
-        val w = weather; val s = season
+        // once the weather has passed, the meadow sounds as on a clear day: the rain dies away over a few seconds
+        val w = if (clearing) com.grungert.nebo.sky.Weather.CLEAR else weather; val s = season
         ambience.day = sunAmount * (1f - pal.stars) * (if (w == com.grungert.nebo.sky.Weather.RAIN || w == com.grungert.nebo.sky.Weather.SNOW || s == com.grungert.nebo.sky.Season.WINTER) 0f else 1f)
         ambience.night = pal.stars * when (s) { com.grungert.nebo.sky.Season.WINTER -> 0f; com.grungert.nebo.sky.Season.AUTUMN -> 0.45f; else -> 1f } * (if (w == com.grungert.nebo.sky.Weather.RAIN) 0f else 1f)
-        ambience.rain = if (w == com.grungert.nebo.sky.Weather.RAIN) 1f else 0f
+        rainLevel += ((if (w == com.grungert.nebo.sky.Weather.RAIN) 1f else 0f) - rainLevel) * 0.012f
+        ambience.rain = rainLevel
     }
     var onTap: ((androidx.compose.ui.geometry.Offset) -> Unit)? = null
     var onPhase: ((Phase) -> Unit)? = null
@@ -216,6 +222,7 @@ class MainActivity : ComponentActivity() {
                 weather = host.weather,
                 foreground = host.foreground,
                 lake = host.lake,
+                clearing = host.clearing,
             )
             // the light of the screens follows the sky, but only where they read in daylight
             val light = host.sunUp && readsInDaylight(screen)

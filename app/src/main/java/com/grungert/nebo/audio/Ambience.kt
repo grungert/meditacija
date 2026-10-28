@@ -79,6 +79,7 @@ class Ambience {
             // the storm's mood, once a buffer: how hard it rains, and whether a strike's thunder has reached us
             val now = Storm.now()
             val heavy = Storm.intensity(now)
+            val blow = Storm.gust(now)
             if (rain > 0.02f) for (slot in Storm.slotOf(now) - 1..Storm.slotOf(now)) {
                 val st = Storm.strikeIn(slot) ?: continue
                 if (slot != heardSlot && now >= st.heard && now < st.heard + 2.0) {
@@ -92,7 +93,8 @@ class Ambience {
                 fade += (target - fade) * fadeRate
                 t += 1.0 / sr
                 // wind: noise through two one-pole filters, opening with gusts and the out-breath
-                val gust = 0.5f + 0.3f * sin(t * 0.21).toFloat() + 0.2f * sin(t * 0.077 + 1.3).toFloat()
+                // between the storm's gusts it is quieter; a gust opens the filter and lifts the level
+                val gust = 0.35f + 0.2f * sin(t * 0.21).toFloat() + 0.1f * sin(t * 0.077 + 1.3).toFloat() + 0.9f * blow
                 val fc = 280f + 900f * (0.4f * gust + 0.35f * wind + 0.4f * swell)
                 val a1 = 1f - exp(-2f * PI.toFloat() * fc / sr)
                 val n = rnd.nextFloat() * 2f - 1f

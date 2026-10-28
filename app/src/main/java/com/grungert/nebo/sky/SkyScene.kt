@@ -106,6 +106,8 @@ fun SkyScene(
     weather: Weather = Weather.CLEAR,
     foreground: Boolean = true,
     lake: Boolean = false,
+    /** The weather is passing: rain, snow or mist give way to a clear sky over some seconds (the end of a sit). */
+    clearing: Boolean = false,
     scenery: Scenery = rememberScenery(),
 ) {
     val context = LocalContext.current
@@ -119,6 +121,7 @@ fun SkyScene(
     val lakeShown by rememberUpdatedState(lake)
     val seasonNow by rememberUpdatedState(season)
     val weatherNow by rememberUpdatedState(weather)
+    val clearingNow by rememberUpdatedState(clearing)
     var tick by remember { mutableLongStateOf(0L) }
     val state = remember { FrameState() }
 
@@ -159,16 +162,22 @@ fun SkyScene(
                 state.dim += ((if (isDark) 1f else 0f) - state.dim) * minOf(1f, dt * 1.8f)
                 state.drop += ((if (dropShown) 1f else 0f) - state.drop) * minOf(1f, dt * 2.5f)
                 state.lake += ((if (lakeShown) 1f else 0f) - state.lake) * minOf(1f, dt * 1.6f)
+                // the weather passes slowly, and comes back at once when it is set again
+                state.clear = if (clearingNow) minOf(1f, state.clear + dt / 7f) else 0f
                 val h = day.hour
-                state.pal = Seasons.apply(DayCycle.paletteAt(h), seasonNow, weatherNow)
+                val k = state.clear * state.clear * (3 - 2 * state.clear)
+                val base = DayCycle.paletteAt(h)
+                state.pal = if (k > 0f) Seasons.blend(Seasons.apply(base, seasonNow, weatherNow), Seasons.apply(base, seasonNow, Weather.CLEAR), k)
+                    else Seasons.apply(base, seasonNow, weatherNow)
                 state.season = seasonNow; state.weather = weatherNow
-                val through = Seasons.sunThrough(weatherNow)
+                val through = Seasons.sunThrough(weatherNow) + (1f - Seasons.sunThrough(weatherNow)) * k
+                state.sun = DayCycle.sunPos(h); state.sunAmt = DayCycle.sunAmount(h) * through
                 state.light = DayCycle.lightDir(h, day.moonPhase)
                 state.dt = dt
                 skyView.renderer.frame = SkyFrame(
                     state.time, engine.drift, engine.morph, engine.windPhase, engine.walk, engine.breath,
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h, day.moonPhase),
-                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h, day.moonPhase) * through, state.light, state.dim, Seasons.cover(weatherNow), state.drop, state.lake,
+                    DayCycle.sunAmount(h) * through, DayCycle.moonAmount(h, day.moonPhase) * through, state.light, state.dim, Seasons.cover(weatherNow) * (1f - k), state.drop, state.lake,
                     day.moonPhase,
                 )
                 skyView.requestRender()
@@ -187,7 +196,8 @@ fun SkyScene(
             scenery.resize(size.width, size.height)
             drawIntoCanvas { c ->
                 scenery.draw(c.nativeCanvas, engine, state.pal, state.light, state.time, state.dt,
-                    SceneFlags(showCircle = showCircle, showLandmarks = true, season = state.season, weather = state.weather, foreground = foreground, lake = state.lake > 0.5f), state.walkAmt)
+                    SceneFlags(showCircle = showCircle, showLandmarks = true, season = state.season, weather = state.weather, foreground = foreground, lake = state.lake > 0.5f,
+                        sun = state.sun, sunAmt = state.sunAmt, clearing = state.clear), state.walkAmt)
                 if (state.dim > 0.01f) c.nativeCanvas.drawColor(android.graphics.Color.argb((state.dim * 255).toInt(), 0, 0, 0))
             }
         }
@@ -205,6 +215,9 @@ private class FrameState {
     var weather = Weather.CLEAR
     var pal: Palette = DayCycle.paletteAt(12f)
     var light = floatArrayOf(0f, 1f, 0.3f)
+    var clear = 0f
+    var sun = floatArrayOf(0.5f, 0.5f)
+    var sunAmt = 0f
 }
 
 @Composable

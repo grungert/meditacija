@@ -88,6 +88,7 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
         val e = host.engine
         host.showCircle = false
         host.lake = true
+        host.clearing = false
         e.paced = true; e.running = true
         e.setPatternAndRestart(patternById("46"))
         ripples.clear(); ripples += clock
@@ -99,7 +100,7 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
         }
         onDispose { host.onFrame = null; host.onPhase = null; e.paced = false; host.lake = false }
     }
-    LaunchedEffect(done) { if (done) app.scope.launch { Bell.ring(soft = true) } }
+    LaunchedEffect(done) { if (done) { host.clearing = true; app.scope.launch { Bell.ring(soft = true) } } }
 
     Box(Modifier.fillMaxSize()) {
         val e = host.engine
@@ -109,14 +110,16 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
             lakeLife(clock, elapsed, e.breath, ripples, rainy = host.weather == com.grungert.nebo.sky.Weather.RAIN)
         }
         // under a rainy sky, rain on the glass too
-        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = e.reducedMotion)
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = e.reducedMotion, raining = !host.clearing)
         // in the mist, the glass mists over too, and a finger wipes it
         if (host.weather == com.grungert.nebo.sky.Weather.FOG) FoggedGlass(
             night = !Ink.day,
             breathOut = { val b = host.engine; if (b.paced && b.phase == com.grungert.nebo.sky.Phase.OUT) kotlin.math.sin(Math.PI * b.progress).toFloat() else 0f },
             onTap = { host.onTap?.invoke(it) },
-            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true },
+            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true }, lifting = host.clearing,
         )
+        if (host.weather == com.grungert.nebo.sky.Weather.SNOW) FrostedGlass(night = !Ink.day, onTap = { host.onTap?.invoke(it) }, melting = host.clearing,
+            hint = !app.settings.frostMelted, onMelted = { app.settings.frostMelted = true })
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val h = maxHeight
