@@ -427,7 +427,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
         val p = if (weekKoan != null && round == 0 && !com.grungert.nebo.koan.Lexicon.soundsLikeDistress(entry?.words ?: ""))
             Pick(weekKoan, "Koan ove sedmice, ${app.settings.weekKoanDay()}. dan. Šta ti danas pokazuje?")
         else app.recommender.pick(listOfNotNull(entry?.words, entry?.points?.summary()?.ifBlank { null }).joinToString(". "),
-            entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen)
+            entry?.moods ?: emptyList(), afterSession = sc.sessionId != null, exclude = seen, season = host.season.label, weather = host.weather.label)
         p.item?.let { seen += it.id }
         pick = p
         // the note's themes are found from its own words by the tagging that ran when it was saved; the pick's themes

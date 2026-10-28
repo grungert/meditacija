@@ -27,6 +27,9 @@ data class KoanItem(
     val source: String?,
     /** Which collection a reading comes from ("Zen priča", "Tao Te Ching", …); null for koans and the app's own messages. */
     val collection: String? = null,
+    /** A haiku's season ("proljeće", "ljeto", "jesen", "zima") and weather ("kiša", "snijeg", "magla", "vedro"), when it has them. */
+    val season: String? = null,
+    val weather: String? = null,
 )
 
 class KoanLibrary(context: Context) {
@@ -44,10 +47,12 @@ class KoanLibrary(context: Context) {
                     themes = if (t == null) emptyList() else List(t.length()) { t.getString(it) },
                     whenHelps = o.optString("kadaPomaze"), source = o.optString("izvor").ifBlank { null },
                     collection = o.optString("zbirka").ifBlank { null },
+                    season = o.optString("sezona").ifBlank { null }?.takeIf { it != "null" },
+                    weather = o.optString("vrijeme").ifBlank { null }?.takeIf { it != "null" },
                 )
             }
         }.getOrDefault(emptyList())
-        // readings: Zen stories, Zhuangzi, the Tao Te Ching and the Dhammapada, chosen by meaning like the messages
+        // readings: Zen stories, Zhuangzi, the Tao Te Ching, the Dhammapada, Rumi, Kabir and haiku, chosen by meaning like the messages
         load("koani.json", true) + load("poruke.json", false) + load("price.json", false)
     }
 
@@ -403,7 +408,12 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         else -> "u istom duhu"
     }
 
-    suspend fun pick(words: String, moods: List<String>, afterSession: Boolean, exclude: Set<String> = emptySet(), koansOnly: Boolean = false): Pick = withContext(Dispatchers.Default) {
+    /**
+     * [season] and [weather] are the sky's as the person sat ("jesen", "kiša"): a haiku of the same season comes a little
+     * nearer, and one of the same weather nearer still, so a rainy sit may end with a rain haiku.
+     */
+    suspend fun pick(words: String, moods: List<String>, afterSession: Boolean, exclude: Set<String> = emptySet(), koansOnly: Boolean = false,
+                     season: String? = null, weather: String? = null): Pick = withContext(Dispatchers.Default) {
         lock.withLock {
             if (Lexicon.soundsLikeDistress(words)) return@withLock Pick(null, "", distress = true)
             val moodThemes = moods.mapNotNull { m -> MOODS.firstOrNull { it.first == m }?.second }
@@ -432,6 +442,10 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 if (afterSession && item.isKoan) s += if (qv != null) 0.01f else 0.3f
                 // koans that spoke before come round a little more often
                 s += (feedback[item.id]?.first ?: 0).coerceAtMost(3) * if (qv != null) 0.006f else 0.15f
+                // a haiku of this season comes a touch nearer, and one of this very rain, snow or mist clearly so
+                // (a clear sky is most days, and says little)
+                if (item.season != null && item.season == season) s += if (qv != null) 0.005f else 0.15f
+                if (item.weather != null && item.weather == weather && weather != "vedro") s += if (qv != null) 0.02f else 0.5f
                 item to s
             }.sortedByDescending { it.second }
 
@@ -445,6 +459,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
 
             val shared = chosen.themes.filter { it in detected }
             val reason = when {
+                chosen.weather != null && chosen.weather == weather && weather != "vedro" -> "Za ovo vrijeme: ${weather}."
                 shared.isNotEmpty() -> "Prepoznato u onome što si rekao: " + shared.joinToString(", ") { THEME_NAMES[it] ?: it } + "."
                 qv != null -> "Najbliže po značenju onome što si rekao."
                 words.isBlank() && moods.isEmpty() -> "Za danas, bez posebnog povoda."

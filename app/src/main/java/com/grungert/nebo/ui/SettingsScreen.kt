@@ -240,6 +240,7 @@ fun SettingsScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                     for (t in listOf(
                         "Koani: Mumon, Bezvratna kapija (1228), po engleskom prevodu Nyogena Senzakija i Paula Repsa (1934), javno vlasništvo. Prepričano na naš jezik. Poruke su pisane za ovu aplikaciju.",
                         "Tao Te Ching po prevodu Jamesa Leggea (1891), Džuang Ce po prevodu Herberta A. Gilesa (1889) i Dhammapada po prevodu F. Maxa Müllera (1881), sve javno vlasništvo, prevedeno na naš jezik. Zen priče su tradicionalne anegdote, prepričane za ovu aplikaciju.",
+                        "Rumi po engleskim prevodima R. A. Nicholsona (Divan-i Šams-i Tabriz, 1898) i E. H. Whinfielda (Mesnevija, 1898), Kabir po prevodu Rabindranatha Tagorea (1915), a haiku po japanskim izvornicima i prevodima B. H. Chamberlaina (1902); sve javno vlasništvo, prevedeno na naš jezik za ovu aplikaciju.",
                         "Parakeet TDT 0.6B v3 (NVIDIA, CC-BY-4.0) kroz sherpa-onnx (Apache-2.0). Whisper (OpenAI, MIT) kroz whisper.cpp. Model za značenje: multilingual-e5-small (MIT).",
                         "Fontovi Manrope i Newsreader (SIL Open Font License), ikonice Phosphor (MIT).",
                     )) Text(t, style = SmallStyle.copy(shadow = null))
