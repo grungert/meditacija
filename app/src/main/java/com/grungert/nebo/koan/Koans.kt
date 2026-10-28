@@ -164,6 +164,11 @@ data class InsightThread(val entries: List<com.grungert.nebo.data.Entry>, val th
 class Recommender(private val db: Db, private val models: ModelStore, private val library: KoanLibrary) {
     private val lock = Mutex()
     private var embedder: Embedder? = null
+    // the meaning model takes over a hundred megabytes: it is opened when a note needs reading and let go two minutes
+    // after its last use (long enough for a look through the journal). Only touched under [lock].
+    private val keep = com.grungert.nebo.ml.KeepAlive(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default), lock, 120_000) {
+        embedder?.close(); embedder = null
+    }
 
     val usesMeaning get() = models.isReady(ModelCatalog.meaning)
 
@@ -172,6 +177,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         if (embedder == null) runCatching {
             embedder = Embedder(models.file(ModelCatalog.meaning.files[0].name), models.file(ModelCatalog.meaning.files[1].name))
         }
+        if (embedder != null) { keep.touch(); keep.later() }
         return embedder
     }
 
@@ -206,10 +212,12 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     /** Readies every note for search by meaning, once, so the first search does not wait for them. */
     suspend fun warmSearch() = withContext(Dispatchers.Default) {
         for (id in db.entries().map { it.id }) lock.withLock {
-            val e = embedderOrNull() ?: return@withContext
+            if (!usesMeaning) return@withContext
             // read again: a note deleted or rewritten meanwhile gets no stale vector
             val x = db.entry(id) ?: return@withLock
-            if (x.words.isNotBlank()) passageVector(x, e)
+            // the model is opened only for a note not read yet, not on every start
+            if (x.words.isBlank() || db.embedding("passage:${x.id}", Embedder.MODEL_ID, x.words.hashCode()) != null) return@withLock
+            passageVector(x, embedderOrNull() ?: return@withContext)
         }
     }
 
@@ -261,9 +269,12 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     /** Embeds the whole library once and caches it, so the first pick after a session is quick. */
     suspend fun warmUp() = withContext(Dispatchers.Default) {
         for (item in library.items) lock.withLock {
-            val e = embedderOrNull() ?: return@withContext
+            if (!usesMeaning) return@withContext
             val text = itemText(item)
-            if (db.embedding(item.id, Embedder.MODEL_ID, text.hashCode()) == null) db.putEmbedding(item.id, Embedder.MODEL_ID, text.hashCode(), e.embed(text))
+            if (db.embedding(item.id, Embedder.MODEL_ID, text.hashCode()) == null) {
+                val e = embedderOrNull() ?: return@withContext
+                db.putEmbedding(item.id, Embedder.MODEL_ID, text.hashCode(), e.embed(text))
+            }
         }
     }
 

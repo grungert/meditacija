@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -418,17 +419,20 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         // the far shore, reeds and lily pads, when sitting by the lake
         val lakeShown by animateFloatAsState(if (host.lake) 1f else 0f, tween(900), label = "lake")
         if (lakeShown > 0.01f) LakeShore(host, visible = lakeShown)
+        // the glass goes dark with the sky behind closed eyes, and comes back with it
+        val glassShown by animateFloatAsState(if (host.dark && !peek) 0f else 1f, tween(900), label = "glass")
+        val glass = Modifier.graphicsLayer { alpha = glassShown }
         // under a rainy sky, rain on the glass too
-        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion, raining = !host.clearing)
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion, raining = !host.clearing, modifier = glass)
         // in the mist, the glass mists over too, and a finger wipes it
         if (host.weather == com.grungert.nebo.sky.Weather.FOG) FoggedGlass(
             night = !Ink.day,
             breathOut = { val b = host.engine; if (b.paced && b.phase == com.grungert.nebo.sky.Phase.OUT) kotlin.math.sin(Math.PI * b.progress).toFloat() else 0f },
             onTap = { host.onTap?.invoke(it) },
-            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true }, lifting = host.clearing,
+            hint = !app.settings.fogWiped, onWiped = { app.settings.fogWiped = true }, lifting = host.clearing, modifier = glass,
         )
         if (host.weather == com.grungert.nebo.sky.Weather.SNOW) FrostedGlass(night = !Ink.day, onTap = { host.onTap?.invoke(it) }, melting = host.clearing,
-            hint = !app.settings.frostMelted, onMelted = { app.settings.frostMelted = true })
+            hint = !app.settings.frostMelted, onMelted = { app.settings.frostMelted = true }, modifier = glass)
 
         // time along the edge of the screen: a thin line that goes once around, clockwise from the top
         if (planned > 0) {

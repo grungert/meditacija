@@ -23,12 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -45,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.grungert.nebo.sky.SkyClock
 import java.nio.ByteBuffer
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -64,7 +63,6 @@ fun FrostedGlass(night: Boolean, onTap: (Offset) -> Unit, melting: Boolean = fal
     val sprite = remember { dropSprite() }
     var size by remember { mutableStateOf(IntSize.Zero) }
     var texture by remember { mutableStateOf<Bitmap?>(null) }
-    var frame by remember { mutableLongStateOf(0L) }
     var melted by remember { mutableStateOf(false) }
     var grown by remember { mutableStateOf(false) }
     val tap by rememberUpdatedState(onTap)
@@ -73,16 +71,13 @@ fun FrostedGlass(night: Boolean, onTap: (Offset) -> Unit, melting: Boolean = fal
         if (size == IntSize.Zero) return@LaunchedEffect
         texture = withContext(Dispatchers.Default) { frostTexture(size.width / 2, size.height / 2, dp / 2) }
     }
+    val stepped = remember { longArrayOf(0L) }
+    // the hint and the first melt are looked at now and then, not every frame
     LaunchedEffect(Unit) {
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = ((now - last) / 1e9f).coerceAtMost(0.05f)
-            last = now
-            if (size != IntSize.Zero) frost.step(dt, size.width, size.height, thaw)
+        while (!melted) {
+            kotlinx.coroutines.delay(500)
             if (!grown && frost.reach > 0.25f) grown = true
-            if (!melted && frost.meltedSome) { melted = true; onMelted() }
-            frame = now
+            if (frost.meltedSome) { melted = true; onMelted() }
         }
     }
     val paints = remember {
@@ -115,7 +110,9 @@ fun FrostedGlass(night: Boolean, onTap: (Offset) -> Unit, melting: Boolean = fal
                 }
             },
         ) {
-            frame   // read, so every step draws anew
+            // one step a sky frame, taken here so the frost is drawn with the sky and never between its frames
+            val f = SkyClock.frame
+            if (f != stepped[0] && size != IntSize.Zero) { stepped[0] = f; frost.step(SkyClock.dt.coerceAtMost(0.1f), size.width, size.height, thaw) }
             val mask = frost.mask ?: return@Canvas
             val tex = texture ?: return@Canvas
             drawIntoCanvas { cv ->

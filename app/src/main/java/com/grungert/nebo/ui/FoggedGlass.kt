@@ -23,12 +23,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -44,6 +42,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.grungert.nebo.sky.SkyClock
 import java.nio.ByteBuffer
 import kotlin.math.hypot
 import kotlin.random.Random
@@ -63,23 +62,14 @@ fun FoggedGlass(night: Boolean, breathOut: () -> Float, onTap: (Offset) -> Unit,
     val grain = remember { grainTile() }
     val sprite = remember { dropSprite() }
     var size by remember { mutableStateOf(IntSize.Zero) }
-    var frame by remember { mutableLongStateOf(0L) }
     var wiped by remember { mutableStateOf(false) }
     var misted by remember { mutableStateOf(false) }
     val tap by rememberUpdatedState(onTap)
     val breath by rememberUpdatedState(breathOut)
     val lift by rememberUpdatedState(lifting)
-    LaunchedEffect(Unit) {
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = ((now - last) / 1e9f).coerceAtMost(0.05f)
-            last = now
-            if (size != IntSize.Zero) fog.step(dt, size.width, size.height, breath(), lift)
-            if (!misted && fog.thick > 0.8f) misted = true
-            frame = now
-        }
-    }
+    val stepped = remember { longArrayOf(0L) }
+    // the hint waits until the glass has misted over: looked at now and then, not every frame
+    LaunchedEffect(Unit) { while (!misted) { kotlinx.coroutines.delay(500); if (fog.thick > 0.8f) misted = true } }
     val paints = remember {
         object {
             val veil = Paint()
@@ -112,7 +102,9 @@ fun FoggedGlass(night: Boolean, breathOut: () -> Float, onTap: (Offset) -> Unit,
                 }
             },
         ) {
-            frame   // read, so every step draws anew
+            // one step a sky frame, taken here so the glass is drawn with the sky and never between its frames
+            val f = SkyClock.frame
+            if (f != stepped[0] && size != IntSize.Zero) { stepped[0] = f; fog.step(SkyClock.dt.coerceAtMost(0.1f), size.width, size.height, breath(), lift) }
             val mask = fog.mask ?: return@Canvas
             val tint = if (night) floatArrayOf(0.5f, 0.56f, 0.68f) else floatArrayOf(0.9f, 0.93f, 0.96f)
             val most = if (night) 0.5f else 0.6f

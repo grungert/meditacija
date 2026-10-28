@@ -10,12 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -25,6 +23,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.grungert.nebo.sky.SkyClock
 import com.grungert.nebo.sky.Storm
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -45,20 +44,12 @@ fun RainOnGlass(night: Boolean, still: Boolean, raining: Boolean = true, modifie
     val glass = remember { WetGlass(dp) }
     val sprite = remember { dropSprite().asImageBitmap() }
     var size by remember { mutableStateOf(IntSize.Zero) }
-    var frame by remember { mutableLongStateOf(0L) }
     val rainingNow by rememberUpdatedState(raining)
-    LaunchedEffect(still) {
-        var last = withFrameNanos { it }
-        while (true) {
-            val now = withFrameNanos { it }
-            val dt = ((now - last) / 1e9f).coerceAtMost(0.05f)
-            last = now
-            if (size != IntSize.Zero) glass.step(dt, size.width.toFloat(), size.height.toFloat(), still, if (rainingNow) Storm.intensity(Storm.now()) else 0f)
-            frame = now
-        }
-    }
+    val stepped = remember { longArrayOf(0L) }
     Canvas(modifier.fillMaxSize().onSizeChanged { size = it }) {
-        frame   // read, so every step draws anew
+        // one step a sky frame, taken here so the glass is drawn with the sky and never between its frames
+        val f = SkyClock.frame
+        if (f != stepped[0] && size != IntSize.Zero) { stepped[0] = f; glass.step(SkyClock.dt.coerceAtMost(0.1f), size.width.toFloat(), size.height.toFloat(), still, if (rainingNow) Storm.intensity(Storm.now()) else 0f) }
         val k = ((if (night) 0.6f else 1f) * (1f + 0.6f * Storm.flash(Storm.now()))).coerceAtMost(1f)
         // the wet lines first, under the drops: fading as they dry
         for (r in glass.runners) for (i in 1 until r.path.size) {

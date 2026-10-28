@@ -261,7 +261,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                             LazyColumn(state = list, contentPadding = PaddingValues(start = 10.dp, end = 18.dp, top = 6.dp, bottom = 140.dp)) {
                                 items(r ?: emptyList(), key = { row ->
                                     when (row) { is DayHead -> "d" + row.label; is SessionsOfDay -> "s" + row.day; is NoteRow -> "n" + row.entry.id; else -> row.hashCode() }
-                                }) { row ->
+                                }, contentType = { row -> row::class }) { row ->   // rows of a kind reuse each other as the list scrolls
                                     Box(Modifier.animateItem()) {
                                         when (row) {
                                             is DayHead -> TimelineDay(row)

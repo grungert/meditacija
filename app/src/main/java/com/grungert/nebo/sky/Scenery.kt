@@ -273,11 +273,13 @@ class Scenery(private val u: Float) {
             val top = bandTop[i]; val bottom = max(bandBottom[i], top + 1f)
             paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(tip, 1f), argb(base, 1f), argb(root, 1f)),
                 floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
+            paint.isAntiAlias = i >= 4
             c.drawPath(bladePaths[i * 2], paint)
             paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(mix(tip, glint, 0.55f), 1f), argb(scale(base, 1.1f), 1f), argb(root, 1f)),
                 floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
             c.drawPath(bladePaths[i * 2 + 1], paint)
         }
+        paint.isAntiAlias = true
         paint.shader = null
         if (blossoms != null) for (bl in blossoms) {
             paint.color = argb(mix(SPRING_COLS[bl[3].toInt()], pal.gBot, 0.6f * night), 0.95f)

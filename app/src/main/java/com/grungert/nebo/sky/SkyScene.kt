@@ -37,6 +37,19 @@ fun skyFps(walking: Boolean, dark: Float): Int = when {
 }
 
 /**
+ * The sky's own frame. Whatever moves with the sky (rain on the glass, the misted glass, the frost) steps on it, inside
+ * its own drawing, so the window is drawn once a sky frame and never again in between: a loop of its own, even at the
+ * same rate, would fall between the sky's frames and double them.
+ */
+object SkyClock {
+    var frame by androidx.compose.runtime.mutableLongStateOf(0L)
+        internal set
+    /** Seconds since the frame before. */
+    var dt = 0f
+        internal set
+}
+
+/**
  * Waits for the next frame, no sooner than 1/[fps] after [since] (a frame time in nanoseconds), and returns its time.
  * The wait is a plain delay, so between frames nothing wakes; the frame itself still lands on a vsync.
  */
@@ -174,6 +187,7 @@ fun SkyScene(
                 state.sun = DayCycle.sunPos(h); state.sunAmt = DayCycle.sunAmount(h) * through
                 state.light = DayCycle.lightDir(h, day.moonPhase)
                 state.dt = dt
+                SkyClock.dt = dt; SkyClock.frame = now
                 skyView.renderer.frame = SkyFrame(
                     state.time, engine.drift, engine.morph, engine.windPhase, engine.walk, engine.breath,
                     if (engine.reducedMotion) 0.3f else 1f, state.pal, DayCycle.sunPos(h), DayCycle.moonPos(h, day.moonPhase),
