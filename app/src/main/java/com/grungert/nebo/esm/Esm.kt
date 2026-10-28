@@ -32,6 +32,7 @@ object Esm {
     private const val EXTRA_MOOD = "mood"
     private const val KEY_TEXT = "text"
     private const val ACTION_REPLY = "com.grungert.nebo.ESM_REPLY"
+    private const val ACTION_DISMISS = "com.grungert.nebo.ESM_DISMISS"
     private const val ACTION_WEEK = "com.grungert.nebo.WEEK"
     private const val ACTION_DAILY = "com.grungert.nebo.DAILY"
     private const val ACTION_REMIND = "com.grungert.nebo.REMIND"
@@ -339,6 +340,11 @@ object Esm {
                 ctx.app.db.markPromptFired(id, System.currentTimeMillis())
                 if (fresh && s.esmEnabled && s.esmSilencedDay != today()) notify(ctx, id)
             }
+            ACTION_DISMISS -> {
+                val id = intent.getLongExtra(EXTRA_PROMPT, 0)
+                if (id > 0) ctx.app.db.markPromptDismissed(id)
+                return
+            }
             ACTION_REPLY -> {
                 // answered straight from the notification: typed words, or one tap on a mood
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)
@@ -462,6 +468,8 @@ object Esm {
             .setContentTitle("Kako si sada?")
             .setContentText("Dodirni da govoriš, ili odgovori odmah ovdje.")
             .setContentIntent(open)
+            // swiped away unanswered: kept as such, so the answers can be told from the questions turned down
+            .setDeleteIntent(pending(ctx, ACTION_DISMISS, promptId))
             .setAutoCancel(true)
             .setTimeoutAfter(60 * 60_000L)
             .addAction(reply).addAction(mood("mirno")).addAction(mood("nemirno"))

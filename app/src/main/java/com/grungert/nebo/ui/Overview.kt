@@ -1045,7 +1045,9 @@ private fun Tiles(d: StatsData) {
             Tile("TALAS", NeboIcon.Wave, "%.0f → %.0f".format(before, after), "jačina poriva prije i poslije, $all ${plural(all, "talas", "talasa", "talasa")}", Modifier.weight(1f))
         }
         Tile("POZIVI", NeboIcon.Bell, if (d.promptsFired == 0) "—" else "${d.promptsAnswered} od ${d.promptsFired}",
-            if (d.promptsFired == 0) "pozivi su isključeni ili još nijesu stigli" else "poziva s odgovorom; propušten je samo propušten", Modifier.weight(1f))
+            if (d.promptsFired == 0) "pozivi su isključeni ili još nijesu stigli"
+            else if (d.promptsDismissed > 0) "poziva s odgovorom; ${d.promptsDismissed} sklonjeno, a propušten je samo propušten"
+            else "poziva s odgovorom; propušten je samo propušten", Modifier.weight(1f))
     }
 }
 

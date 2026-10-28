@@ -132,6 +132,8 @@ class StatsData(
     val dayParts: List<Int>, val dayPartSessions: List<Int>,
     val types: List<Pair<String, Int>>, val themes: List<Pair<String, Int>>,
     val promptsFired: Int, val promptsAnswered: Int,
+    /** Questions swiped away unanswered (the rest of the unanswered simply went by). */
+    val promptsDismissed: Int = 0,
     /** The moods in each wider stretch of the span. */
     val moodBuckets: List<Map<String, Int>>, val moodLabels: List<String>,
     /** How often each part of the body was named as tense: in scans (once a scan) and in notes' body point. */
@@ -209,6 +211,7 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
         types = real.groupingBy { it.type }.eachCount().toList().sortedByDescending { it.second },
         themes = themeCount.toList().sortedByDescending { it.second }.take(8),
         promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null },
+        promptsDismissed = fired.count { it.dismissed && it.answeredEntryId == null },
         moodBuckets = coarse.map { b -> entries.filter { it.createdAt >= b.from && it.createdAt < b.to }.flatMap { it.moods }.groupingBy { it }.eachCount() },
         moodLabels = coarse.map { it.label },
         tension = tensionCounts(sessions, entries),

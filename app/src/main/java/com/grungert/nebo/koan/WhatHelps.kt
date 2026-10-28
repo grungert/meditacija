@@ -7,6 +7,9 @@ import java.util.Calendar
 /**
  * What helps, from the person's own notes: for each session with a note before and a note after it, whether the
  * moods after were lighter than before. Only what enough sessions show is said; until then, how far there is to go.
+ *
+ * "Before" is the note asked for before the sit, or else the last note of the two hours before it (how the person was
+ * as they sat down). A mood is the one chosen, or else the one the words say ("umorna sam" counts as tired).
  */
 object WhatHelps {
     /** How a mood sits: lighter (+1), heavy (-1), or in between. */
@@ -19,15 +22,29 @@ object WhatHelps {
 
     private fun weight(moods: List<String>): Float? = moods.mapNotNull { WEIGHT[it] }.takeIf { it.isNotEmpty() }?.average()?.toFloat()
 
+    /** The moods of a note: as chosen, or read from its words when none were. */
+    private fun moodsOf(e: Entry): List<String> = e.moods.ifEmpty { if (e.words.isBlank()) emptyList() else FourPointsReader.read(e.words).moods }
+
+    /** Whether a note can stand for how the person was before a sit: a note of the moment, with a mood that weighs. */
+    fun tellsHow(e: Entry): Boolean = e.kind !in NOT_BEFORE && moodsOf(e).any { it in WEIGHT }
+
+    /** How long before a sit a note still tells how the person sat down. */
+    const val BEFORE_WINDOW = 2 * 60 * 60_000L
+    /** Notes that are not about the moment they were written in, or that belong to the end of a sit. */
+    private val NOT_BEFORE = setOf("after", "evening", "week", "rain")
+
     /** One session with a note before and after: its kind, when it was, and how much lighter it left (after − before). */
     class Shift(val type: String, val part: Int, val shift: Float)
 
     fun pairs(sessions: List<Session>, entries: List<Entry>): List<Shift> {
         val bySession = entries.filter { it.sessionId != null }.groupBy { it.sessionId!! }
+        val loose = entries.filter { it.sessionId == null && it.kind !in NOT_BEFORE }.sortedBy { it.createdAt }
         return sessions.mapNotNull { s ->
             val notes = bySession[s.id] ?: return@mapNotNull null
-            val before = weight(notes.filter { it.kind == "before" }.flatMap { it.moods }) ?: return@mapNotNull null
-            val after = weight(notes.filter { it.kind == "after" }.flatMap { it.moods }) ?: return@mapNotNull null
+            val after = weight(notes.filter { it.kind == "after" }.flatMap { moodsOf(it) }) ?: return@mapNotNull null
+            val asked = weight(notes.filter { it.kind == "before" }.flatMap { moodsOf(it) })
+            val before = asked ?: loose.lastOrNull { it.createdAt in (s.startedAt - BEFORE_WINDOW)..s.startedAt && tellsHow(it) }
+                ?.let { weight(moodsOf(it)) } ?: return@mapNotNull null
             Shift(s.type, part(s.startedAt), after - before)
         }
     }

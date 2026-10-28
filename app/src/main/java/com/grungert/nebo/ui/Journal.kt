@@ -265,7 +265,7 @@ fun JournalScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                                     Box(Modifier.animateItem()) {
                                         when (row) {
                                             is DayHead -> TimelineDay(row)
-                                            is SessionsOfDay -> TimelineSessions(row)
+                                            is SessionsOfDay -> TimelineSessions(row) { gone -> scope.launch { withContext(Dispatchers.IO) { app.db.deleteSession(gone.id) }; reload++ } }
                                             is NoteRow -> TimelineRow(timeFmt.format(Date(row.entry.createdAt)), 10.dp, row.entry.moods.firstOrNull()?.let { MOOD_COLORS[it] } ?: Ink.faint) {
                                                 EntryCard(row.entry, player, onStar = { toggle(row.entry) }, onSimilar = { go(Screen.Similar(row.entry.id)) },
                                                     onEdit = { player.stop(); editing = row.entry }, followed = row.entry.follows?.let { followed[it] }, onThing = open)
@@ -400,7 +400,7 @@ private fun TimelineDay(d: DayHead) {
 
 /** A day's sessions as one quiet line, "2 sesije · 15 min"; a touch opens them one by one. */
 @Composable
-private fun TimelineSessions(s: SessionsOfDay) {
+private fun TimelineSessions(s: SessionsOfDay, onDelete: (Session) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val total = s.sessions.sumOf { it.actualSec }
     val first = s.sessions.first()
@@ -414,20 +414,21 @@ private fun TimelineSessions(s: SessionsOfDay) {
                 Text(if (s.sessions.size == 1) (TYPE_LABEL[first.type] ?: first.type) else "${s.sessions.size} ${plural(s.sessions.size, "sesija", "sesije", "sesija")}",
                     style = BodyStyle.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
                 Text(if (total < 60) "$total s" else "${total / 60} min", style = SmallStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
-                if (s.sessions.size > 1) {
-                    val turn by animateFloatAsState(if (open) 90f else 0f, label = "caret")
-                    Icon(NeboIcon.Forward, Ink.soft, 14.dp, Modifier.graphicsLayer { rotationZ = turn })
-                }
+                val turn by animateFloatAsState(if (open) 90f else 0f, label = "caret")
+                Icon(NeboIcon.Forward, Ink.soft, 14.dp, Modifier.graphicsLayer { rotationZ = turn })
             }
-            if (open && s.sessions.size > 1) Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp)) {
-                for (row in s.sessions) SessionLine(row)
+            // open, each session on its line, and one started by mistake can be taken away
+            if (open) Column(Modifier.padding(start = 14.dp, end = 6.dp, bottom = 8.dp)) {
+                for (row in s.sessions) SessionLine(row, onDelete = { onDelete(row) })
             }
         }
     }
 }
 
 @Composable
-private fun SessionLine(row: Session) {
+private fun SessionLine(row: Session, onDelete: (() -> Unit)? = null) {
+    var asking by remember { mutableStateOf(false) }
+    Column {
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(SESSION_TYPES.firstOrNull { it.id == row.type }?.icon ?: NeboIcon.Breath, Ink.soft, 16.dp)
         Column(Modifier.weight(1f)) {
@@ -436,6 +437,21 @@ private fun SessionLine(row: Session) {
                 style = SmallStyle.copy(color = Ink.accentInk, shadow = null))
         }
         Text((if (row.actualSec < 60) "${row.actualSec} s" else "${row.actualSec / 60} min") + " · " + timeFmt.format(Date(row.startedAt)), style = SmallStyle.copy(shadow = null))
+        if (onDelete != null) Box(Modifier.size(34.dp).tap("Obriši sesiju", shape = CircleShape) { asking = !asking }, contentAlignment = Alignment.Center) {
+            Icon(NeboIcon.Trash, if (asking) Ink.accentInk else Ink.faint, 16.dp)
+        }
+    }
+    // a second, deliberate step: what goes, and that it goes from everywhere
+    AnimatedVisibility(asking && onDelete != null) {
+        Row(Modifier.fillMaxWidth().padding(start = 26.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Obrisati? Nestaje iz dnevnika i pregleda.", style = SmallStyle.copy(fontSize = 12.5.sp, shadow = null), modifier = Modifier.weight(1f))
+            Text("Ne", style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null),
+                modifier = Modifier.tap("Ne briši", shape = RoundedCornerShape(12.dp)) { asking = false }.padding(horizontal = 10.dp, vertical = 6.dp))
+            Text("Obriši", style = SmallStyle.copy(fontWeight = FontWeight.Bold, color = Ink.ink, shadow = null),
+                modifier = Modifier.tap("Obriši sesiju", shape = RoundedCornerShape(12.dp)) { asking = false; onDelete?.invoke() }
+                    .background(Ink.accent, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 6.dp))
+        }
+    }
     }
 }
 

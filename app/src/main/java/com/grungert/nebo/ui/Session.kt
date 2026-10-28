@@ -196,6 +196,7 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
     var word by remember { mutableStateOf("") }
     var peek by remember { mutableStateOf(false) }  // eyes-closed mode: light briefly returns after a touch
     var paused by remember { mutableStateOf(false) }
+    var cancelled by remember { mutableStateOf(false) }
     var ambienceOpen by remember { mutableStateOf(false) }
     var endReady by remember { mutableStateOf(false) }   // the ending can be touched away
     var left by remember { mutableStateOf(false) }
@@ -248,6 +249,19 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         val note = rainEntry
         if (note != null) { app.scope.launch(Dispatchers.Main) { go(Screen.Koan(id, note.await())) }; return }
         go(if (cfg.checkInAfter) Screen.CheckIn("after", config = cfg, sessionId = id) else Screen.Koan(id, null))
+    }
+
+    /**
+     * Started by mistake, or only to try it: the session is taken back as if it never was. Nothing of it stays, in the
+     * journal, the overview or what the app learns from them; no bell, no note after it.
+     */
+    fun cancel() {
+        if (left) return
+        left = true; ended = true; cancelled = true
+        host.engine.running = true; host.dark = false
+        host.ambience.stop(); host.breath.stop()
+        sessionId?.let { id -> app.scope.launch(Dispatchers.IO) { app.db.deleteSession(id) } }
+        go(Screen.Home)
     }
 
     /**
@@ -321,9 +335,16 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         var nextBell = if (cfg.intervalMinutes != 0) gap() else Float.MAX_VALUE
         var stageAt = -1
         var lastGust = 1f; var lastChime = -100f
+        var savedAt = 0f
         host.onFrame = { dt ->
             if (!ended && !paused && waveStarted) {
                 elapsed += dt
+                // the time sat is written every half minute, so a sit the system cuts short (a call, the app closed
+                // in the background) still counts for what it was
+                if (elapsed - savedAt >= 30f) {
+                    savedAt = elapsed
+                    sessionId?.let { id -> val sec = elapsed.toInt(); val n = scenery.thoughtCount; app.scope.launch(Dispatchers.IO) { app.db.sessionProgress(id, sec, n) } }
+                }
                 lastTouch += dt
                 host.breath.phase = when (e.phase) { Phase.IN -> 1; Phase.OUT -> 2; else -> 0 }
                 host.breath.progress = if (e.phaseDuration > 0f) e.phaseT / e.phaseDuration else 0f
@@ -380,6 +401,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 app.db.insertSession(Session(startedAt = System.currentTimeMillis(), type = cfg.type, plannedSec = planned,
                     pattern = cfg.pattern, walk = cfg.type == "walk")).also { id -> cfg.beforeEntryId?.let { app.db.linkEntryToSession(it, id) } }
             }
+            // taken back before its row was even written: it goes at once
+            if (cancelled) sessionId?.let { id -> app.scope.launch(Dispatchers.IO) { app.db.deleteSession(id) } }
             if (!asksWave) Bell.ring()   // the wave rings when it starts, after its question
         }
         // the meadow falls silent while the app is in the background
@@ -641,6 +664,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
             Text("Pauzirano", style = TitleStyle.copy(fontWeight = FontWeight.Light))
             Text("Vrijeme stoji. Kad budeš spreman, dah kreće ispočetka.", style = SmallStyle, textAlign = TextAlign.Center)
             GlassButton("Nastavi", { pause(false) }, strong = true, icon = NeboIcon.Play)
+            // started by mistake, or only tried: it stays nowhere
+            GlassButton("Otkaži sesiju", { cancel() }, icon = NeboIcon.Close, sub = "ne ostaje u dnevniku ni u pregledu")
         }
 
         if (ambienceOpen && !ended) AmbienceSheet(host, soundOn, lakeAllowed = cfg.type != "walk", onSound = { on ->

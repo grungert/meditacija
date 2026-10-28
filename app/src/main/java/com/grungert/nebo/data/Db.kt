@@ -178,8 +178,21 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
     }
 
     /** A session that never began (a wave left at its first question), so it leaves no empty row in the journal. */
+    /** A session taken back (started by mistake, or only tried): its row goes, and a note written before it stays, on its own. */
     fun deleteSession(id: Long) {
-        writableDatabase.delete("sessions", "id=?", arrayOf(id.toString()))
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.update("entries", ContentValues().apply { putNull("session_id") }, "session_id=?", arrayOf(id.toString()))
+            db.delete("sessions", "id=?", arrayOf(id.toString()))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    /** How long a session has been sat so far, written as it goes, so a sit the system cuts short still counts. */
+    fun sessionProgress(id: Long, actualSec: Int, thoughts: Int) {
+        writableDatabase.update("sessions", ContentValues().apply { put("actual_sec", actualSec); put("thoughts", thoughts) },
+            "id=? AND ended_at IS NULL", arrayOf(id.toString()))
     }
 
     /** The pull watched in a wave and how strong it was as the wave began, or (with [after]) as it ended. */
@@ -289,6 +302,11 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
     /** A prompt moved later, when it would have come right on top of another notification. */
     fun reschedulePrompt(id: Long, at: Long) {
         writableDatabase.update("prompts", ContentValues().apply { put("scheduled_at", at) }, "id=?", arrayOf(id.toString()))
+    }
+
+    /** The question was swiped away unanswered. */
+    fun markPromptDismissed(id: Long) {
+        writableDatabase.update("prompts", ContentValues().apply { put("dismissed", 1) }, "id=? AND answered_entry_id IS NULL", arrayOf(id.toString()))
     }
 
     fun markPromptAnswered(id: Long, entryId: Long) {

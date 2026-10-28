@@ -56,4 +56,31 @@ class WhatHelpsTest {
         entries += Entry(id = 1000, createdAt = at(1, 8), kind = "after", sessionId = 999, moods = listOf("mirno"))
         assertEquals(0, WhatHelps.find(sessions, entries).pairs)
     }
+
+    @Test
+    fun aNoteFromJustBeforeStandsForTheOneNotAskedFor() {
+        // an hour before: a note of its own; then the sit with only the note after it
+        entries += Entry(id = 2000, createdAt = at(2, 7), kind = "note", moods = listOf("zabrinuto"))
+        sessions += Session(id = 2001, startedAt = at(2, 8), type = "breath", plannedSec = 600, pattern = "46", walk = false)
+        entries += Entry(id = 2002, createdAt = at(2, 8) + 600_000, kind = "after", sessionId = 2001, moods = listOf("mirno"))
+        val p = WhatHelps.pairs(sessions, entries).single()
+        assertEquals(2f, p.shift, 0.01f)
+    }
+
+    @Test
+    fun aNoteFromHoursBeforeSaysNothingAboutTheSit() {
+        entries += Entry(id = 2000, createdAt = at(2, 4), kind = "note", moods = listOf("zabrinuto"))
+        sessions += Session(id = 2001, startedAt = at(2, 8), type = "breath", plannedSec = 600, pattern = "46", walk = false)
+        entries += Entry(id = 2002, createdAt = at(2, 8) + 600_000, kind = "after", sessionId = 2001, moods = listOf("mirno"))
+        assertEquals(0, WhatHelps.pairs(sessions, entries).size)
+    }
+
+    @Test
+    fun moodsSaidInWordsCountWhenNoneWereChosen() {
+        sessions += Session(id = 3001, startedAt = at(3, 8), type = "breath", plannedSec = 600, pattern = "46", walk = false)
+        entries += Entry(id = 3002, createdAt = at(3, 8), kind = "before", sessionId = 3001, text = "Baš sam nemirna i zabrinuta zbog sutra.")
+        entries += Entry(id = 3003, createdAt = at(3, 8) + 600_000, kind = "after", sessionId = 3001, text = "Sad sam mirna.")
+        val p = WhatHelps.pairs(sessions, entries).single()
+        assertTrue(p.shift > 1f)
+    }
 }
