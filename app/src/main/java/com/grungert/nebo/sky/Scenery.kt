@@ -70,6 +70,20 @@ class Scenery(private val u: Float) {
     private var weather = Weather.CLEAR
     private val drops = List(140) { floatArrayOf(rand(), rand(), 0.6f + rand() * 0.8f) }   // x, y (0..1), speed
     private val flakes = List(110) { floatArrayOf(rand(), rand(), 0.5f + rand(), rand() * 6.28f) } // x, y, size, phase
+    // banks of mist, each at its own depth: 0 far by the hills, 1 near on the ground before you
+    private class Wisp(var x: Float, val d: Float, val ph: Float, val sp: Float, val tall: Float)
+    private val wisps = List(18) { i -> Wisp(rand() * 1.8f - 0.4f, i / 17f, rand() * 6.28f, 0.7f + rand() * 0.6f, 0.8f + rand() * 0.5f) }
+    // one soft puff of mist, drawn stretched and tinted for every wisp (an alpha bitmap takes the paint's colour)
+    private val puff: Bitmap by lazy {
+        val b = Bitmap.createBitmap(128, 128, Bitmap.Config.ALPHA_8)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(64f, 64f, 64f, intArrayOf(0xFFFFFFFF.toInt(), 0x99FFFFFF.toInt(), 0x33FFFFFF, 0x00FFFFFF),
+                floatArrayOf(0f, 0.4f, 0.75f, 1f), Shader.TileMode.CLAMP)
+        }
+        Canvas(b).drawCircle(64f, 64f, 64f, p)
+        b
+    }
+    private val puffRect = RectF()
     private val flies = List(24) { Fly(rand(), rand(), rand() * 6.28f, 0.4f + rand() * 0.8f, 0.6f + rand() * 0.8f) }
     private val motes = List(44) { Mote(rand() * 6.28f, (0.05f + rand() * 0.14f) * if (rand() < 0.7f) 1 else -1,
         rand() * 2 - 1, rand(), 0.5f + rand() * 1.1f, rand() * 6.28f) }
@@ -173,6 +187,8 @@ class Scenery(private val u: Float) {
         season = flags.season; weather = flags.weather
         drawLeaves(c, pal, dt, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, false, walkAmt, e.wind)
+        // half the mist lies behind the grass, so the blades stand out of it
+        if (weather == Weather.FOG) drawWisps(c, pal, t, dt, e.wind, behind = true)
         if (!flags.lake) drawMeadow(c, pal, t, e.wind, e.reducedMotion)
         if (walkAmt > 0.02f && flags.showLandmarks) drawLandmarks(c, pal, light, true, walkAmt, e.wind)
         if (flags.foreground && !flags.lake) drawForeground(c, pal, t, e.wind, e.reducedMotion)
@@ -180,7 +196,7 @@ class Scenery(private val u: Float) {
         when (weather) {
             Weather.RAIN -> drawRain(c, dt, e.wind)
             Weather.SNOW -> drawSnow(c, t, dt, e.wind)
-            Weather.FOG -> drawFog(c, pal, t)
+            Weather.FOG -> drawFog(c, pal, t, dt, e.wind)
             Weather.CLEAR -> {}
         }
         drawThoughts(c, pal, t, dt, e.wind)
@@ -446,22 +462,51 @@ class Scenery(private val u: Float) {
         }
     }
 
-    /** Slow banks of mist drifting low over the meadow. */
-    private fun drawFog(c: Canvas, pal: Palette, t: Float) {
-        val fogCol = mix(floatArrayOf(0.9f, 0.92f, 0.94f), pal.skyHor, 0.3f)
-        val dim = 1f - 0.6f * pal.stars
-        // a thin veil over everything, thickening towards the ground
-        paint.shader = android.graphics.LinearGradient(0f, H * 0.3f, 0f, H, intArrayOf(argb(fogCol, 0f), argb(fogCol, 0.32f * dim)), null, Shader.TileMode.CLAMP)
-        c.drawRect(0f, H * 0.3f, W, H, paint)
-        // and drifting banks along the hills
-        for (k in 0 until 4) {
-            val y = H * (0.58f + 0.09f * k) + sin(t * 0.07f + k * 2f) * 18 * u
-            val h = H * (0.14f + 0.04f * k)
-            paint.shader = android.graphics.LinearGradient(0f, y - h / 2, 0f, y + h / 2,
-                intArrayOf(argb(fogCol, 0f), argb(fogCol, (0.55f - 0.08f * k) * dim), argb(fogCol, 0f)), null, Shader.TileMode.CLAMP)
-            c.drawRect(0f, y - h / 2, W, y + h / 2, paint)
-        }
+    private fun fogColor(pal: Palette) = mix(floatArrayOf(0.9f, 0.92f, 0.94f), pal.skyHor, 0.3f)
+
+    /**
+     * Mist rising from the ground: thick where the meadow is, thinning up the sky but never quite gone. Its top
+     * slowly rises and settles again, and banks of it drift past at their own depths, swelling and thinning.
+     */
+    private fun drawFog(c: Canvas, pal: Palette, t: Float, dt: Float, wind: Float) {
+        val fogCol = fogColor(pal)
+        val dim = 1f - 0.5f * pal.stars
+        // the ground mist: its top breathes between a third and a half of the way down, over a minute or so
+        val top = H * (0.42f + 0.1f * sin(t * 0.09f) + 0.04f * sin(t * 0.023f + 1f))
+        val thick = 0.62f + 0.1f * sin(t * 0.06f + 2f)
+        paint.shader = LinearGradient(0f, 0f, 0f, H,
+            intArrayOf(argb(fogCol, 0.14f * dim), argb(fogCol, 0.2f * dim), argb(fogCol, thick * dim)),
+            floatArrayOf(0f, top / H, 1f), Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, W, H, paint)
         paint.shader = null
+        drawWisps(c, pal, t, dt, wind, behind = false)
+    }
+
+    /** The banks of mist on one side of the grass: the far ones high by the hills, small and slow; the near ones low, wide and quicker. */
+    private fun drawWisps(c: Canvas, pal: Palette, t: Float, dt: Float, wind: Float, behind: Boolean) {
+        val dim = 1f - 0.5f * pal.stars
+        paint.color = argb(fogColor(pal), 1f)
+        paint.isFilterBitmap = true   // the small puff is stretched wide: smoothly, not in blocks
+        for ((i, w) in wisps.withIndex()) {
+            if ((i % 2 == 0) != behind) continue
+            val d = w.d
+            // drifting with the wind, the near ones faster; past the edge they come round again
+            w.x += dt * (0.006f + 0.016f * d) * w.sp * (0.6f + wind)
+            if (w.x > 1.5f) w.x -= 2f
+            val swell = sin(t * (0.11f + 0.05f * d) * w.sp + w.ph)
+            val ww = W * (0.55f + 0.95f * d) * (1f + 0.18f * swell)
+            val hh = ww * (0.2f + 0.08f * (1f - d)) * w.tall * (1f - 0.12f * swell)
+            // the far ones lie by the hills, the near ones on the ground, all of them lifting and sinking a little
+            val y = H * (0.48f + 0.5f * d) + sin(t * 0.07f * w.sp + w.ph * 1.7f) * (14f + 30f * d) * u
+            val a = (0.3f + 0.36f * d) * (0.5f + 0.5f * sin(t * 0.13f * w.sp + w.ph * 2.3f)) * dim
+            if (a <= 0.01f) continue
+            paint.alpha = (a.coerceIn(0f, 1f) * 255).toInt()
+            val cx = w.x * W
+            puffRect.set(cx - ww / 2, y - hh / 2, cx + ww / 2, y + hh / 2)
+            c.drawBitmap(puff, null, puffRect, paint)
+        }
+        paint.alpha = 255
+        paint.isFilterBitmap = false
     }
 
     // -------- thought clouds --------
