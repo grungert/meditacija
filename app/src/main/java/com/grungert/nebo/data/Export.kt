@@ -14,7 +14,7 @@ import java.util.Locale
 val KIND_LABEL = mapOf("before" to "prije sesije", "after" to "poslije sesije", "esm" to "zapažanje na poziv", "note" to "zapažanje", "week" to "sedmični pregled", "rain" to "RAIN", "evening" to "večernji pregled", "followup" to "sutradan")
 val TYPE_LABEL = mapOf(
     "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci misli", "silence" to "Tišina", "points" to "4 tačke",
-    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN", "fifty" to "50-50",
 )
 
 /** Plain text, oldest first, easy to read or to send for a look at the patterns. */

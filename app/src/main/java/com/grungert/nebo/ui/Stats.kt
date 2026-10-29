@@ -134,6 +134,10 @@ class StatsData(
     val promptsFired: Int, val promptsAnswered: Int,
     /** Questions swiped away unanswered (the rest of the unanswered simply went by). */
     val promptsDismissed: Int = 0,
+    /** The 50-50 minutes taken, the reminders that came, those that led to a minute and those swiped away. */
+    val fifty: Int = 0, val fiftyCalls: Int = 0, val fiftyAnswered: Int = 0, val fiftyDismissed: Int = 0,
+    /** The part of the day the 50-50 is most often taken, when one clearly leads (0 morning .. 3 night). */
+    val fiftyPart: Int? = null,
     /** The moods in each wider stretch of the span. */
     val moodBuckets: List<Map<String, Int>>, val moodLabels: List<String>,
     /** How often each part of the body was named as tense: in scans (once a scan) and in notes' body point. */
@@ -165,7 +169,8 @@ private fun partOfDay(t: Long): Int {
 
 /** Everything the overview shows, for one span of time. */
 fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: List<com.grungert.nebo.data.Prompt>,
-    range: StatsRange = StatsRange.of(RangeKind.WEEK), now: Long = System.currentTimeMillis()): StatsData {
+    range: StatsRange = StatsRange.of(RangeKind.WEEK), now: Long = System.currentTimeMillis(),
+    fiftyCalls: List<com.grungert.nebo.data.FiftyCall> = emptyList()): StatsData {
     fun inRange(t: Long, r: StatsRange) = t >= r.from && t < r.to
     val sessions = allSessions.filter { inRange(it.startedAt, range) }
     val real = sessions.filter { it.actualSec >= 30 }
@@ -190,6 +195,8 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
         flows[b to a] = (flows[b to a] ?: 0) + 1
     }
     val fired = prompts.filter { it.firedAt != null && inRange(it.firedAt, range) }
+    val fifties = real.filter { it.type == "fifty" }
+    val calls = fiftyCalls.filter { inRange(it.firedAt, range) }
     val mind = entries.map { MindHabits.mindOf(it) }
     // a span with few sessions says little about sitting through: then everything up to its end
     val inSpan = com.grungert.nebo.koan.Practice.completion(sessions)
@@ -212,6 +219,10 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
         themes = themeCount.toList().sortedByDescending { it.second }.take(8),
         promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null },
         promptsDismissed = fired.count { it.dismissed && it.answeredEntryId == null },
+        fifty = fifties.size,
+        fiftyCalls = calls.size, fiftyAnswered = calls.count { it.sessionId != null }, fiftyDismissed = calls.count { it.dismissed && it.sessionId == null },
+        fiftyPart = fifties.groupingBy { partOfDay(it.startedAt) }.eachCount().maxByOrNull { it.value }
+            ?.takeIf { it.value >= 3 && it.value * 2 > fifties.size }?.key,
         moodBuckets = coarse.map { b -> entries.filter { it.createdAt >= b.from && it.createdAt < b.to }.flatMap { it.moods }.groupingBy { it }.eachCount() },
         moodLabels = coarse.map { it.label },
         tension = tensionCounts(sessions, entries),

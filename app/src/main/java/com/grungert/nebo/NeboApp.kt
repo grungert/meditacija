@@ -20,6 +20,8 @@ class NeboApp : Application() {
     lateinit var db: Db; private set
     /** True while a session is open: nothing from Nebo rings into a sit. */
     @Volatile var sitting = false
+    /** The 50-50 reminder that just opened the practice, for the practice to keep with its minute. */
+    @Volatile var fiftyCall: Long? = null
     lateinit var settings: Settings; private set
     lateinit var models: ModelStore; private set
     lateinit var transcriber: Transcriber; private set

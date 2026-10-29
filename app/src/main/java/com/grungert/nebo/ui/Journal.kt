@@ -410,7 +410,7 @@ private fun TimelineSessions(s: SessionsOfDay, onDelete: (Session) -> Unit) {
                 Modifier.fillMaxWidth().tap(if (open) "Sakrij sesije" else "Prikaži sesije", shape = RoundedCornerShape(18.dp)) { open = !open }.padding(horizontal = 14.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(SESSION_TYPES.firstOrNull { it.id == first.type }?.icon ?: NeboIcon.Breath, Ink.text, 19.dp)
+                Icon(sessionIcon(first.type), Ink.text, 19.dp)
                 Text(if (s.sessions.size == 1) (TYPE_LABEL[first.type] ?: first.type) else "${s.sessions.size} ${plural(s.sessions.size, "sesija", "sesije", "sesija")}",
                     style = BodyStyle.copy(fontSize = 14.5.sp, fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
                 Text(if (total < 60) "$total s" else "${total / 60} min", style = SmallStyle.copy(fontWeight = FontWeight.SemiBold, shadow = null))
@@ -425,12 +425,15 @@ private fun TimelineSessions(s: SessionsOfDay, onDelete: (Session) -> Unit) {
     }
 }
 
+/** A kind of session's icon; the 50-50 by the lake has none of its own among the kinds, so it takes the wave of water. */
+private fun sessionIcon(type: String) = SESSION_TYPES.firstOrNull { it.id == type }?.icon ?: if (type == "fifty") NeboIcon.Wave else NeboIcon.Breath
+
 @Composable
 private fun SessionLine(row: Session, onDelete: (() -> Unit)? = null) {
     var asking by remember { mutableStateOf(false) }
     Column {
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(SESSION_TYPES.firstOrNull { it.id == row.type }?.icon ?: NeboIcon.Breath, Ink.soft, 16.dp)
+        Icon(sessionIcon(row.type), Ink.soft, 16.dp)
         Column(Modifier.weight(1f)) {
             Text((TYPE_LABEL[row.type] ?: row.type) + (if (row.thoughts > 0) " · oblaka ${row.thoughts}" else ""), style = BodyStyle.copy(fontSize = 14.sp, shadow = null))
             if (row.urge != null) Text("poriv: " + row.urge.removePrefix("da ") + (row.urgeBefore?.let { " · $it" } ?: "") + (row.urgeAfter?.let { " → $it" } ?: ""),

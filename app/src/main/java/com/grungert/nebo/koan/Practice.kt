@@ -47,7 +47,8 @@ object Practice {
 
     /** How much of the planned time was sat through, of the sessions that had a planned length. */
     fun completion(sessions: List<Session>): Completion {
-        val s = sessions.filter { it.plannedSec > 0 && it.actualSec >= 30 }
+        // the 50-50 is one minute, nearly always sat through: it would only flatten what lengths say about the sits
+        val s = sessions.filter { it.plannedSec > 0 && it.actualSec >= 30 && it.type != "fifty" }
         fun done(x: Session) = x.actualSec >= x.plannedSec * DONE
         fun groups(key: (Session) -> String) = s.groupBy(key).filter { it.value.size >= ENOUGH }
             .map { (k, l) -> Group(k, l.count(::done), l.size) }

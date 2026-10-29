@@ -1,5 +1,11 @@
 package com.grungert.nebo.ui
 
+import androidx.compose.runtime.mutableStateOf
+
+import kotlinx.coroutines.withContext
+
+import kotlinx.coroutines.Dispatchers
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -83,6 +89,27 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
     var round by remember { mutableIntStateOf(0) }            // starts again on "Još minut"
     val ripples = remember { ArrayList<Float>() }              // when each ring left the centre
     val done = elapsed >= FIFTY_SECONDS
+    var banked by remember { mutableFloatStateOf(0f) }        // seconds of the rounds before this one
+    var sessionId by remember { mutableStateOf<Long?>(null) }
+
+    // the minute is kept like any sit: in the journal, the week's minutes and its days, and what helps. "Još minut"
+    // goes on in the same one; closed in its first seconds (opened by mistake) it leaves nothing
+    LaunchedEffect(Unit) {
+        val call = app.fiftyCall.also { app.fiftyCall = null }
+        sessionId = withContext(Dispatchers.IO) {
+            app.db.insertSession(com.grungert.nebo.data.Session(startedAt = System.currentTimeMillis(), type = "fifty", plannedSec = FIFTY_SECONDS.toInt(),
+                pattern = "46", walk = false)).also { id -> call?.let { app.db.fiftyCallAnswered(it, id) } }
+        }
+    }
+    DisposableEffect(Unit) {
+        app.sitting = true
+        onDispose {
+            app.sitting = false
+            val id = sessionId ?: return@onDispose
+            val sat = (banked + elapsed).toInt()
+            app.scope.launch(Dispatchers.IO) { if (sat < 10) app.db.deleteSession(id) else app.db.finishSession(id, System.currentTimeMillis(), sat, 0) }
+        }
+    }
 
     DisposableEffect(round) {
         val e = host.engine
@@ -141,7 +168,10 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
             if (done) Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Ponesi ovu podijeljenu pažnju sa sobom.", style = BodyStyle, textAlign = TextAlign.Center)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    GlassButton("Još minut", { elapsed = 0f; round++ })
+                    GlassButton("Još minut", {
+                        banked += elapsed; elapsed = 0f; round++
+                        sessionId?.let { id -> val planned = ((round + 1) * FIFTY_SECONDS).toInt(); app.scope.launch(Dispatchers.IO) { app.db.setSessionPlanned(id, planned) } }
+                    })
                     GlassButton("Gotovo", { go(Screen.Home) }, strong = true)
                 }
             }

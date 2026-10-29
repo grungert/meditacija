@@ -125,7 +125,7 @@ fun StatsScreen(go: (Screen) -> Unit) {
     LaunchedEffect(range) {
         withContext(Dispatchers.IO) {
             val entries = app.db.entries()
-            data = computeStats(app.db.sessions(), entries, app.db.prompts(0), range)
+            data = computeStats(app.db.sessions(), entries, app.db.prompts(0), range, fiftyCalls = app.db.fiftyCalls())
             // the span's notes, each read once for all the cards about links
             seen = Links.seen(entries.filter { it.createdAt >= range.from && it.createdAt < range.to })
             web = Links.webOf(seen.map { it.first })
@@ -1033,9 +1033,10 @@ private fun ThemesCard(d: StatsData) {
     }
 }
 
-/** Two small tiles: the waves ridden, and the calls answered. */
+/** Small tiles: the waves ridden and the calls answered, and below them the 50-50 minutes. */
 @Composable
 private fun Tiles(d: StatsData) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (d.waves.isEmpty()) Tile("TALAS", NeboIcon.Wave, "—", "kad te nešto vuče, probaj Talas: poriv raste i opada", Modifier.weight(1f))
         else {
@@ -1049,6 +1050,20 @@ private fun Tiles(d: StatsData) {
             if (d.promptsFired == 0) "pitanja „Kako si sada?“ tokom dana su isključena ili još nijesu stigla"
             else if (d.promptsDismissed > 0) "odgovora na „Kako si sada?“ tokom dana; ${d.promptsDismissed} sklonjeno. Propuštena ne smetaju."
             else "odgovora na „Kako si sada?“ tokom dana. Propuštena ne smetaju.", Modifier.weight(1f))
+    }
+    // the 50-50: how often the pause was taken, how often when it was offered, and when it comes most easily
+    val fiftyWords = listOfNotNull(
+        if (d.fiftyCalls > 0) "na ${d.fiftyAnswered} od ${d.fiftyCalls} ${plural(d.fiftyCalls, "podsjetnika", "podsjetnika", "podsjetnika")}" +
+            (if (d.fiftyDismissed > 0) ", ${d.fiftyDismissed} sklonjeno" else "") else null,
+        d.fiftyPart?.let { "najčešće ${com.grungert.nebo.koan.Links.PART_WHEN[it]}" },
+    )
+    Tile("50-50", NeboIcon.Breath, if (d.fifty == 0) "—" else "${d.fifty} ${plural(d.fifty, "put", "puta", "puta")}",
+        when {
+            d.fifty == 0 && d.fiftyCalls == 0 -> "minut pažnje pola u tijelu, pola u svijetu oko tebe; podsjetnici se uključuju u Postavkama"
+            d.fifty == 0 -> "podsjetnika je stiglo ${d.fiftyCalls}; minut je tu kad ti zatreba. Propušteni ne smetaju."
+            fiftyWords.isEmpty() -> "minut pažnje pola u tijelu, pola u svijetu oko tebe"
+            else -> fiftyWords.joinToString(" · ").replaceFirstChar { it.uppercase() } + "."
+        }, Modifier.fillMaxWidth())
     }
 }
 

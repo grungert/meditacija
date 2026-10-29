@@ -96,6 +96,9 @@ enum class Col(vararg val columns: String) {
     STARRED("starred"), POINTS("points"), SESSION("session_id"),
 }
 
+/** A 50-50 reminder: when it came, the minute it led to, and whether it was swiped away. */
+data class FiftyCall(val id: Long, val firedAt: Long, val sessionId: Long?, val dismissed: Boolean)
+
 data class Prompt(val id: Long = 0, val scheduledAt: Long, val firedAt: Long? = null, val answeredEntryId: Long? = null, val dismissed: Boolean = false)
 
 /** Everything stays on the phone in one SQLite file. */
@@ -117,6 +120,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         db.execSQL("CREATE INDEX entries_created ON entries(created_at)")
         createFeedback(db)
         db.execSQL("CREATE INDEX sessions_started ON sessions(started_at)")
+        createFiftyCalls(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -133,6 +137,33 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
             db.execSQL("ALTER TABLE sessions ADD COLUMN urge_after INTEGER")
         }
         if (oldVersion < 7) db.execSQL("ALTER TABLE entries ADD COLUMN follows INTEGER")
+        if (oldVersion < 8) createFiftyCalls(db)
+    }
+
+    /** The 50-50 reminders: when one came, the minute it led to (if any), and whether it was swiped away. */
+    private fun createFiftyCalls(db: SQLiteDatabase) =
+        db.execSQL("CREATE TABLE IF NOT EXISTS fifty_calls(id INTEGER PRIMARY KEY AUTOINCREMENT, fired_at INTEGER NOT NULL, session_id INTEGER, dismissed INTEGER NOT NULL DEFAULT 0)")
+
+    fun insertFiftyCall(at: Long): Long =
+        writableDatabase.insert("fifty_calls", null, ContentValues().apply { put("fired_at", at) })
+
+    /** The reminder was answered: it led to this minute. */
+    fun fiftyCallAnswered(id: Long, sessionId: Long) {
+        writableDatabase.update("fifty_calls", ContentValues().apply { put("session_id", sessionId) }, "id=?", arrayOf(id.toString()))
+    }
+
+    fun fiftyCallDismissed(id: Long) {
+        writableDatabase.update("fifty_calls", ContentValues().apply { put("dismissed", 1) }, "id=? AND session_id IS NULL", arrayOf(id.toString()))
+    }
+
+    fun fiftyCalls(since: Long = 0): List<FiftyCall> =
+        readableDatabase.rawQuery("SELECT * FROM fifty_calls WHERE fired_at>=? ORDER BY fired_at", arrayOf(since.toString())).use { c ->
+            generateSequence { if (c.moveToNext()) FiftyCall(c.long("id"), c.long("fired_at"), c.longOrNull("session_id"), c.int("dismissed") == 1) else null }.toList()
+        }
+
+    /** A 50-50 that went on for another minute: its plan grows with it. */
+    fun setSessionPlanned(id: Long, plannedSec: Int) {
+        writableDatabase.update("sessions", ContentValues().apply { put("planned_sec", plannedSec) }, "id=?", arrayOf(id.toString()))
     }
 
     /** +1 when a koan or message spoke to the person, -1 for "not now". */
@@ -358,4 +389,4 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
 }
 
 /** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
-const val SCHEMA = 7
+const val SCHEMA = 8

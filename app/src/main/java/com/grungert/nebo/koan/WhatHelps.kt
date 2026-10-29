@@ -9,7 +9,8 @@ import java.util.Calendar
  * moods after were lighter than before. Only what enough sessions show is said; until then, how far there is to go.
  *
  * "Before" is the note asked for before the sit, or else the last note of the two hours before it (how the person was
- * as they sat down). A mood is the one chosen, or else the one the words say ("umorna sam" counts as tired).
+ * as they sat down); "after" is the note asked for after it, or else the first note of the two hours after (the 50-50
+ * asks for none). A mood is the one chosen, or else the one the words say ("umorna sam" counts as tired).
  */
 object WhatHelps {
     /** How a mood sits: lighter (+1), heavy (-1), or in between. */
@@ -42,8 +43,12 @@ object WhatHelps {
         val loose = entries.filter { it.sessionId == null && it.kind !in NOT_BEFORE }.sortedBy { it.createdAt }
             .mapNotNull { e -> weight(moodsOf(e))?.let { e.createdAt to it } }
         return sessions.mapNotNull { s ->
-            val notes = bySession[s.id] ?: return@mapNotNull null
-            val after = weight(notes.filter { it.kind == "after" }.flatMap { moodsOf(it) }) ?: return@mapNotNull null
+            val notes = bySession[s.id].orEmpty()
+            // a sit known only by the notes around it must have been one, not a start of a few seconds
+            if (notes.isEmpty() && s.actualSec < 30) return@mapNotNull null
+            val end = s.startedAt + s.actualSec * 1000L
+            val after = weight(notes.filter { it.kind == "after" }.flatMap { moodsOf(it) })
+                ?: loose.firstOrNull { it.first in end..(end + BEFORE_WINDOW) }?.second ?: return@mapNotNull null
             val asked = weight(notes.filter { it.kind == "before" }.flatMap { moodsOf(it) })
             val before = asked ?: loose.lastOrNull { it.first in (s.startedAt - BEFORE_WINDOW)..s.startedAt }?.second ?: return@mapNotNull null
             Shift(s.type, part(s.startedAt), after - before)
@@ -68,7 +73,7 @@ object WhatHelps {
             .sortedWith(compareByDescending<Kind> { it.lighter.toFloat() / it.count }.thenByDescending { it.shift })
         // a part of the day that helps more for a kind: at least four sessions on each side, and a clear gap between them
         var partFor: Triple<String, Int, Int>? = null
-        for (k in kinds) {
+        for (k in kinds.filter { it.type !in NOT_SUGGESTED }) {
             val byPart = ps.filter { it.type == k.type }.groupBy { it.part }.filter { it.value.size >= 4 }
                 .mapValues { (_, l) -> l.map { it.shift }.average().toFloat() }
             if (byPart.size < 2) continue
@@ -79,5 +84,8 @@ object WhatHelps {
     }
 
     /** The kind to suggest today: the one that most often left things lighter, if it did so more often than not. */
-    fun suggestion(f: Finding): String? = f.kinds.firstOrNull()?.takeIf { it.lighter * 2 > it.count && it.shift > 0f }?.type
+    fun suggestion(f: Finding): String? = f.kinds.firstOrNull { it.type !in NOT_SUGGESTED }?.takeIf { it.lighter * 2 > it.count && it.shift > 0f }?.type
+
+    /** Kinds the app does not offer as a sit to start (the 50-50 comes by its own reminders). */
+    private val NOT_SUGGESTED = setOf("fifty")
 }

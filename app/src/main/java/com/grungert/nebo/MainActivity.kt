@@ -163,7 +163,10 @@ class MainActivity : ComponentActivity() {
         intent?.getLongExtra(Esm.EXTRA_FOLLOW, -1L)?.takeIf { it > 0 }?.let { screen = Screen.CheckIn("followup", follows = it) }
         // "Započni" on the daily reminder goes straight into a session set up like the last one
         if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
-        if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) screen = Screen.Fifty
+        if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) {
+            app.fiftyCall = intent.getLongExtra(Esm.EXTRA_FIFTY_CALL, 0L).takeIf { it > 0 }
+            screen = Screen.Fifty
+        }
         // "3 minuta" on the daily reminder: the breathing space, straight away
         if (intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
         // a launcher shortcut or the quick-settings tile

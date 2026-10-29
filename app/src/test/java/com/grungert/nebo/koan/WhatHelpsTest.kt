@@ -83,4 +83,26 @@ class WhatHelpsTest {
         val p = WhatHelps.pairs(sessions, entries).single()
         assertTrue(p.shift > 1f)
     }
+
+    @Test
+    fun aFiftyFiftyWithNotesAroundItCounts() {
+        // a 50-50 asks for no note; the note just before it and the first one after tell how it went
+        entries += Entry(id = 4000, createdAt = at(4, 10), kind = "esm", moods = listOf("nemirno"))
+        sessions += Session(id = 4001, startedAt = at(4, 11), type = "fifty", plannedSec = 60, pattern = "46", walk = false, actualSec = 60)
+        entries += Entry(id = 4002, createdAt = at(4, 12), kind = "note", moods = listOf("mirno"))
+        val p = WhatHelps.pairs(sessions, entries).single()
+        assertEquals("fifty", p.type)
+        assertEquals(2f, p.shift, 0.01f)
+        // but it is never offered as a sit to start
+        repeat(6) { i -> sit("fifty", 10 + i, 9, "nemirno", "mirno") }
+        assertNull(WhatHelps.suggestion(WhatHelps.find(sessions, entries)))
+    }
+
+    @Test
+    fun aStartOfAFewSecondsIsNoSitBetweenNotes() {
+        entries += Entry(id = 5000, createdAt = at(5, 10), kind = "note", moods = listOf("tužno"))
+        sessions += Session(id = 5001, startedAt = at(5, 11), type = "breath", plannedSec = 300, pattern = "46", walk = false, actualSec = 4)
+        entries += Entry(id = 5002, createdAt = at(5, 12), kind = "note", moods = listOf("mirno"))
+        assertEquals(0, WhatHelps.pairs(sessions, entries).size)
+    }
 }

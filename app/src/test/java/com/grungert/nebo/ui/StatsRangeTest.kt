@@ -64,4 +64,23 @@ class StatsRangeTest {
         assertEquals(5, d.daysSoFar)
         assertEquals(listOf(0, 10, 0, 0, 0, -1, -1), d.wave)
     }
+
+    @Test
+    fun theFiftyFiftyIsCountedWithItsReminders() {
+        // three 50-50 minutes in the morning and one in the evening; a start of five seconds is none
+        val sessions = listOf(20, 21, 22).mapIndexed { i, d -> Session(id = i + 1L, startedAt = at(Calendar.OCTOBER, d, 9), type = "fifty", plannedSec = 60, pattern = "46", walk = false, actualSec = 60) } +
+            Session(id = 9, startedAt = at(Calendar.OCTOBER, 22, 19), type = "fifty", plannedSec = 60, pattern = "46", walk = false, actualSec = 120) +
+            Session(id = 10, startedAt = at(Calendar.OCTOBER, 23, 9), type = "fifty", plannedSec = 60, pattern = "46", walk = false, actualSec = 5)
+        val calls = listOf(
+            com.grungert.nebo.data.FiftyCall(1, at(Calendar.OCTOBER, 20, 9), 1, false),
+            com.grungert.nebo.data.FiftyCall(2, at(Calendar.OCTOBER, 21, 15), null, true),
+            com.grungert.nebo.data.FiftyCall(3, at(Calendar.OCTOBER, 22, 9), 3, false),
+            com.grungert.nebo.data.FiftyCall(4, at(Calendar.OCTOBER, 22, 17), null, false),
+        )
+        val d = computeStats(sessions, emptyList<Entry>(), emptyList(), StatsRange.of(RangeKind.WEEK, friday), friday, fiftyCalls = calls)
+        assertEquals(4, d.fifty)
+        assertEquals(4, d.fiftyCalls); assertEquals(2, d.fiftyAnswered); assertEquals(1, d.fiftyDismissed)
+        assertEquals(0, d.fiftyPart)       // the mornings lead: three of four
+        assertEquals(5, d.minutes)          // the 50-50 minutes count with the rest (305 s)
+    }
 }

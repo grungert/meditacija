@@ -33,6 +33,7 @@ object Esm {
     private const val KEY_TEXT = "text"
     private const val ACTION_REPLY = "com.grungert.nebo.ESM_REPLY"
     private const val ACTION_DISMISS = "com.grungert.nebo.ESM_DISMISS"
+    private const val ACTION_FIFTY_DISMISS = "com.grungert.nebo.FIFTY_DISMISS"
     private const val ACTION_WEEK = "com.grungert.nebo.WEEK"
     private const val ACTION_DAILY = "com.grungert.nebo.DAILY"
     private const val ACTION_REMIND = "com.grungert.nebo.REMIND"
@@ -44,6 +45,8 @@ object Esm {
     private const val ACTION_SILENCE = "com.grungert.nebo.ESM_SILENCE"
     private const val ACTION_FIFTY = "com.grungert.nebo.FIFTY"
     const val EXTRA_FIFTY = "fifty_fifty"
+    /** Which 50-50 reminder opened the practice, so the minute it led to is kept with it. */
+    const val EXTRA_FIFTY_CALL = "fifty_call"
     const val EXTRA_HOURGLASS = "hourglass"
     const val EXTRA_EVENING = "evening_review"
     const val EXTRA_FOLLOW = "follow_up"
@@ -259,14 +262,19 @@ object Esm {
         arm(am, next, pi)
     }
 
-    /** A gentle 50-50 reminder; a touch opens the one-minute practice. */
+    /**
+     * A gentle 50-50 reminder; a touch opens the one-minute practice. Each one is kept: when it came, the minute it led
+     * to, or that it was swiped away, so the overview can say how often the pause was taken when it was offered.
+     */
     private fun notifyFifty(ctx: Context) {
-        val open = PendingIntent.getActivity(ctx, 11, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FIFTY, true)
+        val call = ctx.app.db.insertFiftyCall(System.currentTimeMillis())
+        val open = PendingIntent.getActivity(ctx, 11, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FIFTY, true).putExtra(EXTRA_FIFTY_CALL, call)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val line = FIFTY_LINES.random()
         ctx.getSystemService(NotificationManager::class.java).notify(FIFTY_NOTIFICATION_ID, builder(ctx, FIFTY_CHANNEL).setContentTitle("50-50").setContentText(line)
             .setStyle(Notification.BigTextStyle().bigText(line + "\nDodirni za vježbu od jednog minuta."))
-            .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(20 * 60_000L).build())
+            .setContentIntent(open).setDeleteIntent(pending(ctx, ACTION_FIFTY_DISMISS, call))
+            .setAutoCancel(true).setTimeoutAfter(20 * 60_000L).build())
     }
 
     private fun reminderDay(days: String, c: Calendar): Boolean {
@@ -339,6 +347,11 @@ object Esm {
                 val fresh = ctx.app.db.prompt(id)?.let { it.firedAt == null } == true
                 ctx.app.db.markPromptFired(id, System.currentTimeMillis())
                 if (fresh && s.esmEnabled && s.esmSilencedDay != today()) notify(ctx, id)
+            }
+            ACTION_FIFTY_DISMISS -> {
+                val id = intent.getLongExtra(EXTRA_PROMPT, 0)
+                if (id > 0) ctx.app.db.fiftyCallDismissed(id)
+                return
             }
             ACTION_DISMISS -> {
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)

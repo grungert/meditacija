@@ -181,7 +181,7 @@ class Now(val type: String, val why: String, val basis: String)
 /** "Poslije Disanja", "Disanje": a kind of session in a sentence. */
 private val SESSION_SUBJECT = mapOf(
     "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci", "silence" to "Tišina", "points" to "4 tačke",
-    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN",
+    "hourglass" to "Pješčani sat", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN", "fifty" to "50-50",
 )
 
 /**

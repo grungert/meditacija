@@ -36,7 +36,7 @@ class NeboWidget : AppWidgetProvider() {
 
         private val SESSION_NAME = mapOf(
             "breath" to "Disanje", "walk" to "Šetnja", "thoughts" to "Oblaci", "silence" to "Tišina", "points" to "4 tačke",
-            "hourglass" to "3 minuta", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN",
+            "hourglass" to "3 minuta", "bodyscan" to "Skeniranje tijela", "urge" to "Talas", "rain" to "RAIN", "fifty" to "50-50",
         )
 
         /**
