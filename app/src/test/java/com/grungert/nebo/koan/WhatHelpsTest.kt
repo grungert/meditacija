@@ -105,4 +105,15 @@ class WhatHelpsTest {
         entries += Entry(id = 5002, createdAt = at(5, 12), kind = "note", moods = listOf("mirno"))
         assertEquals(0, WhatHelps.pairs(sessions, entries).size)
     }
+
+    @Test
+    fun aNoteStandsForTheSitNearestIt() {
+        // breath at 8, a walk at 9: the sad note before the breath and the calm one after the walk make one shift, the walk's
+        entries += Entry(id = 6000, createdAt = at(6, 7) + 50 * 60_000, kind = "note", moods = listOf("tužno"))
+        sessions += Session(id = 6001, startedAt = at(6, 8), type = "breath", plannedSec = 600, pattern = "46", walk = false, actualSec = 600)
+        sessions += Session(id = 6002, startedAt = at(6, 9), type = "walk", plannedSec = 600, pattern = "46", walk = false, actualSec = 600)
+        entries += Entry(id = 6003, createdAt = at(6, 9) + 30 * 60_000, kind = "note", moods = listOf("mirno"))
+        val ps = WhatHelps.pairs(sessions, entries)
+        assertEquals(emptyList<String>(), ps.map { it.type })   // breath has no note after it before the walk; the walk none before it after the breath
+    }
 }

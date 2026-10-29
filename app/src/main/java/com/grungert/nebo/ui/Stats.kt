@@ -220,7 +220,9 @@ fun computeStats(allSessions: List<Session>, allEntries: List<Entry>, prompts: L
         promptsFired = fired.size, promptsAnswered = fired.count { it.answeredEntryId != null },
         promptsDismissed = fired.count { it.dismissed && it.answeredEntryId == null },
         fifty = fifties.size,
-        fiftyCalls = calls.size, fiftyAnswered = calls.count { it.sessionId != null }, fiftyDismissed = calls.count { it.dismissed && it.sessionId == null },
+        // answered: the reminder led to a minute that is still there and was a minute (half of one at least)
+        fiftyCalls = calls.size, fiftyAnswered = calls.count { c -> c.sessionId != null && allSessions.any { it.id == c.sessionId && it.actualSec >= 30 } },
+        fiftyDismissed = calls.count { it.dismissed && it.sessionId == null },
         fiftyPart = fifties.groupingBy { partOfDay(it.startedAt) }.eachCount().maxByOrNull { it.value }
             ?.takeIf { it.value >= 3 && it.value * 2 > fifties.size }?.key,
         moodBuckets = coarse.map { b -> entries.filter { it.createdAt >= b.from && it.createdAt < b.to }.flatMap { it.moods }.groupingBy { it }.eachCount() },

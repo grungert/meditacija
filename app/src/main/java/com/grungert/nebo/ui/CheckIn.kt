@@ -109,6 +109,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var saving by remember { mutableStateOf(false) }            // once Sačuvaj is tapped, nothing else on the screen acts
     var taking by remember { mutableStateOf<File?>(null) }       // the file being recorded into right now
     val alive = remember { booleanArrayOf(true) }               // false once the screen is gone
+    val liveDict = remember { arrayOfNulls<com.grungert.nebo.ml.LiveDictation>(1) }   // the take being heard while spoken
     // the text of the current take, still being worked out; on the app's scope, so a save made meanwhile can use it
     var live by remember { mutableStateOf<kotlinx.coroutines.Deferred<String?>?>(null) }
 
@@ -118,10 +119,12 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         onDispose {
             alive[0] = false
             recorder.stop(); player.stop()
+            liveDict[0]?.cancel()   // left mid-take: its pieces are not heard after all
             if (!saving) { taking?.delete(); audio?.delete() }
         }
     }
     var fieldFromVoice by remember { mutableStateOf(false) }     // the text field holds that transcript, maybe corrected
+    var edited by remember { mutableStateOf(false) }             // ...and the person has corrected it by hand
     var model by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false }
@@ -155,16 +158,18 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
         val f = File(context.filesDir, "audio/${System.currentTimeMillis()}.wav")
         recording = true; seconds = 0f; levels.clear(); taking = f
         app.transcriber.prepare()
-        // a new take replaces the words the last one brought
-        if (fieldFromVoice) { text = ""; fieldFromVoice = false }
+        // a new take replaces the words the last one brought; if it comes to nothing, they come back
+        val kept = Triple(text, fieldFromVoice, edited)
+        if (fieldFromVoice) { text = ""; fieldFromVoice = false; edited = false }
         // text while speaking, when the phone hears fast enough: piece by piece, at the voice's own pauses
         val dict = if (app.transcriber.readyModel() != null && app.transcriber.canFollow())
             com.grungert.nebo.ml.LiveDictation(app.scope) { app.transcriber.transcribePiece(it) } else null
+        liveDict[0] = dict
         following = dict != null
         val shown = dict?.let { d -> scope.launch {
             d.text.collect { t ->
                 // into the field, unless the person has typed there themselves
-                if (t.isNotBlank() && (text.isBlank() || fieldFromVoice)) { text = t; fieldFromVoice = true }
+                if (t.isNotBlank() && !edited && (text.isBlank() || fieldFromVoice)) { text = t; fieldFromVoice = true }
             }
         } }
         scope.launch {
@@ -196,12 +201,16 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     transcribing = false
                     if (audio == f && t != null) {
                         heard = t
-                        if ((text.isBlank() || fieldFromVoice) && t.isNotBlank()) { text = t; fieldFromVoice = true }
+                        // the whole take, read in one go, replaces the draft; never the person's own corrections
+                        if (!edited && (text.isBlank() || fieldFromVoice) && t.isNotBlank()) { text = t; fieldFromVoice = true }
                         // the four points, read from what was said; the person's own picks always stay
                         if (t.isNotBlank() && !points.touched) points.fillFrom(app.recommender.readFourPoints(t), moods)
                     }
                 }
-            } else { f.delete(); dict?.cancel(); shown?.cancel() }
+            } else {
+                f.delete(); dict?.cancel(); shown?.cancel()
+                if (text.isBlank()) { text = kept.first; fieldFromVoice = kept.second; edited = kept.third }
+            }
         }
         scope.launch { while (recorder.isRecording || recording) { delay(100); seconds += 0.1f } }
     }
@@ -238,7 +247,12 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
             else if (!points.touched) points.fillFrom(com.grungert.nebo.koan.FourPointsReader.Reading("", emptyList(), emptyList(), emptyList()), moods)
             // when the field holds the transcript, the corrected version becomes the transcript;
             // without one yet, the recording is transcribed in the background after saving
-            val transcript = if (fieldFromVoice) typed ?: "" else heard
+            // (a draft shown while speaking is not the transcript: the whole take, still being read, is)
+            val transcript = when {
+                fieldFromVoice && (edited || heard != null) -> typed ?: ""
+                fieldFromVoice -> null
+                else -> heard
+            }
             // a take whose text is still being worked out: that text is kept for the note, not worked out a second time
             val pending = if (audio != null && transcript == null) live else null
             val takeModel = model
@@ -361,7 +375,7 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     }
                     Box {
                         if (text.isEmpty()) Text(if (transcribing) "Tekst stiže…" else if (recording && following) "Slušam…" else "Šta je u tebi…", style = ReadStyle.copy(color = Ink.faint))
-                        BasicTextField(text, { text = it }, textStyle = ReadStyle.copy(color = Ink.text),
+                        BasicTextField(text, { if (fieldFromVoice && it != text) edited = true; text = it }, textStyle = ReadStyle.copy(color = Ink.text),
                             cursorBrush = SolidColor(Ink.accent), modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp))
                     }
                 }
@@ -461,7 +475,7 @@ fun KoanScreen(sc: Screen.Koan, host: SkyHost, go: (Screen) -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Scrim(Modifier.fillMaxSize())
-        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion)
+        if (host.weather == com.grungert.nebo.sky.Weather.RAIN) RainOnGlass(night = !Ink.day, still = host.engine.reducedMotion, raining = !host.clearing)
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState())
                 .screenPadding().padding(vertical = 24.dp),

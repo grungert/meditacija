@@ -42,15 +42,20 @@ object WhatHelps {
         // the notes that can stand for "before", each with its weight, read once (not once for every session)
         val loose = entries.filter { it.sessionId == null && it.kind !in NOT_BEFORE }.sortedBy { it.createdAt }
             .mapNotNull { e -> weight(moodsOf(e))?.let { e.createdAt to it } }
+        // the sits themselves, in order: a note stands for the one nearest it, never across another sit
+        val sits = sessions.filter { it.actualSec >= 30 }.sortedBy { it.startedAt }
+        fun endOf(x: Session) = x.startedAt + x.actualSec * 1000L
         return sessions.mapNotNull { s ->
             val notes = bySession[s.id].orEmpty()
             // a sit known only by the notes around it must have been one, not a start of a few seconds
             if (notes.isEmpty() && s.actualSec < 30) return@mapNotNull null
-            val end = s.startedAt + s.actualSec * 1000L
+            val end = endOf(s)
+            val prevEnd = sits.lastOrNull { it.startedAt < s.startedAt && it.id != s.id }?.let { endOf(it) } ?: Long.MIN_VALUE
+            val nextStart = sits.firstOrNull { it.startedAt > s.startedAt && it.id != s.id }?.startedAt ?: Long.MAX_VALUE
             val after = weight(notes.filter { it.kind == "after" }.flatMap { moodsOf(it) })
-                ?: loose.firstOrNull { it.first in end..(end + BEFORE_WINDOW) }?.second ?: return@mapNotNull null
+                ?: loose.firstOrNull { it.first in end..minOf(end + BEFORE_WINDOW, nextStart) }?.second ?: return@mapNotNull null
             val asked = weight(notes.filter { it.kind == "before" }.flatMap { moodsOf(it) })
-            val before = asked ?: loose.lastOrNull { it.first in (s.startedAt - BEFORE_WINDOW)..s.startedAt }?.second ?: return@mapNotNull null
+            val before = asked ?: loose.lastOrNull { it.first in maxOf(s.startedAt - BEFORE_WINDOW, prevEnd)..s.startedAt }?.second ?: return@mapNotNull null
             Shift(s.type, part(s.startedAt), after - before)
         }
     }

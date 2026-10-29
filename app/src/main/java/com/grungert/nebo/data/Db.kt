@@ -215,6 +215,8 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         db.beginTransaction()
         try {
             db.update("entries", ContentValues().apply { putNull("session_id") }, "session_id=?", arrayOf(id.toString()))
+            // a 50-50 reminder that led to this minute led to nothing now
+            db.update("fifty_calls", ContentValues().apply { putNull("session_id") }, "session_id=?", arrayOf(id.toString()))
             db.delete("sessions", "id=?", arrayOf(id.toString()))
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }

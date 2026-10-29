@@ -71,6 +71,7 @@ object Practice {
         /** Fewer thoughts, more, or about the same: said only when the change is at least a quarter. */
         fun sentence(): String? {
             val e = early ?: return null; val l = late ?: return null
+            if (e == 0f && l == 0f) return null   // no thought was marked at all: nothing to compare
             fun n(x: Float) = "%.1f".format(x).replace('.', ',')
             return when {
                 l <= e * 0.75f -> "Misli dolaze rjeđe nego na početku: ${n(e)} u minuti tada, ${n(l)} sada. Um se lakše smiruje."

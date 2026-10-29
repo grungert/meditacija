@@ -433,6 +433,8 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) }
             }
             if (id != null && !left && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
+            // the wave rated at its end and left by Back: the rating is kept as if "Dalje" had been tapped
+            if (id != null && !left && asksWave && waveStarted && waveRated) { val a = waveAfter; app.scope.launch(Dispatchers.IO) { app.db.setSessionUrgeAfter(id, a) } }
             if (host.owner === me) {
                 view.keepScreenOn = false
                 host.ambience.stop()

@@ -145,7 +145,9 @@ fun android.content.Context.lastConfig(): SessionConfig {
     // a length chosen for another kind may not suit this one (a three-minute body scan rushes)
     val lengths = lengthsFor(s.sessionType)
     val minutes = if (lengths.isEmpty() || s.minutes in lengths) s.minutes else 10
-    return SessionConfig(s.sessionType, minutes, s.pattern, s.intervalMinutes, s.checkInBefore, s.checkInAfter, s.eyesClosed, s.ambient)
+    // eyes closed is kept for the paced kinds only: elsewhere no breath would guide the dark
+    val paced = s.sessionType == "breath" || s.sessionType == "walk"
+    return SessionConfig(s.sessionType, minutes, s.pattern, s.intervalMinutes, s.checkInBefore, s.checkInAfter, s.eyesClosed && paced, s.ambient)
 }
 
 private fun describe(c: SessionConfig): String {
