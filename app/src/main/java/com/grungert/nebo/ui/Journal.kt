@@ -1,5 +1,7 @@
 package com.grungert.nebo.ui
 
+import java.io.File
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
@@ -667,7 +669,8 @@ internal fun EntryCard(row: Entry, player: NotePlayer, onStar: () -> Unit, onSim
             if (onThing != null) ThingChips(row, onThing)
             if (footer != null) Text(footer, style = SmallStyle.copy(color = Ink.accentInk, fontWeight = FontWeight.SemiBold, shadow = null))
             if (row.audioPath != null || (onSimilar != null && words.isNotBlank()) || onEdit != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (row.audioPath != null) SmallAction(NeboIcon.Play, "Preslušaj") { player.play(row.audioPath) {} }
+                // a recording lost (a restore cut short, a copy without it) offers nothing to play
+                if (row.audioPath != null && remember(row.audioPath) { File(row.audioPath).exists() }) SmallAction(NeboIcon.Play, "Preslušaj") { player.play(row.audioPath) {} }
                 if (onSimilar != null && words.isNotBlank()) SmallAction(NeboIcon.Similar, "Slične") { onSimilar() }
                 if (onEdit != null) SmallAction(NeboIcon.Pen, "Uredi") { onEdit() }
             }

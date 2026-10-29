@@ -129,7 +129,12 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
 }
 
 class MainActivity : ComponentActivity() {
-    companion object { const val EXTRA_SHORTCUT = "shortcut" }
+    companion object {
+        const val EXTRA_SHORTCUT = "shortcut"
+        const val EXTRA_KEY = "nebo_key"
+        /** An intent to Nebo from Nebo's own notifications and widget, carrying the key that makes its asks trusted. */
+        fun own(ctx: android.content.Context): Intent = Intent(ctx, MainActivity::class.java).putExtra(EXTRA_KEY, ctx.app.settings.intentKey)
+    }
 
     private var screen by mutableStateOf<Screen>(Screen.Home)
     /** The opening loader, on a fresh start only: not when the system recreates the activity, nor with animations off. */
@@ -165,19 +170,21 @@ class MainActivity : ComponentActivity() {
 
     /** A tap on a random-moment notification opens the quick check-in. Once handled, the extras are dropped. */
     private fun handle(intent: Intent?) {
-        val id = intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L
+        // what writes to the journal or starts a sit is done only when Nebo itself asked (the activity is open to all)
+        val trusted = intent?.getStringExtra(EXTRA_KEY) == app.settings.intentKey
+        val id = if (trusted) intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L else -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
         if (intent?.getBooleanExtra(Esm.EXTRA_EVENING, false) == true) screen = Screen.CheckIn("evening")
-        intent?.getLongExtra(Esm.EXTRA_FOLLOW, -1L)?.takeIf { it > 0 }?.let { screen = Screen.CheckIn("followup", follows = it) }
+        intent?.getLongExtra(Esm.EXTRA_FOLLOW, -1L)?.takeIf { it > 0 && trusted }?.let { screen = Screen.CheckIn("followup", follows = it) }
         // "Započni" on the daily reminder goes straight into a session set up like the last one
-        if (intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
+        if (trusted && intent?.getBooleanExtra(Esm.EXTRA_START, false) == true) screen = Screen.Session(lastConfig())
         if (intent?.getBooleanExtra(Esm.EXTRA_FIFTY, false) == true) {
-            app.fiftyCall = intent.getLongExtra(Esm.EXTRA_FIFTY_CALL, 0L).takeIf { it > 0 }
+            app.fiftyCall = intent.getLongExtra(Esm.EXTRA_FIFTY_CALL, 0L).takeIf { it > 0 && trusted }
             screen = Screen.Fifty
         }
         // "3 minuta" on the daily reminder: the breathing space, straight away
-        if (intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
+        if (trusted && intent?.getBooleanExtra(Esm.EXTRA_HOURGLASS, false) == true) screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
         // a launcher shortcut or the quick-settings tile
         when (intent?.getStringExtra(EXTRA_SHORTCUT)) {
             "hourglass" -> screen = Screen.Session(lastConfig().copy(type = "hourglass", checkInBefore = false, eyesClosed = false))
@@ -187,7 +194,7 @@ class MainActivity : ComponentActivity() {
         }
         // the suggested session on the home-screen widget, started straight away
         // (only a kind the app has: the activity is open to other apps, and this one is kept in the settings)
-        intent?.getStringExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE)?.takeIf { t -> com.grungert.nebo.ui.SESSION_TYPES.any { it.id == t } }?.let { t ->
+        intent?.getStringExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE)?.takeIf { t -> trusted && com.grungert.nebo.ui.SESSION_TYPES.any { it.id == t } }?.let { t ->
             app.settings.sessionType = t
             screen = Screen.Session(lastConfig().copy(checkInBefore = false))
         }

@@ -27,6 +27,8 @@ object Backup {
     /** Preferences that describe this phone rather than the person: a folder permission, downloads, measured speeds. */
     private val DEVICE_KEYS = Regex("^(backupTree|lastBackup|dl\\..*|speechLoad_.*|speechRate_.*)$")
     private val writing = Any()
+    /** The names a Nebo copy holds; anything else in the zip is passed over. */
+    private val KNOWN = Regex("^(manifest\\.json|nebo\\.db|settings\\.xml|audio/[^/\\\\]+)$")
 
     data class Summary(val created: Long, val entries: Int, val sessions: Int, val recordings: Int)
 
@@ -40,7 +42,9 @@ object Backup {
         // a consistent snapshot of the live database, without closing it
         val snap = File(ctx.cacheDir, "backup-snapshot.db").also { it.delete() }
         app.db.writableDatabase.execSQL("VACUUM INTO '" + snap.absolutePath.replace("'", "''") + "'")
-        val audio = File(ctx.filesDir, "audio").listFiles()?.filter { it.isFile } ?: emptyList()
+        // only the recordings a note still refers to: one whose note was deleted or never saved stays behind
+        val used = app.db.entries().mapNotNull { e -> e.audioPath?.let { File(it).name } }.toSet()
+        val audio = File(ctx.filesDir, "audio").listFiles()?.filter { it.isFile && it.name in used } ?: emptyList()
         val summary = Summary(System.currentTimeMillis(), app.db.entries().size, app.db.sessions().size, audio.size)
         ZipOutputStream(out.buffered()).use { z ->
             z.putNextEntry(ZipEntry("manifest.json"))
@@ -80,16 +84,28 @@ object Backup {
         val staging = staging(ctx).also { it.deleteRecursively(); it.mkdirs() }
         try {
             var complete = false
+            // the swap needs about twice the copy's size again: what is unpacked must leave room for that
+            val room = ctx.filesDir.usableSpace / 3
+            var written = 0L
             ZipInputStream(input.buffered()).use { z ->
                 while (true) {
                     val e = z.nextEntry ?: break
                     if (e.name == "end") { complete = true; continue }
+                    // only what a Nebo copy holds: never "ready" or anything else that would steer the swap
+                    if (!KNOWN.matches(e.name) || e.isDirectory) continue
                     val target = File(staging, e.name)
                     // never write outside the staging folder, whatever the zip says
                     if (!target.canonicalPath.startsWith(staging.canonicalPath + File.separator)) continue
-                    if (e.isDirectory) { target.mkdirs(); continue }
                     target.parentFile?.mkdirs()
-                    target.outputStream().use { z.copyTo(it) }
+                    target.outputStream().use { o ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = z.read(buf); if (n < 0) break
+                            written += n
+                            require(written < room) { "Na telefonu nema dovoljno mjesta za ovu kopiju." }
+                            o.write(buf, 0, n)
+                        }
+                    }
                 }
             }
             val manifest = File(staging, "manifest.json").takeIf { it.exists() }?.let { JSONObject(it.readText()) }
@@ -125,39 +141,95 @@ object Backup {
     /**
      * Swaps in a checked backup, if one waits. Runs first thing at start, before the database or the preferences are
      * opened. The journal it replaces is kept beside it as nebo.db.bak until the next restore.
+     *
+     * It goes in two steps, each marked in the staging folder, so a restore cut short (the phone full, the app closed)
+     * picks up where it stopped at the next start instead of starting over: "ready" swaps the database, "swapped" brings
+     * the settings and the recordings. It never throws: a start that failed here would fail at every start after it.
+     * After three failed tries it gives up, leaves the journal as it then is and says so in Settings.
      */
     fun applyPending(ctx: Context) {
         val staging = staging(ctx)
-        if (!File(staging, "ready").exists()) { if (staging.exists()) staging.deleteRecursively(); return }
+        val ready = File(staging, "ready"); val swapped = File(staging, "swapped")
+        if (!ready.exists() && !swapped.exists()) { if (staging.exists()) staging.deleteRecursively(); return }
+        val tries = File(staging, "tries")
+        val n = (runCatching { tries.readText().trim().toInt() }.getOrDefault(0)) + 1
+        runCatching { tries.writeText(n.toString()) }
+        if (n > 3) { failed(ctx); runCatching { staging.deleteRecursively() }; return }
+        try {
+            if (!swapped.exists()) {
+                if (!swapDatabase(ctx, staging)) { failed(ctx); staging.deleteRecursively(); return }
+                swapped.createNewFile(); ready.delete()
+            }
+            restoreSettings(ctx, staging)
+            restoreRecordings(ctx, staging)
+            staging.deleteRecursively()
+            File(ctx.filesDir, FAILED).delete()
+        } catch (e: Exception) {
+            android.util.Log.w("Nebo", "restore step failed, will try again at the next start", e)
+        }
+    }
+
+    /** True when the backup's database now stands in the journal's place; false (and the journal as it was) otherwise. */
+    private fun swapDatabase(ctx: Context, staging: File): Boolean {
         val dbFile = ctx.getDatabasePath("nebo.db")
         val bak = File(dbFile.path + ".bak")
         val next = File(dbFile.path + ".restore")
-        try {
+        return try {
             File(staging, "nebo.db").inputStream().use { i -> java.io.FileOutputStream(next).use { o -> i.copyTo(o); o.fd.sync() } }
             listOf("", "-wal").forEach { File(bak.path + it).delete() }
-            if (dbFile.exists()) dbFile.renameTo(bak)
+            if (dbFile.exists()) check(dbFile.renameTo(bak)) { "keep" }
             File(dbFile.path + "-wal").let { if (it.exists()) it.renameTo(File(bak.path + "-wal")) }
             listOf("-shm", "-journal").forEach { File(dbFile.path + it).delete() }
             check(next.renameTo(dbFile)) { "rename" }
+            true
         } catch (e: Exception) {
             // put the old journal back exactly as it was
             next.delete()
             if (!dbFile.exists() && bak.exists()) { bak.renameTo(dbFile); File(bak.path + "-wal").renameTo(File(dbFile.path + "-wal")) }
-            staging.deleteRecursively()
-            return
+            false
         }
-        File(staging, "settings.xml").takeIf { it.exists() }?.let { prefs ->
-            // the person's choices come back; what belonged to the other phone stays behind
-            val xml = prefs.readText().replace(Regex("\\s*<(\\w+) name=\"([^\"]+)\"[^>]*?(/>|>[^<]*</\\1>)")) { m ->
-                if (DEVICE_KEYS.matches(m.groupValues[2])) "" else m.value
-            }
-            File(ctx.dataDir, "shared_prefs").mkdirs()
-            File(ctx.dataDir, "shared_prefs/nebo.xml").writeText(xml)
-        }
-        val audioDir = File(ctx.filesDir, "audio").also { it.mkdirs() }
-        File(staging, "audio").listFiles()?.forEach { runCatching { it.copyTo(File(audioDir, it.name), overwrite = true) } }
-        staging.deleteRecursively()
     }
+
+    private fun restoreSettings(ctx: Context, staging: File) {
+        val prefs = File(staging, "settings.xml").takeIf { it.exists() } ?: return
+        // the person's choices come back; what belonged to the other phone stays behind
+        val xml = prefs.readText().replace(Regex("\\s*<(\\w+) name=\"([^\"]+)\"[^>]*?(/>|>[^<]*</\\1>)")) { m ->
+            if (DEVICE_KEYS.matches(m.groupValues[2])) "" else m.value
+        }
+        File(ctx.dataDir, "shared_prefs").mkdirs()
+        val target = File(ctx.dataDir, "shared_prefs/nebo.xml")
+        val tmp = File(target.path + ".restore")
+        tmp.writeText(xml)
+        check(tmp.renameTo(target)) { "prefs" }
+        prefs.delete()
+    }
+
+    /**
+     * The backup's recordings take their place (moved, not copied: no second copy of every recording is needed, and a
+     * step cut short leaves only what is still to move). Recordings no note of the restored journal refers to go.
+     */
+    private fun restoreRecordings(ctx: Context, staging: File) {
+        val audioDir = File(ctx.filesDir, "audio").also { it.mkdirs() }
+        File(staging, "audio").listFiles()?.forEach { f ->
+            val to = File(audioDir, f.name)
+            if (!f.renameTo(to)) { f.copyTo(to, overwrite = true); f.delete() }
+        }
+        val used = runCatching {
+            val sql = android.database.sqlite.SQLiteDatabase.openDatabase(ctx.getDatabasePath("nebo.db").path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY)
+            try {
+                sql.rawQuery("SELECT audio_path FROM entries WHERE audio_path IS NOT NULL", null).use { c ->
+                    generateSequence { if (c.moveToNext()) File(c.getString(0)).name else null }.toSet()
+                }
+            } finally { sql.close() }
+        }.getOrNull() ?: return
+        audioDir.listFiles()?.filter { it.isFile && it.name !in used }?.forEach { it.delete() }
+    }
+
+    private const val FAILED = "restore-failed"
+    private fun failed(ctx: Context) { runCatching { File(ctx.filesDir, FAILED).createNewFile() } }
+
+    /** A restore that could not be finished: the journal stayed as it was (or as far as it got). Said once in Settings. */
+    fun lastRestoreFailed(ctx: Context): Boolean = File(ctx.filesDir, FAILED).let { f -> f.exists().also { if (it) f.delete() } }
 
     private fun restart(ctx: Context) {
         val i = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)

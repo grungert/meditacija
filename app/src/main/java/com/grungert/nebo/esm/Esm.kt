@@ -84,8 +84,15 @@ object Esm {
     }
 
     /** Every Nebo notification: the small icon tinted in the warm gold of the app. */
+    /**
+     * Every Nebo notification is private on the lock screen: what it says may come from the person's notes ("Juče ti je
+     * bilo teško…", "Uveče ti često dođe „tužno“"), so a locked phone shows only that Nebo has something.
+     */
     private fun builder(ctx: Context, channel: String) = Notification.Builder(ctx, channel)
         .setSmallIcon(R.drawable.ic_notification).setColor(0xFFE0A04E.toInt())
+        .setVisibility(Notification.VISIBILITY_PRIVATE)
+        .setPublicVersion(Notification.Builder(ctx, channel).setSmallIcon(R.drawable.ic_notification).setColor(0xFFE0A04E.toInt())
+            .setContentTitle("Nebo").setContentText("Otključaj telefon da vidiš poruku.").build())
 
     /** When another Nebo notification came in the last ten minutes, this one waits: two at once feel like a nudge, not a pause. */
     private fun crowded(ctx: Context): Boolean {
@@ -144,7 +151,8 @@ object Esm {
         // the rest of the day's prompts, when none are waiting: all of them in the morning, or what is left of them
         // after the person changed the window or the count during the day
         val left = s.esmPerDay - todays.count { it.firedAt != null }
-        if (todays.none { it.firedAt == null } && left > 0 && end > now + 30 * 60_000L) {
+        // (a question whose time passed unasked, an alarm lost to a restart, is no question still waiting)
+        if (todays.none { it.firedAt == null && it.scheduledAt > now } && left > 0 && end > now + 30 * 60_000L) {
             val from = maxOf(start, now + 10 * 60_000L)
             for (t in randomTimes(from, end, left)) db.insertPrompt(t)
         }
@@ -268,7 +276,7 @@ object Esm {
      */
     private fun notifyFifty(ctx: Context) {
         val call = ctx.app.db.insertFiftyCall(System.currentTimeMillis())
-        val open = PendingIntent.getActivity(ctx, 11, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FIFTY, true).putExtra(EXTRA_FIFTY_CALL, call)
+        val open = PendingIntent.getActivity(ctx, 11, MainActivity.own(ctx).putExtra(EXTRA_FIFTY, true).putExtra(EXTRA_FIFTY_CALL, call)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val line = FIFTY_LINES.random()
         ctx.getSystemService(NotificationManager::class.java).notify(FIFTY_NOTIFICATION_ID, builder(ctx, FIFTY_CHANNEL).setContentTitle("50-50").setContentText(line)
@@ -382,17 +390,17 @@ object Esm {
                 val doneToday = sitting || ctx.app.db.sessions(midnight().timeInMillis).any { it.actualSec >= 30 }
                 ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
                 if (s.reminderOn && !(s.reminderSkipIfDone && doneToday)) {
-                    val open = PendingIntent.getActivity(ctx, 4, Intent(ctx, MainActivity::class.java)
+                    val open = PendingIntent.getActivity(ctx, 4, MainActivity.own(ctx)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     // what is for you now, as in the app and on the widget
                     val entries = ctx.app.db.entries()
                     val now = com.grungert.nebo.ui.suggestNow(entries, com.grungert.nebo.koan.WhatHelps.find(ctx.app.db.sessions(), entries),
                         com.grungert.nebo.koan.Links.part(System.currentTimeMillis()))
-                    val start = PendingIntent.getActivity(ctx, 5, Intent(ctx, MainActivity::class.java).putExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE, now.type)
+                    val start = PendingIntent.getActivity(ctx, 5, MainActivity.own(ctx).putExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE, now.type)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     val name = com.grungert.nebo.ui.SESSION_TYPES.firstOrNull { it.id == now.type }?.name ?: "Kreni"
                     // or just the three-minute breathing space, for a full day
-                    val short = PendingIntent.getActivity(ctx, 6, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_HOURGLASS, true)
+                    val short = PendingIntent.getActivity(ctx, 6, MainActivity.own(ctx).putExtra(EXTRA_HOURGLASS, true)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Vrijeme za tišinu · $name")
                         .setContentText(now.why).setStyle(Notification.BigTextStyle().bigText(now.why)).setContentIntent(open).setAutoCancel(true)
@@ -429,7 +437,7 @@ object Esm {
                 val item = lib.byId(s.activeWeekKoan()) ?: lib.items.filter { it.question != null }.randomOrNull()   // koans and readings carry a question
                 val q = item?.question
                 if (s.dailyQuestion && q != null) {
-                    val open = PendingIntent.getActivity(ctx, 3, Intent(ctx, MainActivity::class.java)
+                    val open = PendingIntent.getActivity(ctx, 3, MainActivity.own(ctx)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Pitanje za danas").setContentText(q)
                         .setStyle(Notification.BigTextStyle().bigText(q + (item.title?.let { "\n— $it" } ?: "")))
@@ -437,7 +445,7 @@ object Esm {
                 }
             }
             ACTION_WEEK -> {
-                val open = PendingIntent.getActivity(ctx, 2, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_WEEK, true)
+                val open = PendingIntent.getActivity(ctx, 2, MainActivity.own(ctx).putExtra(EXTRA_WEEK, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 if (s.weekReviewed != weekKey(reviewWeekStart())) {
                     ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Sedmica je iza tebe")
@@ -446,7 +454,7 @@ object Esm {
             }
             ACTION_FOLLOW -> followUpNote(ctx)?.takeIf { s.followUpAsked != it.id }?.let { note ->
                 s.followUpAsked = note.id
-                val open = PendingIntent.getActivity(ctx, 8, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_FOLLOW, note.id)
+                val open = PendingIntent.getActivity(ctx, 8, MainActivity.own(ctx).putExtra(EXTRA_FOLLOW, note.id)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 val about = com.grungert.nebo.koan.FollowUp.about(note)
                 ctx.getSystemService(NotificationManager::class.java).notify(FOLLOW_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je danas?")
@@ -454,7 +462,7 @@ object Esm {
                     .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(6 * 60 * 60_000L).build())
             }
             ACTION_EVENING -> if (s.eveningReview && !eveningDone(ctx)) {
-                val open = PendingIntent.getActivity(ctx, 7, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_EVENING, true)
+                val open = PendingIntent.getActivity(ctx, 7, MainActivity.own(ctx).putExtra(EXTRA_EVENING, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 ctx.getSystemService(NotificationManager::class.java).notify(EVENING_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je prošao dan?")
                     .setContentText("Šta je bilo dobro, šta teško, i šta sutra drugačije.").setContentIntent(open).setAutoCancel(true)
@@ -472,11 +480,12 @@ object Esm {
     private const val FOLLOW_NOTIFICATION_ID = 14
 
     private fun notify(ctx: Context, promptId: Long) {
-        val open = PendingIntent.getActivity(ctx, 1, Intent(ctx, MainActivity::class.java).putExtra(EXTRA_PROMPT, promptId)
+        val open = PendingIntent.getActivity(ctx, 1, MainActivity.own(ctx).putExtra(EXTRA_PROMPT, promptId)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val reply = Notification.Action.Builder(null, "Napiši", pending(ctx, ACTION_REPLY, promptId, mutable = true))
+        // answering writes into the journal: not from a locked phone in someone else's hand
+        val reply = Notification.Action.Builder(null, "Napiši", pending(ctx, ACTION_REPLY, promptId, mutable = true)).setAuthenticationRequired(true)
             .addRemoteInput(android.app.RemoteInput.Builder(KEY_TEXT).setLabel("Šta je u tebi?").build()).build()
-        fun mood(m: String) = Notification.Action.Builder(null, m, pending(ctx, ACTION_REPLY, promptId, mood = m)).build()
+        fun mood(m: String) = Notification.Action.Builder(null, m, pending(ctx, ACTION_REPLY, promptId, mood = m)).setAuthenticationRequired(true).build()
         val n = builder(ctx, CHANNEL)
             .setContentTitle("Kako si sada?")
             .setContentText("Dodirni da govoriš, ili odgovori odmah ovdje.")

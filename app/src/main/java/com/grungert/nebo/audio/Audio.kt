@@ -162,12 +162,20 @@ object Bell {
 /** Plays back a recorded note. */
 class NotePlayer {
     private var player: MediaPlayer? = null
-    fun play(path: String, onDone: () -> Unit) {
+    /** Plays a recording; false when it cannot be played (gone, or damaged), and nothing breaks. */
+    fun play(path: String, onDone: () -> Unit): Boolean {
         stop()
-        player = MediaPlayer().apply {
-            setDataSource(path)
-            setOnCompletionListener { onDone(); stop() }
-            prepare(); start()
+        if (!java.io.File(path).exists()) return false
+        val p = MediaPlayer()
+        return try {
+            p.setDataSource(path)
+            p.setOnCompletionListener { onDone(); stop() }
+            p.prepare(); p.start()
+            player = p
+            true
+        } catch (e: Exception) {
+            p.release()
+            false
         }
     }
     fun stop() { player?.release(); player = null }

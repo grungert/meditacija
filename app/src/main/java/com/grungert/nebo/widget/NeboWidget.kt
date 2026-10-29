@@ -70,7 +70,10 @@ class NeboWidget : AppWidgetProvider() {
             val koan = app.library.byId(s.activeWeekKoan())
             val dayFmt = java.text.SimpleDateFormat("EEEE, d. MMMM", java.util.Locale.forLanguageTag("sr-Latn-ME"))
             val label = if (koan != null) "KOAN SEDMICE · ${s.weekKoanDay()}. DAN" else com.grungert.nebo.ui.ijekavian(dayFmt.format(java.util.Date(now))).uppercase()
-            val text = koan?.let { it.question ?: it.title ?: it.text } ?: suggestion.why
+            // the home screen is seen by anyone near the phone: what the notes say ("Uveče ti često dođe „tužno“") stays
+            // in the app, and the widget says only that the suggestion comes from them
+            val why = if (suggestion.basis.contains("bilješ")) "Prijedlog za ovaj dio dana, po tvojim bilješkama." else suggestion.why
+            val text = koan?.let { it.question ?: it.title ?: it.text } ?: why
             // the week, Monday to Sunday: minutes so far, and which days held a sit of at least half a minute
             val monday = com.grungert.nebo.ui.weekStart()
             val week = sessions.filter { it.startedAt >= monday }
@@ -99,7 +102,7 @@ class NeboWidget : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_start, SESSION_NAME[type] ?: context.getString(R.string.widget_start))
             if (sky != null) views.setImageViewBitmap(R.id.widget_sky, sky)
             fun open(code: Int, put: Intent.() -> Unit) = PendingIntent.getActivity(context, code,
-                Intent(context, MainActivity::class.java).apply {
+                MainActivity.own(context).apply {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                     put()
                 }, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

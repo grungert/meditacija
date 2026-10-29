@@ -51,7 +51,33 @@ class ModelStore(private val context: Context, private val settings: Settings) {
 
     fun file(name: String) = File(dir, name)
 
-    fun isReady(choice: ModelChoice) = choice.files.all { f -> file(f.name).let { it.exists() && it.length() > f.bytes * 0.9 } }
+    /** Where a file's download stands with the system's download manager, or null when it has none (or forgot it). */
+    private fun downloadStatus(f: ModelFile): Int? {
+        val id = settings.downloadId(f.name)
+        if (id < 0) return null
+        return runCatching {
+            context.getSystemService(DownloadManager::class.java).query(DownloadManager.Query().setFilterById(id)).use { c ->
+                if (c.moveToFirst()) c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)) else null
+            }
+        }.getOrNull()
+    }
+
+    private fun downloading(status: Int?) =
+        status == DownloadManager.STATUS_RUNNING || status == DownloadManager.STATUS_PENDING || status == DownloadManager.STATUS_PAUSED
+
+    /**
+     * A file is on the phone when its download has finished, not merely when it is nearly as large as it should be:
+     * the download manager writes straight into the file, so a download paused at 95% looked ready, the model failed to
+     * open and every note quietly stayed without text.
+     */
+    private fun fileReady(f: ModelFile): Boolean {
+        val file = file(f.name)
+        if (!file.exists() || file.length() < f.bytes * 0.9) return false
+        val status = downloadStatus(f)
+        return status == null || status == DownloadManager.STATUS_SUCCESSFUL
+    }
+
+    fun isReady(choice: ModelChoice) = choice.files.all { fileReady(it) }
 
     fun whisperChoice() = ModelCatalog.whisper.firstOrNull { it.id == settings.whisperModel } ?: ModelCatalog.whisper[0]
 
@@ -63,7 +89,11 @@ class ModelStore(private val context: Context, private val settings: Settings) {
     fun download(choice: ModelChoice) {
         val dm = context.getSystemService(DownloadManager::class.java)
         for (f in choice.files) {
-            if (file(f.name).let { it.exists() && it.length() > f.bytes * 0.9 }) continue
+            if (fileReady(f)) continue
+            // one still on its way is left to finish; one that failed or stopped short starts again
+            val status = downloadStatus(f)
+            if (downloading(status)) continue
+            settings.downloadId(f.name).takeIf { it >= 0 }?.let { runCatching { dm.remove(it) } }
             file(f.name).delete()
             val req = DownloadManager.Request(Uri.parse(f.url))
                 .setTitle("Nebo: ${choice.label}")

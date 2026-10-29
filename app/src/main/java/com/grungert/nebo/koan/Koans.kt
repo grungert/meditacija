@@ -259,7 +259,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     }
 
     /** Gives every note its themes, once; run again for everything when the way of finding themes changes. */
-    suspend fun tagNotes(force: Boolean = false) = withContext(Dispatchers.Default) {
+    suspend fun tagNotes(force: Boolean = false) = withContext(Dispatchers.Default) { tagging.withLock {
         // the model is held one note at a time, so a save or a search waiting for it is never stuck behind the whole
         // journal; each note is read again just before, so the themes follow its words as they are now
         // a note with no theme to be found is remembered as read, so it is not read (and written) again on every start
@@ -275,8 +275,14 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             if (themes != x.themes) db.updateEntry(x.copy(themes = themes), com.grungert.nebo.data.Col.THEMES)
             if (themes.isEmpty()) seen += key
         }
+        // keys of notes since deleted or rewritten go, so the list never grows past the journal
+        val live = db.entries().map { "${it.id}:${(it.words + it.moods).hashCode()}" }.toSet()
+        seen.retainAll(live)
         if (seen != before) settings.themeless = seen
-    }
+    } }
+
+    /** One tagging at a time: saves, the journal and the start all ask for it, and each read and wrote the whole list. */
+    private val tagging = Mutex()
 
     private fun itemText(it: KoanItem) = it.whenHelps + " " + it.themes.joinToString(" ") { t -> THEME_NAMES[t] ?: t }
 

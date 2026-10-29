@@ -463,7 +463,9 @@ private fun BackupPanel() {
     val context = LocalContext.current
     val app = context.app
     val s = app.settings
-    var status by remember { mutableStateOf<String?>(null) }
+    // a restore that could not be finished at the last start says so here, once
+    var status by remember { mutableStateOf(if (com.grungert.nebo.data.Backup.lastRestoreFailed(context))
+        "Vraćanje kopije nije uspjelo do kraja; zapisi su ostali kakvi su bili. Možeš pokušati ponovo." else null) }
     var pending by remember { mutableStateOf<android.net.Uri?>(null) }
     var pendingSummary by remember { mutableStateOf<com.grungert.nebo.data.Backup.Summary?>(null) }
     var folder by remember { mutableStateOf(s.backupTree) }
@@ -514,7 +516,7 @@ private fun BackupPanel() {
                         style = SmallStyle.copy(fontSize = 12.5.sp, color = if (stale) Ink.accentInk else Ink.soft, fontWeight = if (stale) FontWeight.Bold else FontWeight.Medium, shadow = null))
                 }
             }
-            Text("Bilješke, snimci i podešavanja postoje samo na ovom telefonu. Sačuvaj kopiju na Google Drive ili računar, da ih ne izgubiš.", style = SmallStyle.copy(shadow = null))
+            Text("Bilješke, snimci i podešavanja postoje samo na ovom telefonu. Sačuvaj kopiju na Google Drive ili računar, da ih ne izgubiš. Kopija nije šifrovana: čuvaj je tamo gdje ne može niko drugi.", style = SmallStyle.copy(shadow = null))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 GlassButton("Sačuvaj kopiju", { save.launch(com.grungert.nebo.data.Backup.fileName()) }, Modifier.weight(1f), strong = true)
                 GlassButton("Vrati", { open.launch(arrayOf("application/zip", "application/octet-stream")) }, Modifier.weight(1f))

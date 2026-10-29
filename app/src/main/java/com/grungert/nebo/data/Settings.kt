@@ -240,6 +240,13 @@ class Settings(private val context: Context) {
     var whisperLang: String
         get() = p.getString("whisperLang", "hr")!!
         set(v) = p.edit { putString("whisperLang", v) }
+    /**
+     * A key known only to this install, carried by the app's own notifications and widget: what they ask (answer this
+     * question, start this sit, open yesterday's note) is done only for them, not for any app that opens Nebo.
+     */
+    val intentKey: String
+        get() = p.getString("intentKey", null) ?: java.util.UUID.randomUUID().toString().also { k -> p.edit { putString("intentKey", k) } }
+
     fun downloadId(name: String) = p.getLong("dl.$name", -1)
     fun setDownloadId(name: String, id: Long) = p.edit { putLong("dl.$name", id) }
 }
