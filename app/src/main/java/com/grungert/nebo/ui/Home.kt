@@ -228,7 +228,12 @@ fun HomeScreen(host: SkyHost, go: (Screen) -> Unit) {
     var holdLearned by remember { mutableStateOf(s.holdLearned) }
     LaunchedEffect(info) { host.sheetOpen = info != null }
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { host.sheetOpen = false } }
+    val homeView = androidx.compose.ui.platform.LocalView.current
     LaunchedEffect(Unit) {
+        // home takes the sky over: the sit that is fading out behind it then leaves the sky as set here (the lake stays)
+        host.owner = homeView
+        context.app.sitting = false; homeView.keepScreenOn = false
+        host.ambience.stop(); host.breath.stop(); host.engine.running = true
         host.showCircle = false; host.dark = false; host.lake = s.lakeScene
         host.engine.paced = false
         host.engine.walkOn = false
@@ -562,7 +567,7 @@ private fun Orb() {
         Canvas(Modifier.size(68.dp)) {
             val r = size.minDimension / 2
             drawCircle(Brush.radialGradient(listOf(Ink.accent.copy(alpha = 0.6f), Color.Transparent), center, r), r)
-            drawCircle(Brush.radialGradient(listOf(Color.White, Ink.paper, Ink.accent), Offset(center.x - r * 0.2f, center.y - r * 0.25f), r * 0.9f), r * (0.74f + 0.06f * pulse))
+            drawCircle(Brush.radialGradient(listOf(Color.White, Ink.paper, Ink.accent), Offset(center.x - r * 0.2f, center.y - r * 0.25f), r * 0.9f), r * (0.74f + 0.06f * pulse()))
         }
         Icon(NeboIcon.Lotus, Ink.ink.copy(alpha = 0.85f), 28.dp)
     }

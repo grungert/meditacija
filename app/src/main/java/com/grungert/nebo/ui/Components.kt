@@ -393,7 +393,8 @@ fun MicButton(onClick: () -> Unit, size: Dp = 64.dp) {
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(size)) {
             val r = this.size.minDimension / 2
-            drawCircle(Ink.accent.copy(alpha = 0.22f * pulse), r * (1f + 0.08f * pulse))
+            val p = pulse()
+            drawCircle(Ink.accent.copy(alpha = 0.22f * p), r * (1f + 0.08f * p))
         }
         Box(
             Modifier.size(size - 4.dp).tap("Zapiši kako si", shape = CircleShape, onClick = onClick)
@@ -432,7 +433,7 @@ fun EmptyState(icon: NeboIcon, text: String, action: String? = null, onAction: (
         val pulse = com.grungert.nebo.sky.slowPulse(4000)
         Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(52.dp)) {
-                drawCircle(Ink.accent.copy(alpha = 0.10f + 0.08f * pulse), size.minDimension / 2)
+                drawCircle(Ink.accent.copy(alpha = 0.10f + 0.08f * pulse()), size.minDimension / 2)
                 drawCircle(Ink.text.copy(alpha = 0.25f), size.minDimension / 2 - 1.dp.toPx(),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5f, 6f))))
             }

@@ -28,11 +28,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 /**
  * Frames a second for the sky. It moves slowly: clouds, light and grass look the same at 30 frames as at 120, while
  * a 120 Hz phone drawing them 120 times a second spends about four times the battery and warms up on the lap. The walk
- * moves the landscape past, so it gets 60; behind closed eyes the screen is dark and 10 is plenty.
+ * moves the landscape past, so it gets 60; behind closed eyes the screen is dark and 10 is plenty. Behind the journal,
+ * the overview and the settings ([quiet]) the sky is mostly covered and only glimpsed: 12 keep it alive there, where
+ * 30 cost a whole core while the person read.
  */
-fun skyFps(walking: Boolean, dark: Float): Int = when {
+fun skyFps(walking: Boolean, dark: Float, quiet: Boolean = false): Int = when {
     dark > 0.98f -> 10
     walking -> 60
+    quiet -> 12
     else -> 30
 }
 
@@ -60,21 +63,20 @@ suspend fun nextFrame(since: Long, fps: Int): Long {
 }
 
 /**
- * A value going smoothly 0 → 1 → 0 every 2·[periodMs], like an endlessly reversing tween, but stepped at the sky's
- * 30 frames a second: an endless Compose animation would keep the whole window drawing at the screen's full rate.
+ * A value going smoothly 0 → 1 → 0 every 2·[periodMs], like an endlessly reversing tween, read as a function inside a
+ * draw: it moves with the sky's own frame ([SkyClock]), so only that drawing is redone, never the screen around it (a
+ * pulse read in composition recomposed the whole note screen thirty times a second).
  */
 @Composable
-fun slowPulse(periodMs: Int): Float {
-    val v by androidx.compose.runtime.produceState(0f, periodMs) {
-        val start = withFrameNanos { it }
-        var last = start
-        while (true) {
-            last = nextFrame(last, 30)
-            val x = ((last - start) / 1e6f / periodMs) % 2f
-            value = (1f - kotlin.math.cos(Math.PI.toFloat() * x)) / 2f
+fun slowPulse(periodMs: Int): () -> Float {
+    val start = androidx.compose.runtime.remember { System.nanoTime() }
+    return androidx.compose.runtime.remember(periodMs) {
+        {
+            SkyClock.frame   // read, so the drawing that asks is redone each sky frame
+            val x = ((System.nanoTime() - start) / 1e6f / periodMs) % 2f
+            (1f - kotlin.math.cos(Math.PI.toFloat() * x)) / 2f
         }
     }
-    return v
 }
 
 /** How the time of day moves: following the clock, cycling through a day in three minutes, or held at one hour. */
@@ -121,6 +123,8 @@ fun SkyScene(
     lake: Boolean = false,
     /** The weather is passing: rain, snow or mist give way to a clear sky over some seconds (the end of a sit). */
     clearing: Boolean = false,
+    /** The sky is mostly covered by what is read over it, or the phone is busy hearing a voice: a slower pace. */
+    quiet: Boolean = false,
     scenery: Scenery = rememberScenery(),
 ) {
     val context = LocalContext.current
@@ -135,6 +139,7 @@ fun SkyScene(
     val seasonNow by rememberUpdatedState(season)
     val weatherNow by rememberUpdatedState(weather)
     val clearingNow by rememberUpdatedState(clearing)
+    val quietNow by rememberUpdatedState(quiet)
     var tick by remember { mutableLongStateOf(0L) }
     val state = remember { FrameState() }
 
@@ -161,7 +166,7 @@ fun SkyScene(
     LaunchedEffect(engine, day) {
         var last = withFrameNanos { it }
         while (true) {
-            val fps = skyFps(engine.walkOn, state.dim)
+            val fps = skyFps(engine.walkOn, state.dim, quietNow)
             skyView.frameRate(fps)
             nextFrame(last, fps).let { now ->
                 val dt = ((now - last) / 1e9f).coerceIn(0f, 0.1f)

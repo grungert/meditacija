@@ -8,7 +8,7 @@ import org.junit.Test
 class SearchWordsTest {
     @Test
     fun findsOtherFormsOfAWord() {
-        assertEquals("posl", SearchWords.stem("posao"))
+        assertEquals("posl|posa", SearchWords.stem("posao"))
         assertTrue(SearchWords.matches("Na poslu je bilo naporno", SearchWords.stems("posao")))
         assertTrue(SearchWords.matches("Porodica mi je sve", SearchWords.stems("porodici")))
         assertTrue(SearchWords.matches("Ne mogu da spavam", SearchWords.stems("spavanje")))

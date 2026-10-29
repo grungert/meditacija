@@ -39,7 +39,9 @@ Java_com_grungert_nebo_ml_WhisperNative_transcribe(JNIEnv *env, jobject, jlong p
 
     whisper_full_params p = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH);
     p.beam_search.beam_size = 3;
-    p.n_threads = std::max(2, std::min(6, (int) std::thread::hardware_concurrency() - 1));
+    // half the cores, at most four: a phone pairs a few fast cores with many slow ones, and threads on the slow ones only
+    // spin waiting for the fast; more held the whole phone up while a note was read
+    p.n_threads = std::max(2, std::min(4, (int) std::thread::hardware_concurrency() / 2));
     p.language = lang;
     p.translate = false;
     p.no_context = true;

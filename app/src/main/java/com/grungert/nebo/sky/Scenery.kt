@@ -109,7 +109,42 @@ class Scenery(private val u: Float) {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-    private val bladePaths = List(12) { Path() }
+    // the meadow as triangles, one set per depth band and light (12): x,y per corner, and each corner's colour
+    private val meshVerts = Array(12) { FloatArray(6 * 1024) }
+    private val meshColours = Array(12) { IntArray(3 * 1024) }
+    private val meshCount = IntArray(12)                  // corners so far in each set
+    private val meshPaint = Paint()
+    // per set: tip, base and root colours (r,g,b each), where the base sits (0..1), and the band's top and bottom
+    private val bandCol = Array(12) { FloatArray(12) }
+
+    private fun bandColours(k: Int, tip: FloatArray, base: FloatArray, root: FloatArray, mid: Float, band: Int) {
+        val a = bandCol[k]
+        for (i in 0..2) { a[i] = tip[i]; a[3 + i] = base[i]; a[6 + i] = root[i] }
+        a[9] = mid; a[10] = bandTop[band]; a[11] = max(bandBottom[band], bandTop[band] + 1f)
+    }
+
+    /** The colour of the band's grass at height [y]: the tip's at the top, the base's partway, the root's at the bottom. */
+    private fun bandColour(k: Int, y: Float): Int {
+        val a = bandCol[k]
+        val f = ((y - a[10]) / (a[11] - a[10])).coerceIn(0f, 1f)
+        val lower = f >= a[9]
+        val from = if (lower) 3 else 0
+        val w = if (lower) (f - a[9]) / (1 - a[9]) else f / a[9]
+        val r = a[from] + (a[from + 3] - a[from]) * w
+        val g = a[from + 1] + (a[from + 4] - a[from + 1]) * w
+        val bl = a[from + 2] + (a[from + 5] - a[from + 2]) * w
+        return android.graphics.Color.rgb((r.coerceIn(0f, 1f) * 255).toInt(), (g.coerceIn(0f, 1f) * 255).toInt(), (bl.coerceIn(0f, 1f) * 255).toInt())
+    }
+
+    private fun tri(k: Int, x0: Float, y0: Float, x1: Float, y1: Float, x2: Float, y2: Float) {
+        var n = meshCount[k]
+        if ((n + 3) * 2 > meshVerts[k].size) { meshVerts[k] = meshVerts[k].copyOf(meshVerts[k].size * 2); meshColours[k] = meshColours[k].copyOf(meshColours[k].size * 2) }
+        val v = meshVerts[k]; val col = meshColours[k]
+        v[n * 2] = x0; v[n * 2 + 1] = y0; col[n] = bandColour(k, y0); n++
+        v[n * 2] = x1; v[n * 2 + 1] = y1; col[n] = bandColour(k, y1); n++
+        v[n * 2] = x2; v[n * 2 + 1] = y2; col[n] = bandColour(k, y2); n++
+        meshCount[k] = n
+    }
     private val tmp = Path()
     private val moteSprite = sprite(255, 252, 240)
     private val flySprite = sprite(214, 255, 150)
@@ -231,7 +266,18 @@ class Scenery(private val u: Float) {
         val amp = (0.18f + 0.42f * wind) * if (reduced) 0.4f else 1f
         val night = pal.stars
         val buckets = 6
-        bladePaths.forEach { it.rewind() }
+        // the colours of each depth band, root to tip, as the blades are laid down by height
+        val white = floatArrayOf(1f, 1f, 1f)
+        val glint = mix(mix(pal.sun, white, 0.6f), pal.gTop, night * 0.7f)
+        for (i in 0 until buckets) {
+            val d = i / (buckets - 1f)
+            val base = mix(pal.gTop, pal.gBot, min(1f, d * 1.15f))
+            val root = scale(base, 0.50f)
+            val tip = mix(scale(base, 1.22f), pal.sun, 0.12f * (1 - night))
+            bandColours(i * 2, tip, base, root, 0.5f, i)
+            bandColours(i * 2 + 1, mix(tip, glint, 0.55f), scale(base, 1.1f), root, 0.45f, i)
+        }
+        meshCount.fill(0)
         val margin = 30 * u
         val span = W + 2 * margin
         val winter = season == Season.WINTER
@@ -252,35 +298,35 @@ class Scenery(private val u: Float) {
             if (blossoms != null && index % 7 == 0 && b.d >= 0.28f) blossoms += floatArrayOf(tx, ty, b.d, (index / 7 % 3).toFloat())
             // where a gust bends the grass, its tips turn to the light: the wind shows as waves of brightness
             val shine = g > 0.55f && b.tone > 0.3f
-            val p = bladePaths[min(buckets - 1, floor(b.d * buckets).toInt()) * 2 + if (shine) 1 else 0]
+            val k = min(buckets - 1, floor(b.d * buckets).toInt()) * 2 + if (shine) 1 else 0
+            val hw = b.w / 2
             // the nearest blades run on past the bottom edge, so no flat blade base shows against the ground
-            val foot = if (b.d > 0.6f) max(by, H + 2 * u) else by
-            p.moveTo(bx - b.w / 2, foot)
-            p.lineTo(bx - b.w / 2, by)
-            p.quadTo(cx - b.w * 0.25f, cy, tx, ty)
-            p.quadTo(cx + b.w * 0.25f, cy, bx + b.w / 2, by)
-            p.lineTo(bx + b.w / 2, foot)
-            p.close()
+            if (b.d > 0.6f && by < H + 2 * u) {
+                val foot = H + 2 * u
+                tri(k, bx - hw, foot, bx + hw, foot, bx - hw, by); tri(k, bx + hw, foot, bx + hw, by, bx - hw, by)
+            }
+            // the two edges of the blade, each a quadratic curve from its foot to the tip, joined by triangles
+            var lx = bx - hw; var ly = by; var rx = bx + hw; var ry = by
+            for (sgm in 1..BLADE_STEPS) {
+                val q = sgm / BLADE_STEPS.toFloat(); val r = 1 - q
+                val nlx = r * r * (bx - hw) + 2 * r * q * (cx - b.w * 0.25f) + q * q * tx
+                val nly = r * r * by + 2 * r * q * cy + q * q * ty
+                val nrx = r * r * (bx + hw) + 2 * r * q * (cx + b.w * 0.25f) + q * q * tx
+                val nry = nly
+                tri(k, lx, ly, rx, ry, nlx, nly)
+                if (sgm < BLADE_STEPS) tri(k, rx, ry, nrx, nry, nlx, nly)
+                lx = nlx; ly = nly; rx = nrx; ry = nry
+            }
+        }
+        // the whole meadow in twelve draws of plain triangles, coloured at their corners: the graphics chip fills them
+        // directly, where a path of every blade had to be rasterised again on the processor every frame
+        meshPaint.color = android.graphics.Color.WHITE
+        for (k in 0 until 12) {
+            val n = meshCount[k]
+            if (n == 0) continue
+            c.drawVertices(Canvas.VertexMode.TRIANGLES, n * 2, meshVerts[k], 0, null, 0, meshColours[k], 0, null, 0, 0, meshPaint)
         }
         paint.style = Paint.Style.FILL
-        val white = floatArrayOf(1f, 1f, 1f)
-        val glint = mix(mix(pal.sun, white, 0.6f), pal.gTop, night * 0.7f)
-        for (i in 0 until buckets) {
-            val d = i / (buckets - 1f)
-            val base = mix(pal.gTop, pal.gBot, min(1f, d * 1.15f))
-            val root = scale(base, 0.50f)
-            val tip = mix(scale(base, 1.22f), pal.sun, 0.12f * (1 - night))
-            val top = bandTop[i]; val bottom = max(bandBottom[i], top + 1f)
-            paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(tip, 1f), argb(base, 1f), argb(root, 1f)),
-                floatArrayOf(0f, 0.5f, 1f), Shader.TileMode.CLAMP)
-            paint.isAntiAlias = i >= 4
-            c.drawPath(bladePaths[i * 2], paint)
-            paint.shader = LinearGradient(0f, top, 0f, bottom, intArrayOf(argb(mix(tip, glint, 0.55f), 1f), argb(scale(base, 1.1f), 1f), argb(root, 1f)),
-                floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
-            c.drawPath(bladePaths[i * 2 + 1], paint)
-        }
-        paint.isAntiAlias = true
-        paint.shader = null
         if (blossoms != null) for (bl in blossoms) {
             paint.color = argb(mix(SPRING_COLS[bl[3].toInt()], pal.gBot, 0.6f * night), 0.95f)
             c.drawCircle(bl[0], bl[1], (1.8f + 2.6f * bl[2]) * u, paint)
@@ -1055,6 +1101,9 @@ class Scenery(private val u: Float) {
 }
 
 /** Small deterministic random generator (mulberry32), the same one the prototype uses. */
+/** Segments along each edge of a blade of grass. */
+private const val BLADE_STEPS = 4
+
 class Mulberry(seed: Int) {
     private var a = seed
     operator fun invoke(): Float {

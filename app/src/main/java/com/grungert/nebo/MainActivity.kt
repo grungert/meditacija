@@ -68,6 +68,10 @@ sealed class Screen {
 private fun readsInDaylight(sc: Screen) = sc is Screen.Home || sc is Screen.Journal || sc is Screen.Stats || sc is Screen.Settings ||
     sc is Screen.Thread || sc is Screen.Similar || sc is Screen.Focus || sc is Screen.Setup
 
+/** Screens of reading, laid over most of the sky: it goes on beneath them, slower. */
+private fun coversSky(sc: Screen) = sc is Screen.Journal || sc is Screen.Stats || sc is Screen.Settings || sc is Screen.Thread ||
+    sc is Screen.Similar || sc is Screen.Focus || sc is Screen.Week || sc is Screen.KoanNotes || sc is Screen.Help
+
 /** The one sky shared by every screen, plus hooks the current screen can set. */
 class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var showCircle by mutableStateOf(false)
@@ -79,6 +83,11 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var weather by mutableStateOf(com.grungert.nebo.sky.Weather.CLEAR)
     /** The weather is passing for now (a sit has ended): set again from the settings, it is back at once. */
     var clearing by mutableStateOf(false)
+    /** A voice is being recorded or turned into text: the sky slows down and leaves the processor to it. */
+    var busy by mutableStateOf(false)
+    /** The screen that set the sky up last. A screen that goes resets the sky only if it is still its own (screens
+     *  cross-fade, and the one going away would otherwise undo what the one coming in just set). */
+    var owner: Any? = null
     private var rainLevel = 0f
     /** Whether the sky has drawn its first frame, for the opening loader to give way to it. */
     var skyDrawn by mutableStateOf(false)
@@ -177,7 +186,8 @@ class MainActivity : ComponentActivity() {
             "note" -> screen = Screen.CheckIn("note")
         }
         // the suggested session on the home-screen widget, started straight away
-        intent?.getStringExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE)?.let { t ->
+        // (only a kind the app has: the activity is open to other apps, and this one is kept in the settings)
+        intent?.getStringExtra(com.grungert.nebo.widget.NeboWidget.EXTRA_START_TYPE)?.takeIf { t -> com.grungert.nebo.ui.SESSION_TYPES.any { it.id == t } }?.let { t ->
             app.settings.sessionType = t
             screen = Screen.Session(lastConfig().copy(checkInBefore = false))
         }
@@ -226,6 +236,7 @@ class MainActivity : ComponentActivity() {
                 foreground = host.foreground,
                 lake = host.lake,
                 clearing = host.clearing,
+                quiet = coversSky(screen) || host.busy,
             )
             // the light of the screens follows the sky, but only where they read in daylight
             val light = host.sunUp && readsInDaylight(screen)

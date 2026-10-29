@@ -106,7 +106,7 @@ object Lexicon {
     // "imam" as mama or "poslije" as posao.
     private val words = mapOf(
         "nemir" to listOf("nemir*", "nervoz*", "napet*", "uznemir*", "stres*", "žurb*", "žurim", "jurim", "juri", "anksio*", "brig*", "brin*"),
-        "tuga" to listOf("tug*", "tužn*", "tužan", "plak*", "plač*", "suz*", "žalim", "žalost*", "žao mi je", "nedostaj*", "gubit*", "izgubi*", "praznin*"),
+        "tuga" to listOf("tug*", "tužn*", "tužan", "plak*", "plač*", "suza", "suze", "suzu", "suzama", "suzn*", "žalim", "žalost*", "žao mi je", "nedostaj*", "gubit*", "izgubi*", "praznin*"),
         "ljutnja" to listOf("ljut*", "bijes*", "iritir*", "nervira*", "smeta mi", "frustrir*"),
         "umor" to listOf("umor*", "iscrp*", "pospan*", "nemam snage", "težak dan", "izmoren*", "premoren*"),
         "strah" to listOf("strah*", "plaš*", "bojim", "boji se", "bojao", "bojala", "panik*", "uplaš*", "nesigur*"),
@@ -127,7 +127,7 @@ object Lexicon {
         "svakodnevica" to listOf("posao", "posla", "poslu", "poslom", "poslov*", "kuć*", "sudov*", "obavez*", "svakodnev*", "rutin*"),
         "odluka" to listOf("odluk*", "odluč*", "izbor*", "biram", "birati", "raskršć*"),
         "odnosi" to listOf("partner*", "prijatelj*", "porodic*", "majk*", "mama", "mami", "mamu", "mamom", "otac", "oca", "ocu", "tata", "tati", "tatu",
-            "brat", "brata", "bratu", "bratom", "sestr*", "djec*", "dijete", "djetet*", "odnos*", "svađ*", "ljubav*", "kolega", "kolege", "kolegom", "kolegama", "muž*", "žen*", "djevojk*", "dečk*"),
+            "brat", "brata", "bratu", "bratom", "sestr*", "djec*", "dijete", "djetet*", "odnos", "odnosa", "odnosu", "odnosi", "odnosima", "svađ*", "ljubav*", "kolega", "kolege", "kolegom", "kolegama", "muž*", "žen*", "djevojk*", "dečk*"),
         "prisutnost" to listOf("ovdje i sada", "sada i ovdje", "upravo sada", "ovdje sam", "u ovom trenutku", "ovaj trenutak",
             "dah", "daha", "dahom", "disanj*", "dišem", "tijel*", "prisut*", "sadašnj*"),
     )
@@ -144,7 +144,8 @@ object Lexicon {
     private val FEELINGS = setOf("nemir", "tuga", "ljutnja", "umor", "strah", "usamljenost", "samokritika", "radost", "smirenost", "zbunjenost", "zahvalnost")
 
     fun themes(text: String): List<String> {
-        val t = text.lowercase()
+        // "u odnosu na" and "odnosno" compare, they are not about anyone
+        val t = text.lowercase().replace(Regex("u odnosu na|odnosno"), " ")
         return patterns.filter { (theme, re) ->
             if (theme in FEELINGS) re.findAll(t).any { !FourPointsReader.negated(t, it.range.first) } else re.containsMatchIn(t)
         }.keys.toList()

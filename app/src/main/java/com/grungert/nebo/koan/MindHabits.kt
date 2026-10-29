@@ -65,7 +65,12 @@ object MindHabits {
         val body = stem.trimEnd('*').split(' ').joinToString("\\s+") { Regex.escape(it) }
         Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
     }
-    private fun count(text: String, stems: List<String>) = stems.sumOf { pattern(it).findAll(text).count() }
+    private fun count(text: String, stems: List<String>, negatable: Boolean = false) = stems.sumOf { st ->
+        pattern(st).findAll(text).count { !negatable || !FourPointsReader.negated(text, it.range.first) }
+    }
+
+    /** Habits that a "ne" turns around: "ne moram nigdje" is no duty, "nije uvijek tako" no verdict. */
+    private val NEGATABLE = setOf("moranje", "uvijek")
 
     /**
      * The words of a note to read the mind in: what was said, plus the thoughts point where it adds something. The
@@ -83,7 +88,7 @@ object MindHabits {
     fun habits(text: String): List<String> {
         if (text.isBlank()) return emptyList()
         val t = clean(text)
-        return HABITS.filter { h -> count(t, h.stems) > 0 }.map { it.id }
+        return HABITS.filter { h -> count(t, h.stems, h.id in NEGATABLE) > 0 }.map { it.id }
     }
 
     /** Where the mind is in these words, or null when they do not lean one way: the most cues, ahead by at least one. */

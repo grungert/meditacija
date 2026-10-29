@@ -63,12 +63,14 @@ object FourPointsReader {
         // "napet" as a mood, said of oneself; "napeta ramena" are the body, read there
         "nemirno" to listOf("nemir*", "nervoz*", "uznemir*", "anksio*", "napet sam", "napeta sam", "osjećam se napet*", "sav sam napet", "sva sam napeta"),
         "umorno" to listOf("umor*", "iscrplj*", "pospan*"),
-        "tužno" to listOf("tuž*", "tug*", "plač*", "plak*", "suz*"),
+        // tears, but not "suzdržavam se" (holding back)
+        "tužno" to listOf("tuž*", "tug*", "plač*", "plak*", "suza", "suze", "suzu", "suzama", "suzn*"),
         "ljuto" to listOf("ljut*", "bijes*", "iznervir*", "frustr*"),
         "zabrinuto" to listOf("zabrin*", "brin*", "strah*", "plaš*", "bojim se"),
         "zbunjeno" to listOf("zbunj*", "pomiješan*"),
         "zahvalno" to listOf("zahval*"),
-        "radosno" to listOf("radost*", "radosn*", "sreć*", "srećan", "vesel*"),
+        // happiness, but not luck ("na sreću", "srećom")
+        "radosno" to listOf("radost*", "radosn*", "sreća", "sreće", "srećn*", "srećan", "vesel*"),
         "radoznalo" to listOf("radozna*", "zanima*"),
     )
 
@@ -82,9 +84,10 @@ object FourPointsReader {
     /** The stems of a label's longer words: their start, so the endings of our language do not matter. */
     fun stemsOf(label: String) = label.lowercase().split(Regex("[^\\p{L}]+")).filter { it.length >= 3 }.map { w -> w.take(maxOf(3, w.length - 3)) + "*" }
 
+    // every word of a stem may end in *, not only the last ("stisnut* zub*")
     private fun pattern(stem: String): Regex {
-        val body = stem.trimEnd('*').split(' ').joinToString("\\s+") { Regex.escape(it) }
-        return Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
+        val body = stem.split(' ').joinToString("\\s+") { w -> if (w.endsWith("*")) Regex.escape(w.dropLast(1)) + "\\p{L}*" else Regex.escape(w) }
+        return Regex("(?<![\\p{L}])$body(?![\\p{L}])", RegexOption.IGNORE_CASE)
     }
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
     // a note's words are read once, not on every screen that looks at them: hundreds of patterns over every note added up
@@ -92,21 +95,35 @@ object FourPointsReader {
     private val readings = java.util.concurrent.ConcurrentHashMap<String, Reading>()
 
     /** Words that turn what follows around: "nisam ljut", "ne brinem", "nije me strah", "bez straha". */
-    private val NEGATIONS = setOf("ne", "nisam", "nije", "nismo", "niste", "nisu", "nisi", "nimalo", "bez", "ni")
+    private val NEGATIONS = setOf("ne", "nisam", "nije", "nismo", "niste", "nisu", "nisi", "nimalo", "bez", "ni",
+        "nijesam", "nijesi", "nijesmo", "nijeste", "nijesu")
+    /** Words that begin a new clause: a "ne" before them belongs to the clause before. */
+    private val CLAUSE_WORDS = setOf("ali", "a", "pa", "jer", "nego", "već", "i")
+    private val CLAUSE_END = Regex("[.,;:!?\\n]")
 
-    /** True when one of the two words just before [at] negates what stands there. */
-    fun negated(text: String, at: Int): Boolean =
-        text.substring(0, at).lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }.takeLast(2).any { it in NEGATIONS }
+    /**
+     * True when one of the two words just before [at], in the same clause, negates what stands there: "nisam ljuta" is
+     * no anger, but in "Nisam dobro, tužna sam" the sadness stands.
+     */
+    fun negated(text: String, at: Int, reach: Int = 2): Boolean {
+        val before = text.substring(0, at)
+        val clause = before.substring((CLAUSE_END.findAll(before).lastOrNull()?.range?.last ?: -1) + 1)
+        val words = clause.lowercase().split(Regex("[^\\p{L}]+")).filter { it.isNotEmpty() }
+        val from = words.indexOfLast { it in CLAUSE_WORDS } + 1
+        return words.drop(from).takeLast(reach).any { it in NEGATIONS }
+    }
 
     /**
      * True when a stem is in the words. [negatable] stems (feelings and the body) do not count after a negation;
      * a ~stem counts only when the text also speaks of a pull to act.
      */
-    private fun has(text: String, stems: List<String>, negatable: Boolean = false, cued: Boolean = false) = stems.any { s0 ->
+    // an urge is turned around only by the word right before it ("ne pušim", "bez cigareta"): in "jedva se
+    // suzdržavam da ne uzmem telefon" the pull is there
+    private fun has(text: String, stems: List<String>, negatable: Boolean = false, cued: Boolean = false, reach: Int = 2) = stems.any { s0 ->
         if (s0.startsWith("~") && !cued) return@any false
         val s = s0.removePrefix("~")
         val re = cache.getOrPut(s) { pattern(s) }
-        if (negatable) re.findAll(text).any { !negated(text, it.range.first) } else re.containsMatchIn(text)
+        if (negatable) re.findAll(text).any { !negated(text, it.range.first, reach) } else re.containsMatchIn(text)
     }
 
     private fun cueIn(text: String) = has(text, URGE_CUES)
@@ -135,7 +152,7 @@ object FourPointsReader {
     private fun readNow(text: String, byMeaning: ((String) -> String?)?): Reading {
         val cued = cueIn(text)
         val body = BODY_LABELS.filter { has(text, it.second, negatable = true) }.map { it.first }.toMutableList()
-        val urges = URGE_LABELS.filter { has(text, it.second, cued = cued) }.map { it.first }.toMutableList()
+        val urges = URGE_LABELS.filter { has(text, it.second, negatable = true, cued = cued, reach = 1) }.map { it.first }.toMutableList()
         val moods = MOOD_STEMS.filter { has(text, it.value, negatable = true) }.keys.toMutableList()
         // the person's own labels, found by all their words
         fun own(point: String) = custom[point].orEmpty().filter { l -> stemsOf(l).let { st -> st.isNotEmpty() && st.all { has(text, listOf(it), negatable = true) } } }
@@ -145,7 +162,7 @@ object FourPointsReader {
         val thoughts = ArrayList<String>()
         for (p in pieces(text)) {
             val isBody = BODY_LABELS.any { has(p, it.second, negatable = true) }
-            val labelled = URGE_LABELS.any { has(p, it.second, cued = cued) }
+            val labelled = URGE_LABELS.any { has(p, it.second, negatable = true, cued = cued, reach = 1) }
             val isUrge = labelled || cueIn(p)
             val isMood = MOOD_STEMS.values.any { has(p, it, negatable = true) }
             val isThought = has(p, THOUGHT_CUES)

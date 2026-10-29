@@ -15,7 +15,9 @@ object SearchWords {
 
     fun stem(word: String): String {
         val w = word.lowercase()
-        if (w.length > 4 && w.endsWith("ao")) return w.dropLast(2) + "l"
+        // a noun loses its fleeting a ("posao" → "posl-"), a verb's past keeps its stem ("spavao" → "spava-"): both are
+        // tried, as "posl|posa"
+        if (w.length > 4 && w.endsWith("ao")) return w.dropLast(2) + "l|" + w.dropLast(1)
         for (end in listOf("anje", "enje")) if (w.endsWith(end) && w.length - end.length >= 3) return w.dropLast(3)
         for (end in ENDINGS) if (w.endsWith(end) && w.length - end.length >= 3) return w.dropLast(end.length)
         return w
@@ -34,8 +36,11 @@ object SearchWords {
     fun matches(text: String, stems: List<String>): Boolean = stems.isNotEmpty() && stems.all { st ->
         cache.getOrPut(st) {
             // ...but never "poslije" (after), which only looks like a form of "posao"
-            val tail = if (st.endsWith("l") && st.length >= 3 && st[st.length - 2] !in "aeiou") "(?!ije)(?:[aeiou]|(?![\\p{L}]))" else ""
-            Regex("(?<![\\p{L}])" + Regex.escape(st) + tail, RegexOption.IGNORE_CASE)
+            val alts = st.split('|').joinToString("|") { a ->
+                val tail = if (a.endsWith("l") && a.length >= 3 && a[a.length - 2] !in "aeiou") "(?!ije)(?:[aeiou]|(?![\\p{L}]))" else ""
+                Regex.escape(a) + tail
+            }
+            Regex("(?<![\\p{L}])(?:$alts)", RegexOption.IGNORE_CASE)
         }.containsMatchIn(text)
     }
 }

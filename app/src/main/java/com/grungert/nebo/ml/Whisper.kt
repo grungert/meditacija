@@ -53,7 +53,7 @@ private class ParakeetEngine(models: ModelStore, choice: ModelChoice) : SpeechEn
             ),
             tokens = models.file(choice.files[3].name).absolutePath,
             // phones pair a few fast cores with many slow ones; more threads than fast cores only waits on the slow ones
-            numThreads = Runtime.getRuntime().availableProcessors().coerceIn(2, 4),
+            numThreads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4),
             modelType = "nemo_transducer",
         ),
     ))

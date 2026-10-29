@@ -49,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -124,6 +125,9 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
     var model by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { host.showCircle = false; host.engine.paced = false }
+    // while the voice is heard and read, the sky slows down and leaves the processor to the speech model
+    LaunchedEffect(recording, transcribing) { host.busy = recording || transcribing }
+    DisposableEffect(Unit) { onDispose { host.busy = false } }
     // after a body scan, the places where tension was touched are already the body point of this note
     var scanned by remember { mutableStateOf(false) }
     LaunchedEffect(sc.sessionId) {
@@ -287,8 +291,11 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                     val pulse = com.grungert.nebo.sky.slowPulse(if (recording) 900 else 3600)
                     val rec = Color(0xFFEC8B74)
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.size(124.dp)) {
-                        Box(Modifier.size(((if (recording) 100 else 92) + (if (recording) 22 else 8) * pulse).dp).clip(CircleShape)
-                            .background((if (recording) rec else Ink.accent).copy(alpha = if (recording) 0.25f else 0.16f)))
+                        // the halo breathes in its own drawing layer, so the screen around it is not composed again
+                        val haloMin = if (recording) 100f else 92f; val haloAdd = if (recording) 22f else 8f
+                        Box(Modifier.size((haloMin + haloAdd).dp).graphicsLayer {
+                            val k = (haloMin + haloAdd * pulse()) / (haloMin + haloAdd); scaleX = k; scaleY = k
+                        }.clip(CircleShape).background((if (recording) rec else Ink.accent).copy(alpha = if (recording) 0.25f else 0.16f)))
                         Box(
                             Modifier.size(88.dp).tap(if (recording) "Zaustavi snimanje" else "Snimi", shape = CircleShape) {
                                 when {

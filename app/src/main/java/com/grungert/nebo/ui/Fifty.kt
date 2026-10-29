@@ -92,26 +92,42 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
     var banked by remember { mutableFloatStateOf(0f) }        // seconds of the rounds before this one
     var sessionId by remember { mutableStateOf<Long?>(null) }
 
-    // the minute is kept like any sit: in the journal, the week's minutes and its days, and what helps. "Još minut"
-    // goes on in the same one; closed in its first seconds (opened by mistake) it leaves nothing
-    LaunchedEffect(Unit) {
+    // the minute is kept like any sit: in the journal, the week's minutes and its days, and what helps. It is written
+    // once ten seconds have passed (opened by mistake and closed, it leaves nothing, and its reminder stays unanswered),
+    // then every quarter minute, so a minute cut short by the system still counts. "Još minut" goes on in the same one
+    val me = remember { Any() }
+    val view = androidx.compose.ui.platform.LocalView.current
+    val sat = banked + elapsed
+    LaunchedEffect(sat >= 10f) {
+        if (sat < 10f || sessionId != null) return@LaunchedEffect
         val call = app.fiftyCall.also { app.fiftyCall = null }
+        val started = System.currentTimeMillis() - (sat * 1000).toLong()
         sessionId = withContext(Dispatchers.IO) {
-            app.db.insertSession(com.grungert.nebo.data.Session(startedAt = System.currentTimeMillis(), type = "fifty", plannedSec = FIFTY_SECONDS.toInt(),
+            app.db.insertSession(com.grungert.nebo.data.Session(startedAt = started, type = "fifty", plannedSec = ((round + 1) * FIFTY_SECONDS).toInt(),
                 pattern = "46", walk = false)).also { id -> call?.let { app.db.fiftyCallAnswered(it, id) } }
         }
     }
+    LaunchedEffect((sat / 15f).toInt()) {
+        val id = sessionId ?: return@LaunchedEffect
+        val s = sat.toInt()
+        withContext(Dispatchers.IO) { app.db.sessionProgress(id, s, 0) }
+    }
     DisposableEffect(Unit) {
+        host.owner = me
         app.sitting = true
+        // nobody touches the screen through the minute: it must not go dark half way
+        view.keepScreenOn = true
         onDispose {
-            app.sitting = false
+            if (host.owner === me) { app.sitting = false; view.keepScreenOn = false }
+            app.fiftyCall = null   // a reminder that came while here never waits for a later minute
             val id = sessionId ?: return@onDispose
-            val sat = (banked + elapsed).toInt()
-            app.scope.launch(Dispatchers.IO) { if (sat < 10) app.db.deleteSession(id) else app.db.finishSession(id, System.currentTimeMillis(), sat, 0) }
+            val total = (banked + elapsed).toInt()
+            app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), total, 0) }
         }
     }
 
     DisposableEffect(round) {
+        host.owner = me
         val e = host.engine
         host.showCircle = false
         host.lake = true
@@ -125,7 +141,7 @@ fun FiftyScreen(host: SkyHost, go: (Screen) -> Unit) {
             if (elapsed < FIFTY_SECONDS) elapsed = (elapsed + dt).coerceAtMost(FIFTY_SECONDS)
             ripples.removeAll { clock - it > 9f }
         }
-        onDispose { host.onFrame = null; host.onPhase = null; e.paced = false; host.lake = false }
+        onDispose { if (host.owner === me) { host.onFrame = null; host.onPhase = null; e.paced = false; host.lake = false } }
     }
     LaunchedEffect(done) { if (done) { host.clearing = true; app.scope.launch { Bell.ring(soft = true) } } }
 

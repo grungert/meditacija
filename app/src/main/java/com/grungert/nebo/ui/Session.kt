@@ -302,8 +302,12 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
         }
     }
 
-    DisposableEffect(Unit) { app.sitting = true; onDispose { app.sitting = false } }
+    // this sit sets the sky up; when it goes, it resets only what is still its own: screens cross-fade, and a sit
+    // started straight from this one (the tile, the widget, a reminder) has already set it up for itself
+    val me = remember { Any() }
+    DisposableEffect(Unit) { host.owner = me; app.sitting = true; onDispose { if (host.owner === me) app.sitting = false } }
     DisposableEffect(Unit) {
+        host.owner = me
         view.keepScreenOn = true
         // by the lake, if that is where the person sits; the walk always goes through the meadow
         // the hourglass stands on a veranda by the water, so it always has the lake behind it
@@ -429,12 +433,14 @@ fun SessionScreen(cfg: SessionConfig, host: SkyHost, scenery: Scenery, go: (Scre
                 app.scope.launch(Dispatchers.IO) { app.db.finishSession(id, System.currentTimeMillis(), sec, n, touched) }
             }
             if (id != null && !left && wander.isNotEmpty()) { val w = wander.toList(); app.scope.launch(Dispatchers.IO) { app.db.setSessionWander(id, w) } }
-            view.keepScreenOn = false
-            host.ambience.stop()
-            host.breath.stop()
-            host.onPhase = null; host.onFrame = null; host.onTap = null
-            host.showCircle = false; host.dark = false; host.lake = false
-            e.paced = false; e.walkOn = false; e.running = true
+            if (host.owner === me) {
+                view.keepScreenOn = false
+                host.ambience.stop()
+                host.breath.stop()
+                host.onPhase = null; host.onFrame = null; host.onTap = null
+                host.showCircle = false; host.dark = false; host.lake = false
+                e.paced = false; e.walkOn = false; e.running = true
+            }
         }
     }
 
