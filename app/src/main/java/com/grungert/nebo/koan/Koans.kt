@@ -163,6 +163,65 @@ object Lexicon {
 
 data class Pick(val item: KoanItem?, val reason: String, val distress: Boolean = false, val themes: List<String> = emptyList())
 
+/**
+ * e5-small puts every short note in our language near every other (raw cosine around 0.86 for half of all pairs, and
+ * 0.92 for "a quarrel with my sister" and "sun on my face on the terrace"), so raw similarity says almost nothing.
+ * What the notes share with all of this person's notes is taken off first: each vector less the mean of their notes,
+ * made unit length again ([centred]). On the emulator's 35 test notes that left the sensible pairs on top (tired after
+ * work, mother, bad sleep) at 0.35 to 0.46, with the median pair near 0.
+ *
+ * A note is "like this one" from [SIMILAR_MIN] up on that centred similarity (13 of the 35 test notes then show one;
+ * at 0.20, 26 would). A first value, to be calibrated on real journals.
+ */
+const val SIMILAR_MIN = 0.25f
+/** Notes join one thread only when they are, on average, this close after centring (a group, so a little lower). */
+const val THREAD_MIN = 0.20f
+/**
+ * The floor for a search, on centred similarity of the query to each note. Measured on the emulator's notes with eight
+ * queries: the right notes came at 0.35 to 0.37 ("auto servis" the neighbour and the car, "nedostaje mi otac" the
+ * father), notes with nothing to do with the query up to 0.24 ("račun za struju", "more i plaža"). A first value.
+ */
+const val SEARCH_MIN = 0.30f
+/** Below this many notes with words, their mean is no "usual note" yet: closeness by meaning is not shown. */
+const val MEANING_FROM = 15
+
+/** [v] less the person's usual note [mean], unit length again. */
+internal fun centred(v: FloatArray, mean: FloatArray): FloatArray {
+    val c = FloatArray(v.size) { v[it] - mean[it] }
+    val n = kotlin.math.sqrt(c.sumOf { (it * it).toDouble() }).toFloat().coerceAtLeast(1e-6f)
+    for (i in c.indices) c[i] /= n
+    return c
+}
+
+/** The mean of these vectors: the person's usual note. */
+internal fun meanOf(vs: List<FloatArray>): FloatArray {
+    val m = FloatArray(vs.first().size)
+    for (v in vs) for (i in m.indices) m[i] += v[i]
+    for (i in m.indices) m[i] /= vs.size
+    return m
+}
+
+/**
+ * Which of [pool] are like [target] by meaning, against the usual note of [all] the person's notes; nothing while
+ * there are fewer than [MEANING_FROM] notes to make a usual note of. Indices into [pool], closest first, with their
+ * centred similarity.
+ */
+internal fun nearByMeaning(target: FloatArray, pool: List<FloatArray>, all: List<FloatArray>): List<Pair<Int, Float>> {
+    if (all.size < MEANING_FROM || pool.isEmpty()) return emptyList()
+    val mean = meanOf(all)
+    val tv = centred(target, mean)
+    val scores = pool.map { Embedder.cosine(tv, centred(it, mean)) }
+    return closeOnes(scores).map { it to scores[it] }.sortedByDescending { it.second }
+}
+
+/** Which of these (centred) similarities to a note are close: from [min] up, and among five or more clearly above the rest. */
+internal fun closeOnes(scores: List<Float>, min: Float = SIMILAR_MIN): List<Int> {
+    if (scores.isEmpty()) return emptyList()
+    val mean = scores.average().toFloat()
+    val sd = kotlin.math.sqrt(scores.sumOf { ((it - mean) * (it - mean)).toDouble() } / scores.size).toFloat()
+    return scores.indices.filter { i -> scores[i] >= min && (scores.size < 5 || scores[i] - mean >= maxOf(0.012f, 0.8f * sd)) }
+}
+
 /** Picks the koan or message whose "when it helps" description is closest in meaning to what was said. */
 /** Notes that keep returning to the same thing, oldest first. */
 data class InsightThread(val entries: List<com.grungert.nebo.data.Entry>, val theme: String?, val title: String)
@@ -238,16 +297,19 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         lock.withLock {
             val e = embedderOrNull() ?: return@withLock emptyList()
             val notes = all.filter { it.words.isNotBlank() }
-            if (query.isBlank() || notes.size < 5) return@withLock emptyList()
-            val qv = e.embed(query)
-            val scored = notes.map { it to Embedder.cosine(qv, passageVector(it, e)) }
+            if (query.isBlank() || notes.size < MEANING_FROM) return@withLock emptyList()
+            // the query and the notes both less the person's usual note (as passages), so what all notes share counts for nothing
+            val passages = notes.map { passageVector(it, e) }
+            val usualNote = meanOf(passages)
+            val qv = centred(e.embed(query), usualNote)
+            val scored = notes.mapIndexed { i, n -> n to Embedder.cosine(qv, centred(passages[i], usualNote)) }
             val mean = scored.map { it.second }.average().toFloat()
             // a journal whose notes all score alike has no note that stands out: the spread is taken as at least 0.01,
             // and a note must also be 0.02 above the rest outright
             val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat().coerceAtLeast(0.01f)
             val open = scored.filter { it.first.id !in exclude }.sortedByDescending { it.second }
             val best = open.firstOrNull()?.second ?: return@withLock emptyList()
-            open.filter { (_, s) -> (s - mean) / sd >= 1.5f && s - mean >= 0.02f && s >= best - 0.025f }.take(k).map { (n, s) -> n to (s - mean) / sd }
+            open.filter { (_, s) -> s >= SEARCH_MIN && (s - mean) / sd >= 1.5f && s - mean >= 0.02f && s >= best - 0.025f }.take(k).map { (n, s) -> n to (s - mean) / sd }
         }
     }
 
@@ -309,22 +371,20 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
             val pool = all.filter { it.id != target.id && it.words.isNotBlank() && it.createdAt < target.createdAt }
             if (target.words.isBlank() || pool.isEmpty()) return@withLock emptyList()
             val e = embedderOrNull()
-            if (e != null) {
-                val tv = entryVector(target, e)
-                val scored = pool.map { it to Embedder.cosine(tv, entryVector(it, e)) }
-                val mean = scored.map { it.second }.average().toFloat()
-                val sd = kotlin.math.sqrt(scored.sumOf { ((it.second - mean) * (it.second - mean)).toDouble() } / scored.size).toFloat()
-                // with few notes there is no "usual" to measure against, so they must be close outright
-                val close = if (scored.size < 5) scored.filter { it.second >= 0.86f }
-                    else scored.filter { (it.second - mean) >= maxOf(0.012f, 0.8f * sd) }
-                close.sortedByDescending { it.second }.take(k)
+            val written = all.filter { it.words.isNotBlank() }
+            if (e != null && written.size >= MEANING_FROM) {
+                // against the person's usual note, which every note shares and which says nothing about this one; close
+                // after that, and clearly above how close the others are; when none is, nothing is shown
+                nearByMeaning(entryVector(target, e), pool.map { entryVector(it, e) }, written.map { entryVector(it, e) })
+                    .take(k).map { (i, s) -> pool[i] to s }
             } else {
+                // too few notes for a usual one (or no meaning model): notes that share a third of their themes and moods
                 fun tags(x: com.grungert.nebo.data.Entry) = (Lexicon.themes(x.words) + x.moods + x.themes).toSet()
                 val tt = tags(target)
                 pool.map { x ->
                     val xt = tags(x)
                     x to if (tt.isEmpty() || xt.isEmpty()) 0f else (tt intersect xt).size.toFloat() / (tt union xt).size
-                }.filter { it.second > 0f }.sortedByDescending { it.second }.take(k)
+                }.filter { it.second >= 0.34f }.sortedByDescending { it.second }.take(k)   // a third of the themes and moods shared, at least
             }
         }
     }
@@ -342,7 +402,7 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
         if (notes.size < 2) return@withContext emptyList()
         val groups: List<List<com.grungert.nebo.data.Entry>> = lock.withLock {
             val e = embedderOrNull()
-            if (e == null || notes.size < 4) {
+            if (e == null || notes.size < MEANING_FROM) {
                 // each note joins the thread of its theme that most notes share (not simply its first theme)
                 val counts = notes.flatMap { it.themes }.groupingBy { it }.eachCount()
                 notes.groupBy { n -> n.themes.maxByOrNull { counts[it] ?: 0 } }.filterKeys { it != null }.values.toList()
@@ -351,6 +411,10 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 val v = notes.map { entryVector(it, e) }
                 val n = notes.size
                 val sim = Array(n) { i -> FloatArray(n) { j -> if (i == j) 1f else Embedder.cosine(v[i], v[j]) } }
+                // the same, against the person's usual note: the floor a thread must reach (see SIMILAR_MIN)
+                val usualNote = meanOf(v)
+                val cv = v.map { centred(it, usualNote) }
+                val raw = Array(n) { i -> FloatArray(n) { j -> if (i == j) 1f else Embedder.cosine(cv[i], cv[j]) } }
                 // e5 rates every pair of notes in our language high, and some notes are close to everything;
                 // so each pair is measured against how close those two notes usually are to all the others,
                 // plus a little when they share a theme
@@ -369,9 +433,11 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
                 while (true) {
                     var best = -1f; var bi = -1; var bj = -1
                     for (i in clusters.indices) for (j in i + 1 until clusters.size) {
-                        var sum = 0f
-                        for (a in clusters[i]) for (b in clusters[j]) sum += sim[a][b]
+                        var sum = 0f; var rawSum = 0f
+                        for (a in clusters[i]) for (b in clusters[j]) { sum += sim[a][b]; rawSum += raw[a][b] }
                         val avg = sum / (clusters[i].size * clusters[j].size)
+                        // and close once the usual note is taken off: a thread is never made of notes merely less unlike than the rest
+                        if (rawSum / (clusters[i].size * clusters[j].size) < THREAD_MIN) continue
                         if (avg > best) { best = avg; bi = i; bj = j }
                     }
                     if (bi < 0 || best < bar) break
@@ -417,9 +483,9 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     /** Plain words for how close two notes are. */
     fun closeness(score: Float): String = when {
         !usesMeaning -> if (score >= 0.5f) "iste teme" else "slične teme"
-        // e5 similarities sit high (unrelated notes still score around 0.8), so the bands are narrow
-        score >= 0.915f -> "vrlo blisko"
-        score >= 0.88f -> "blisko"
+        // on the centred similarity (see SIMILAR_MIN): the closest test pairs, tired after work and mother, at 0.39 to 0.46
+        score >= 0.38f -> "vrlo blisko"
+        score >= 0.30f -> "blisko"
         else -> "u istom duhu"
     }
 

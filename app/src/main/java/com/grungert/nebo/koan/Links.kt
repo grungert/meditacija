@@ -12,14 +12,34 @@ data class Thing(val point: String, val label: String)
  * cannot tell which came first, so this says "comes with", never "causes".
  *
  * Small numbers lie easily, so: a link shows only once it has come back ([threshold]: twice while there are few notes,
- * three times after), and "how much more often than chance" only once two things have come together five times; on
- * three notes it reads 6.6 times, which says more about three notes than about a person.
+ * three times after), only when chance would rarely bring the two together that often ([CHANCE]), and "how much more
+ * often than chance" is said only once two things have come together five times; on three notes it reads 6.6 times,
+ * which says more about three notes than about a person.
  *
  * Tried on the 35 test notes on the emulator: two clear clusters came out (an evening worry around "zabrinuto" and tense
  * shoulders, and tiredness at night with the phone), and the time of day was the strongest signal of all.
  */
 object Links {
     const val LIFT_FROM = 5
+    /**
+     * How unlikely chance must make a link before it is shown: two things are linked only when coming together as often
+     * as they did would happen by chance less than once in a hundred, given how often each comes on its own. Small
+     * counts lie easily: two worried notes with tight shoulders in a journal of ten mostly worried notes are no link.
+     */
+    const val CHANCE = 0.01
+
+    /**
+     * The chance of seeing two things together at least [together] times if they had nothing to do with each other: each
+     * in its own share of the [notes], they meet [a]·[b]/[notes] times on average (Poisson).
+     */
+    fun byChance(together: Int, a: Int, b: Int, notes: Int): Double {
+        if (notes == 0) return 1.0
+        val expected = a.toDouble() * b / notes
+        var term = kotlin.math.exp(-expected)   // P(0)
+        var below = 0.0
+        for (k in 0 until together) { below += term; term *= expected / (k + 1) }
+        return (1.0 - below).coerceIn(0.0, 1.0)
+    }
     /** Below this, two things come together hardly more often than chance would bring them. */
     const val MIN_LIFT = 1.2f
     val PART_WHEN = listOf("ujutru", "danju", "uveče", "noću")
@@ -106,9 +126,10 @@ object Links {
         val th = threshold(n)
         // two frequent things meet often by chance alone: once there are enough notes to tell (LIFT_FROM together),
         // a pair that comes together no more often than chance is no link, however many times it was counted
-        val links = pairs.filter { it.value >= th }.map { (k, c) ->
-            Link(k.first, k.second, c, if (c >= LIFT_FROM) c.toFloat() * n / (counts.getValue(k.first) * counts.getValue(k.second)) else null)
-        }.filter { (it.lift ?: Float.MAX_VALUE) >= MIN_LIFT }.sortedWith(compareByDescending<Link> { it.together }.thenBy { it.a.label })
+        val links = pairs.filter { it.value >= th }
+            .filter { (k, c) -> byChance(c, counts.getValue(k.first), counts.getValue(k.second), n) < CHANCE }
+            .map { (k, c) -> Link(k.first, k.second, c, if (c >= LIFT_FROM) c.toFloat() * n / (counts.getValue(k.first) * counts.getValue(k.second)) else null) }
+            .filter { (it.lift ?: Float.MAX_VALUE) >= MIN_LIFT }.sortedWith(compareByDescending<Link> { it.together }.thenBy { it.a.label })
         val pts = notes.map { s -> s.map { it.point }.toSet() }
         val pointPairs = HashMap<Pair<String, String>, Float>()
         for (i in POINTS.indices) for (j in i + 1 until POINTS.size) {
@@ -153,7 +174,7 @@ object Links {
         val counts = all.flatMap { it.first }.groupingBy { it }.eachCount()
         val th = threshold(all.size)
         val with = mine.flatMap { it.first }.filter { it != thing && it.point != thing.point }.groupingBy { it }.eachCount()
-            .filter { it.value >= th }
+            .filter { it.value >= th && byChance(it.value, n, counts.getValue(it.key), all.size) < CHANCE }
             .map { (t, c) -> With(t, c, if (c >= LIFT_FROM) c.toFloat() * all.size / (n * counts.getValue(t)) else null) }
             .filter { (it.lift ?: Float.MAX_VALUE) >= MIN_LIFT }
             .sortedWith(compareByDescending<With> { it.together }.thenBy { it.thing.label })

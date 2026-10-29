@@ -21,6 +21,7 @@ import kotlin.random.Random
  */
 class InsightsRecoveryTest {
     private val rnd = Random(7)
+    private val ctl = Random(11)
     private var id = 0L
     private val start = Calendar.getInstance().apply { clear(); set(2026, Calendar.JULY, 27, 0, 0) }.timeInMillis
     private fun at(day: Int, hour: Int, minute: Int = 0) = start + day * 86_400_000L + hour * 3_600_000L + minute * 60_000L
@@ -47,6 +48,13 @@ class InsightsRecoveryTest {
             // noise: a random mood with a random body sensation, at a random hour
             if (rnd.nextFloat() < 0.35f) note(at(d, 7 + rnd.nextInt(16), rnd.nextInt(50)), listOf(noiseMoods.random(rnd)),
                 if (rnd.nextFloat() < 0.5f) listOf(noiseBody.random(rnd)) else emptyList())
+            // ordinary notes an hour apart with no sit between: a restless hour eases by itself 2 times in 5 (the control)
+            // (drawn from a random of their own, so the rest of the made-up months stays as it was)
+            if (ctl.nextFloat() < 0.4f) {
+                val t = at(d, 15, ctl.nextInt(20))
+                note(t, listOf("nemirno"), kind = "esm")
+                note(t + 3_600_000L, listOf(if (ctl.nextFloat() < 0.4f) "mirno" else "nemirno"), kind = "esm")
+            }
             // sessions with a note before and after: breathing in the evening leaves it lighter 4 times in 5, a walk 2 in 5
             if (rnd.nextFloat() < 0.5f) {
                 val type = if (rnd.nextFloat() < 0.6f) "breath" else "walk"
@@ -95,22 +103,30 @@ class InsightsRecoveryTest {
     @Test
     fun whatHelpsIsFound() {
         val h = WhatHelps.find(sessions, entries)
+        assertTrue(h.controlled)
         assertEquals("breath", h.kinds.first().type)
         val breath = h.kinds.first()
         assertTrue(breath.lighter.toFloat() / breath.count > 0.65f)
+        // breathing beyond what an hour does by itself; walking (lighter 2 in 5, as often as by itself) is no help
+        assertTrue(breath.effect!! > 0.5f)
+        val walk = h.kinds.first { it.type == "walk" }
+        assertTrue(kotlin.math.abs(walk.effect!!) < 0.5f)
+        assertEquals("breath", WhatHelps.suggestion(h))
         report("HELPS", h.kinds.joinToString("\n") { "  ${it.type}: ${it.lighter} od ${it.count}" })
     }
 
     @Test
     fun theSuggestionFitsTheHourAndWhatHelps() {
         val h = WhatHelps.find(sessions, entries)
-        val evening = suggestNow(entries, h, 2)
-        val night = suggestNow(entries, h, 3)
-        val morning = suggestNow(entries, h, 0)
+        // as on the last of the three months (the notes of the last sixty days are what the suggestion reads)
+        val today = at(89, 12)
+        val evening = suggestNow(entries, h, 2, today)
+        val night = suggestNow(entries, h, 3, today)
+        val morning = suggestNow(entries, h, 0, today)
         // the evening's worry, met with what has been shown to help: breathing, not a rule of thumb
         assertEquals("breath", evening.type)
         assertEquals("iz tvojih bilješki i iskustva", evening.basis)
-        assertTrue(evening.why.contains("pomaže 17 od 20"))
+        assertTrue(evening.why.contains("Disanje: lakše nego inače"))
         assertEquals("iz tvojih bilješki i iskustva", night.basis)
         // nothing heavy in the mornings: what helps, from experience
         assertEquals("iz tvog iskustva", morning.basis); assertEquals("breath", morning.type)

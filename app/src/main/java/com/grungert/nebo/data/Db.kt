@@ -96,6 +96,9 @@ enum class Col(vararg val columns: String) {
     STARRED("starred"), POINTS("points"), SESSION("session_id"),
 }
 
+/** The person's answer to an insight: 1 yes, 0.5 partly, 0 no. */
+data class InsightAnswer(val at: Long, val kind: String, val item: String, val answer: Float)
+
 /** A 50-50 reminder: when it came, the minute it led to, and whether it was swiped away. */
 data class FiftyCall(val id: Long, val firedAt: Long, val sessionId: Long?, val dismissed: Boolean)
 
@@ -121,6 +124,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         createFeedback(db)
         db.execSQL("CREATE INDEX sessions_started ON sessions(started_at)")
         createFiftyCalls(db)
+        createInsightAnswers(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -138,7 +142,35 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         }
         if (oldVersion < 7) db.execSQL("ALTER TABLE entries ADD COLUMN follows INTEGER")
         if (oldVersion < 8) createFiftyCalls(db)
+        if (oldVersion < 9) createInsightAnswers(db)
     }
+
+    /**
+     * "Je li ovo tačno?": the person's answer to an insight the app showed (1 yes, 0.5 partly, 0 no), by the kind of
+     * insight and the insight itself, as it was said. The share of "yes" is how far the insights can be trusted.
+     */
+    private fun createInsightAnswers(db: SQLiteDatabase) =
+        db.execSQL("CREATE TABLE IF NOT EXISTS insight_answers(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, item TEXT NOT NULL, answer REAL NOT NULL)")
+
+    /** One answer per insight: a second one replaces the first. */
+    fun answerInsight(kind: String, item: String, answer: Float) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("insight_answers", "kind=? AND item=?", arrayOf(kind, item))
+            db.insert("insight_answers", null, ContentValues().apply { put("at", System.currentTimeMillis()); put("kind", kind); put("item", item); put("answer", answer) })
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    fun insightAnswer(kind: String, item: String): Float? =
+        readableDatabase.rawQuery("SELECT answer FROM insight_answers WHERE kind=? AND item=?", arrayOf(kind, item)).use { c -> if (c.moveToFirst()) c.getFloat(0) else null }
+
+    /** Every answer, oldest first: kind, the insight, the answer and when. */
+    fun insightAnswers(): List<InsightAnswer> =
+        readableDatabase.rawQuery("SELECT * FROM insight_answers ORDER BY at", null).use { c ->
+            generateSequence { if (c.moveToNext()) InsightAnswer(c.long("at"), c.str("kind")!!, c.str("item")!!, c.getFloat(c.getColumnIndexOrThrow("answer"))) else null }.toList()
+        }
 
     /** The 50-50 reminders: when one came, the minute it led to (if any), and whether it was swiped away. */
     private fun createFiftyCalls(db: SQLiteDatabase) =
@@ -391,4 +423,4 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
 }
 
 /** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
-const val SCHEMA = 8
+const val SCHEMA = 9

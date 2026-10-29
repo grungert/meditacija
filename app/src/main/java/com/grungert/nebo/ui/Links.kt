@@ -250,7 +250,7 @@ fun FocusScreen(sc: Screen.Focus, go: (Screen) -> Unit) {
                 if (f.with.isEmpty()) Text("Još ništa ne dolazi uz ovo dovoljno često. Veza se pokaže kad se ponovi bar ${Links.threshold(all?.size ?: 0)} puta.",
                     style = SmallStyle.copy(shadow = null))
                 else FocusOrbit(f, { t -> thing = t; scope.launch { scroll.animateScrollTo(0) } }, Modifier.fillMaxWidth().height(300.dp))
-                f.sentence()?.let { Text(it, style = ReadStyle) }
+                f.sentence()?.let { Text(it, style = ReadStyle); if (f.with.isNotEmpty()) TrueAsk("link", it) }
                 f.with.firstOrNull { it.lift != null }?.let { w ->
                     Text("„${w.thing.label.trim('„', '“')}“ dolazi uz ovo %.1f puta češće nego inače.".format(w.lift).replace('.', ','),
                         style = SmallStyle.copy(shadow = null))

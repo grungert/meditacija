@@ -36,6 +36,7 @@ class WhatHelpsTest {
     fun theKindThatHelpsMostComesFirst() {
         repeat(6) { sit("breath", it + 1, 8, "nemirno", if (it < 5) "mirno" else "nemirno") }
         repeat(5) { sit("silence", it + 10, 8, "tužno", if (it < 2) "mirno" else "tužno") }
+        repeat(8) { drift(20 + it, eased = it < 2) }   // the control: heavy hours ease by themselves 2 times in 8
         val f = WhatHelps.find(sessions, entries)
         assertEquals(listOf("breath", "silence"), f.kinds.map { it.type })
         assertEquals(5, f.kinds[0].lighter); assertEquals(6, f.kinds[0].count)
@@ -46,6 +47,7 @@ class WhatHelpsTest {
     fun aTimeOfDayThatClearlyHelpsMore() {
         repeat(4) { sit("walk", it + 1, 19, "nemirno", "mirno") }
         repeat(4) { sit("walk", it + 10, 8, "nemirno", "nemirno") }
+        repeat(8) { drift(20 + it, eased = it < 2) }
         val f = WhatHelps.find(sessions, entries)
         assertEquals(Triple("walk", 2, 0), f.partFor)   // evening better than morning
     }
@@ -115,5 +117,50 @@ class WhatHelpsTest {
         entries += Entry(id = 6003, createdAt = at(6, 9) + 30 * 60_000, kind = "note", moods = listOf("mirno"))
         val ps = WhatHelps.pairs(sessions, entries)
         assertEquals(emptyList<String>(), ps.map { it.type })   // breath has no note after it before the walk; the walk none before it after the breath
+    }
+
+    /** Ordinary pairs of notes an hour apart: [eased] of them lighter by themselves, the rest unchanged. */
+    private fun drift(day: Int, eased: Boolean) {
+        entries += Entry(id = ++id, createdAt = at(day, 15), kind = "esm", moods = listOf("nemirno"))
+        entries += Entry(id = ++id, createdAt = at(day, 16), kind = "esm", moods = listOf(if (eased) "mirno" else "nemirno"))
+    }
+
+    @Test
+    fun withoutAControlNothingIsClaimed() {
+        repeat(6) { sit("breath", 10 + it, 8, "nemirno", "mirno") }
+        val f = WhatHelps.find(sessions, entries)
+        assertTrue(!f.controlled)
+        assertNull(WhatHelps.suggestion(f))
+        assertNull(f.kinds.single().beyond)
+    }
+
+    @Test
+    fun whatEasesByItselfIsNoHelp() {
+        // restless hours ease by themselves every time: a sit that does the same adds nothing
+        repeat(8) { drift(1 + it, eased = true) }
+        repeat(6) { sit("breath", 10 + it, 8, "nemirno", "mirno") }
+        val f = WhatHelps.find(sessions, entries)
+        assertTrue(f.controlled)
+        assertEquals(0, f.kinds.single().beyond)
+        assertNull(WhatHelps.suggestion(f))
+    }
+
+    @Test
+    fun aSitThatHelpsMoreThanTimeIsFound() {
+        // restless hours ease by themselves 2 times in 8; after breathing, 6 times in 6
+        repeat(8) { drift(1 + it, eased = it < 2) }
+        repeat(6) { sit("breath", 10 + it, 8, "nemirno", "mirno") }
+        val f = WhatHelps.find(sessions, entries)
+        assertEquals(6, f.kinds.single().beyond)
+        assertEquals(1.5f, f.kinds.single().effect!!, 0.01f)
+        assertEquals("breath", WhatHelps.suggestion(f))
+    }
+
+    @Test
+    fun aSitBetweenTwoNotesMakesThemNoControl() {
+        entries += Entry(id = 7000, createdAt = at(7, 15), kind = "esm", moods = listOf("nemirno"))
+        sessions += Session(id = 7001, startedAt = at(7, 15) + 20 * 60_000, type = "breath", plannedSec = 600, pattern = "46", walk = false, actualSec = 600)
+        entries += Entry(id = 7002, createdAt = at(7, 16), kind = "esm", moods = listOf("mirno"))
+        assertEquals(0, WhatHelps.drifts(sessions, entries).size)
     }
 }

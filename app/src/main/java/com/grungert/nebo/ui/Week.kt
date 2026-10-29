@@ -46,10 +46,31 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
+/** How a theme compares with the week before, by the share of notes that hold it. */
+enum class ThemeChange(val words: String) { NEW("novo"), MORE("više nego prošle"), LESS("manje nego prošle"), SAME("kao prošle") }
+
+/**
+ * A theme held by [n] of this week's [notes] notes and [before] of last week's [notesBefore]. Compared by share, not by
+ * count: a week with twice the notes would otherwise show everything as "more". A change is said only when it is
+ * clear, a share at least 15 points apart and at least two notes away from what last week's share would give; one
+ * note more or less is no change. Null when there is nothing to compare with.
+ */
+fun themeChange(n: Int, notes: Int, before: Int, notesBefore: Int): ThemeChange? {
+    if (notes == 0 || notesBefore == 0) return null
+    if (before == 0) return if (n >= 2) ThemeChange.NEW else null
+    val share = n.toFloat() / notes; val shareBefore = before.toFloat() / notesBefore
+    val expected = shareBefore * notes
+    return when {
+        share - shareBefore >= 0.15f && n - expected >= 2f -> ThemeChange.MORE
+        shareBefore - share >= 0.15f && expected - n >= 2f -> ThemeChange.LESS
+        else -> ThemeChange.SAME
+    }
+}
+
 private class WeekData(
     val reflection: Entry?,
     val range: String,
-    val themes: List<Triple<String, Int, Int>>,      // theme, this week, last week
+    val themes: List<Triple<String, Int, ThemeChange?>>,      // theme, notes this week, how it compares with last week
     val quotes: List<Pair<String, Entry>>,           // theme, the note that says it best
     val notesByPart: List<Int>,
     val moods: List<Pair<String, Int>>,
@@ -107,7 +128,8 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
         val count = HashMap<String, Int>(); val prev = HashMap<String, Int>()
         thisWeek.forEach { e -> themesOf(e).forEach { count[it] = (count[it] ?: 0) + 1 } }
         lastWeek.forEach { e -> themesOf(e).forEach { prev[it] = (prev[it] ?: 0) + 1 } }
-        val themes = count.entries.sortedByDescending { it.value }.take(5).map { Triple(it.key, it.value, prev[it.key] ?: 0) }
+        val themes = count.entries.sortedByDescending { it.value }.take(5)
+            .map { Triple(it.key, it.value, themeChange(it.value, thisWeek.size, prev[it.key] ?: 0, lastWeek.size)) }
         val quotes = themes.take(3).mapNotNull { (t, _, _) ->
             thisWeek.filter { t in themesOf(it) && it.words.length in 12..400 }.maxByOrNull { it.words.length.coerceAtMost(160) }?.let { t to it }
         }.distinctBy { it.second.id }
@@ -161,16 +183,13 @@ fun WeekScreen(sc: Screen.Week, go: (Screen) -> Unit) {
             Panel {
                 SectionLabel("Šta se vraćalo")
                 if (d.themes.isEmpty()) Text("Ove sedmice nema dovoljno zapisa da se vidi šta se ponavlja. I to je u redu.", style = BodyStyle)
-                for ((t, n, before) in d.themes) Row(verticalAlignment = Alignment.CenterVertically) {
+                for ((t, n, change) in d.themes) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(THEME_NAMES[t] ?: t, style = BodyStyle.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.weight(1f))
                     Text("$n×", style = BodyStyle)
-                    Text(when {
-                        before == 0 -> "  novo"
-                        n > before -> "  više nego prošle"
-                        n < before -> "  manje nego prošle"
-                        else -> "  kao prošle"
-                    }, style = SmallStyle.copy(color = if (before == 0) Ink.accent else Ink.soft))
+                    if (change != null) Text("  " + change.words, style = SmallStyle.copy(color = if (change == ThemeChange.NEW) Ink.accent else Ink.soft))
                 }
+                // does this look back say the week as it was? kept with the week and what it said
+                if (d.themes.isNotEmpty()) TrueAsk("week", d.range + ": " + d.themes.joinToString(", ") { (t, n, c) -> "${THEME_NAMES[t] ?: t} $n×" + (c?.let { " (${it.words})" } ?: "") })
             }
 
             if (d.habits.isNotEmpty() || d.time != null) Panel {

@@ -39,6 +39,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.grungert.nebo.app
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -450,5 +452,31 @@ fun EmptyState(icon: NeboIcon, text: String, action: String? = null, onAction: (
         if (action != null && onAction != null) Text(action, style = SmallStyle.copy(fontWeight = FontWeight.ExtraBold, color = Ink.ink, shadow = null),
             modifier = Modifier.tap(action, shape = RoundedCornerShape(14.dp), onClick = onAction).background(Ink.accent, RoundedCornerShape(14.dp))
                 .padding(horizontal = 16.dp, vertical = 9.dp))
+    }
+}
+
+/**
+ * "Je li ovo tačno?" under an insight: yes, partly or no, kept on the phone with the insight as it was said ([item]),
+ * so it can be seen how far the insights are right. Answered, it shows the answer, and another tap changes it.
+ */
+@androidx.compose.runtime.Composable
+fun TrueAsk(kind: String, item: String) {
+    val app = androidx.compose.ui.platform.LocalContext.current.app
+    var answer by remember(kind, item) { mutableStateOf<Float?>(null) }
+    androidx.compose.runtime.LaunchedEffect(kind, item) {
+        answer = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { app.db.insightAnswer(kind, item) }
+    }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(if (answer == null) "Je li ovo tačno?" else "Hvala.", style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, shadow = null),
+            modifier = Modifier.weight(1f))
+        for ((label, v) in listOf("da" to 1f, "djelimično" to 0.5f, "ne" to 0f)) {
+            val on = answer == v
+            Text(label, style = SmallStyle.copy(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (on) Ink.ink else Ink.text, shadow = null),
+                modifier = Modifier.tap("Je li tačno: $label", shape = RoundedCornerShape(12.dp)) {
+                    answer = v
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.db.answerInsight(kind, item, v) }
+                }.background(if (on) Ink.accent else Ink.text.copy(alpha = 0.07f), RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 5.dp))
+        }
     }
 }

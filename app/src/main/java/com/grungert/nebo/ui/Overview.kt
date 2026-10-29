@@ -549,14 +549,21 @@ private fun HelpsCard(d: StatsData, onSetup: () -> Unit) {
         val h = d.helps
         if (h != null && h.kinds.isNotEmpty()) {
             val top = h.kinds.first()
-            Text("Poslije ${AFTER_TYPE[top.type] ?: top.type} si bio lakše ${top.lighter} od ${top.count} puta.", style = ReadStyle.copy(fontSize = 21.sp, lineHeight = 29.sp))
+            // with a control: lighter than things get by themselves; without one, only what was seen, and what is missing
+            val shown = { k: com.grungert.nebo.koan.WhatHelps.Kind -> if (h.controlled) k.beyond ?: k.lighter else k.lighter }
+            val claim = if (h.controlled) "Poslije ${AFTER_TYPE[top.type] ?: top.type} ti je bilo lakše nego inače za isto vrijeme ${shown(top)} od ${top.count} puta."
+                else "Poslije ${AFTER_TYPE[top.type] ?: top.type} si bio lakše ${top.lighter} od ${top.count} puta."
+            Text(claim, style = ReadStyle.copy(fontSize = 21.sp, lineHeight = 29.sp))
+            TrueAsk("helps", claim)
             for (kind in h.kinds.take(4)) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row {
                     Text(com.grungert.nebo.data.TYPE_LABEL[kind.type] ?: kind.type, style = BodyStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold, shadow = null), modifier = Modifier.weight(1f))
-                    Text("${kind.lighter} od ${kind.count}", style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
+                    Text("${shown(kind)} od ${kind.count}", style = SmallStyle.copy(fontWeight = FontWeight.Bold, shadow = null))
                 }
-                Segments(kind.lighter, kind.count)
+                Segments(shown(kind), kind.count)
             }
+            if (!h.controlled) Text("Da li je to od sesije, ili bi i samo prošlo, pokazaće obična zapažanja tokom dana, bez sesije između: do sada ${h.drifts} od potrebnih ${com.grungert.nebo.koan.WhatHelps.ENOUGH_DRIFTS} parova.",
+                style = SmallStyle.copy(shadow = null))
             h.partFor?.let { (t, better, worse) ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Ink.text.copy(alpha = 0.06f)).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -772,7 +779,10 @@ private fun FocusCard(w: Links.Web, seen: List<Pair<Set<com.grungert.nebo.koan.T
         }
         if (foci.all { it.with.isEmpty() }) Text("Uz ovo još ništa ne dolazi dovoljno često.", style = SmallStyle.copy(shadow = null))
         else FocusMany(foci, { toggle(it) }, Modifier.fillMaxWidth().height(if (foci.size > 1) 320.dp else 280.dp))
-        for (f in foci) f.sentence()?.let { Text(it, style = ReadStyle.copy(fontSize = if (foci.size > 1) 17.sp else 19.sp, lineHeight = if (foci.size > 1) 24.sp else 27.sp)) }
+        for (f in foci) f.sentence()?.let {
+            Text(it, style = ReadStyle.copy(fontSize = if (foci.size > 1) 17.sp else 19.sp, lineHeight = if (foci.size > 1) 24.sp else 27.sp))
+            if (f.with.isNotEmpty()) TrueAsk("link", it)
+        }
         if (foci.size > 1) Text("Dodirni pojam oko njih da ga dodaš; dodirni onaj u sredini da ga skloniš.", style = SmallStyle.copy(fontSize = 12.sp, shadow = null))
         GlassButton("Otvori „${chosen.last().label.trim('„', '“')}“", { onOpen(chosen.last()) }, Modifier.fillMaxWidth(), icon = NeboIcon.Forward)
     }

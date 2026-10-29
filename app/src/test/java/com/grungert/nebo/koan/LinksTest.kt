@@ -16,6 +16,9 @@ class LinksTest {
     private fun note(day: Int, hour: Int, moods: List<String>, body: List<String> = emptyList(), urges: List<String> = emptyList(), text: String = "") =
         Entry(id = ++id, createdAt = at(day, hour), kind = "note", text = text, moods = moods, points = FourPoints("", body, urges))
 
+    /** Notes of calm mornings with nothing else in them: the rest of a journal, against which a link must stand out. */
+    private fun calm(k: Int) = List(k) { note(10 + it, 8, listOf("mirno")) }
+
     private val worried = Thing(FourPointsReader.EMOTIONS, "zabrinuto")
     private val shoulders = Thing(FourPointsReader.BODY, "napeta ramena")
     private val phone = Thing(FourPointsReader.URGES, "da uzmem telefon")
@@ -26,7 +29,7 @@ class LinksTest {
             note(1, 20, listOf("zabrinuto"), listOf("napeta ramena")),
             note(2, 20, listOf("zabrinuto"), listOf("napeta ramena")),
             note(3, 23, listOf("umorno"), urges = listOf("da uzmem telefon")),
-        )
+        ) + calm(30)
         val w = Links.web(notes)
         assertEquals(2, w.threshold)
         assertEquals(1, w.links.size)
@@ -56,17 +59,17 @@ class LinksTest {
 
     @Test
     fun howMuchMoreThanChanceOnlyFromFiveTogether() {
-        val few = List(4) { note(it + 1, 20, listOf("zabrinuto"), listOf("napeta ramena")) } + List(4) { note(it + 10, 9, listOf("mirno")) }
+        val few = List(4) { note(it + 1, 20, listOf("zabrinuto"), listOf("napeta ramena")) } + calm(16)
         assertNull(Links.web(few).links.single().lift)
-        val many = List(5) { note(it + 1, 20, listOf("zabrinuto"), listOf("napeta ramena")) } + List(5) { note(it + 10, 9, listOf("mirno")) }
+        val many = List(5) { note(it + 1, 20, listOf("zabrinuto"), listOf("napeta ramena")) } + calm(15)
         val l = Links.web(many).links.single()
-        // 5 together, each in 5 of 10 notes: twice as often as by chance
-        assertEquals(2f, l.lift!!, 0.001f)
+        // 5 together, each in 5 of 20 notes: four times as often as by chance
+        assertEquals(4f, l.lift!!, 0.001f)
     }
 
     @Test
     fun aHabitOfMindIsAThing() {
-        val notes = List(2) { note(it + 1, 21, listOf("zabrinuto"), text = "Šta ako ne stignem do petka") }
+        val notes = List(2) { note(it + 1, 21, listOf("zabrinuto"), text = "Šta ako ne stignem do petka") } + calm(30)
         val w = Links.web(notes)
         assertEquals(Thing(FourPointsReader.THOUGHTS, "„šta ako“"), w.links.single().let { if (it.a.point == FourPointsReader.THOUGHTS) it.a else it.b })
         val f = Links.focus(notes, Thing(FourPointsReader.THOUGHTS, "„šta ako“"))
@@ -76,12 +79,11 @@ class LinksTest {
     @Test
     fun theFocusSaysWhatComesWithItAndWhen() {
         val notes = listOf(
-            note(1, 20, listOf("zabrinuto"), listOf("napeta ramena")),
+            note(1, 20, listOf("zabrinuto"), listOf("napeta ramena", "stezanje u grudima")),
             note(2, 21, listOf("zabrinuto"), listOf("napeta ramena", "stezanje u grudima")),
             note(3, 19, listOf("zabrinuto"), listOf("napeta ramena", "stezanje u grudima")),
             note(4, 20, listOf("zabrinuto")),
-            note(5, 9, listOf("mirno")),
-        )
+        ) + calm(30)
         val f = Links.focus(notes, worried)
         assertEquals(4, f.notes)
         assertEquals(listOf("napeta ramena", "stezanje u grudima"), f.with.map { it.thing.label })
@@ -108,5 +110,24 @@ class LinksTest {
         assertEquals(0.5f, w.pointPairs.getValue(FourPointsReader.EMOTIONS to FourPointsReader.BODY), 0.001f)
         assertEquals(1f, w.pointShare.getValue(FourPointsReader.EMOTIONS), 0.001f)
         assertNotNull(w.pointPairs[FourPointsReader.THOUGHTS to FourPointsReader.URGES])
+    }
+
+    @Test
+    fun twoFrequentThingsTogetherByChanceAreNoLink() {
+        // nearly every note is worried: the shoulders coming with worry twice is what chance brings
+        val notes = listOf(
+            note(1, 20, listOf("zabrinuto"), listOf("napeta ramena")),
+            note(2, 20, listOf("zabrinuto"), listOf("napeta ramena")),
+        ) + List(6) { note(10 + it, 20, listOf("zabrinuto")) } + listOf(note(20, 9, listOf("mirno"), listOf("napeta ramena")))
+        assertTrue(Links.web(notes).links.isEmpty())
+        assertTrue(Links.focus(notes, worried).with.isEmpty())
+    }
+
+    @Test
+    fun theChanceOfMeetingIsPoisson() {
+        // each in 2 of 40 notes: they meet 0.1 times by chance, twice is rare; each in 20 of 40: they meet 10 times
+        assertTrue(Links.byChance(2, 2, 2, 40) < 0.01)
+        assertTrue(Links.byChance(2, 20, 20, 40) > 0.99)
+        assertEquals(1.0, Links.byChance(0, 5, 5, 40), 1e-9)
     }
 }
