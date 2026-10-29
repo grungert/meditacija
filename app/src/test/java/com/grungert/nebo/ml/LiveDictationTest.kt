@@ -19,10 +19,20 @@ class LiveDictationTest {
         val heard = ArrayList<Int>()
         val d = LiveDictation(CoroutineScope(Dispatchers.Default)) { pcm -> heard += pcm.size / tenth; "dio${heard.size}" }
         // quiet before speaking is not kept; two sentences with a breath between them; a last one cut by the stop
-        for (c in quiet(5) + voice(20) + quiet(8) + voice(15) + quiet(7) + voice(12)) d.feed(c, c.size)
+        for (c in quiet(5) + voice(45) + quiet(8) + voice(42) + quiet(7) + voice(12)) d.feed(c, c.size)
         val text = d.finish()
         assertEquals("dio1 dio2 dio3", text)
-        assertEquals(listOf(26, 21, 12), heard)   // each piece with the quiet that ended it
+        assertEquals(listOf(51, 48, 12), heard)   // each piece with the quiet that ended it
+    }
+
+    @Test
+    fun aBreathTooSoonDoesNotCut() = runBlocking {
+        val heard = ArrayList<Int>()
+        val d = LiveDictation(CoroutineScope(Dispatchers.Default)) { pcm -> heard += pcm.size / tenth; "x" }
+        // two seconds, a breath, two more: too little to tell the language from, so one piece
+        for (c in voice(20) + quiet(8) + voice(20)) d.feed(c, c.size)
+        d.finish()
+        assertEquals(listOf(48), heard)
     }
 
     @Test

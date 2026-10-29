@@ -1,5 +1,7 @@
 package com.grungert.nebo.widget
 
+import kotlinx.coroutines.sync.withLock
+
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -42,9 +44,16 @@ class NeboWidget : AppWidgetProvider() {
          * the week's minutes and its seven days. Read and drawn off the main thread; called on the system's schedule,
          * when the app goes to the background, and whenever the week koan may have changed.
          */
+        private val wanted = java.util.concurrent.atomic.AtomicBoolean(false)
+        private val drawing = kotlinx.coroutines.sync.Mutex()
+
         fun refresh(context: Context) {
             val app = context.applicationContext as NeboApp
-            app.scope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { draw(context.applicationContext) } }
+            // asks that come together (the app opening, a koan carried, the app left) draw it once, and once more at most
+            if (!wanted.compareAndSet(false, true)) return
+            app.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                drawing.withLock { wanted.set(false); runCatching { draw(context.applicationContext) } }
+            }
         }
 
         private fun draw(context: Context) {

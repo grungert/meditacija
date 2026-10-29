@@ -166,7 +166,7 @@ data class Pick(val item: KoanItem?, val reason: String, val distress: Boolean =
 /** Notes that keep returning to the same thing, oldest first. */
 data class InsightThread(val entries: List<com.grungert.nebo.data.Entry>, val theme: String?, val title: String)
 
-class Recommender(private val db: Db, private val models: ModelStore, private val library: KoanLibrary) {
+class Recommender(private val db: Db, private val models: ModelStore, private val library: KoanLibrary, private val settings: com.grungert.nebo.data.Settings) {
     private val lock = Mutex()
     private var embedder: Embedder? = null
     // the meaning model takes over a hundred megabytes: it is opened when a note needs reading and let go two minutes
@@ -261,12 +261,20 @@ class Recommender(private val db: Db, private val models: ModelStore, private va
     suspend fun tagNotes(force: Boolean = false) = withContext(Dispatchers.Default) {
         // the model is held one note at a time, so a save or a search waiting for it is never stuck behind the whole
         // journal; each note is read again just before, so the themes follow its words as they are now
+        // a note with no theme to be found is remembered as read, so it is not read (and written) again on every start
+        val seen = if (force) HashSet() else settings.themeless.toHashSet()
+        val before = seen.toSet()
         for (id in db.entries().map { it.id }) lock.withLock {
             val x = db.entry(id) ?: return@withLock
             if (!force && x.themes.isNotEmpty()) return@withLock
             if (x.words.isBlank() && x.moods.isEmpty()) return@withLock
-            db.updateEntry(x.copy(themes = themesFor(x, embedderOrNull())), com.grungert.nebo.data.Col.THEMES)
+            val key = "${x.id}:${(x.words + x.moods).hashCode()}"
+            if (!force && key in seen) return@withLock
+            val themes = themesFor(x, embedderOrNull())
+            if (themes != x.themes) db.updateEntry(x.copy(themes = themes), com.grungert.nebo.data.Col.THEMES)
+            if (themes.isEmpty()) seen += key
         }
+        if (seen != before) settings.themeless = seen
     }
 
     private fun itemText(it: KoanItem) = it.whenHelps + " " + it.themes.joinToString(" ") { t -> THEME_NAMES[t] ?: t }

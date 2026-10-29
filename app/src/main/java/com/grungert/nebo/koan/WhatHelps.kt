@@ -38,13 +38,14 @@ object WhatHelps {
 
     fun pairs(sessions: List<Session>, entries: List<Entry>): List<Shift> {
         val bySession = entries.filter { it.sessionId != null }.groupBy { it.sessionId!! }
+        // the notes that can stand for "before", each with its weight, read once (not once for every session)
         val loose = entries.filter { it.sessionId == null && it.kind !in NOT_BEFORE }.sortedBy { it.createdAt }
+            .mapNotNull { e -> weight(moodsOf(e))?.let { e.createdAt to it } }
         return sessions.mapNotNull { s ->
             val notes = bySession[s.id] ?: return@mapNotNull null
             val after = weight(notes.filter { it.kind == "after" }.flatMap { moodsOf(it) }) ?: return@mapNotNull null
             val asked = weight(notes.filter { it.kind == "before" }.flatMap { moodsOf(it) })
-            val before = asked ?: loose.lastOrNull { it.createdAt in (s.startedAt - BEFORE_WINDOW)..s.startedAt && tellsHow(it) }
-                ?.let { weight(moodsOf(it)) } ?: return@mapNotNull null
+            val before = asked ?: loose.lastOrNull { it.first in (s.startedAt - BEFORE_WINDOW)..s.startedAt }?.second ?: return@mapNotNull null
             Shift(s.type, part(s.startedAt), after - before)
         }
     }

@@ -77,6 +77,7 @@ object FourPointsReader {
      * label is found when every word of it (of three letters or more) is in the text, in any of its forms ("bol u leđima" in "leđa me bole").
      */
     @Volatile var custom: Map<String, List<String>> = emptyMap()
+        set(v) { field = v; readings.clear() }   // what was read before may now hold more
 
     /** The stems of a label's longer words: their start, so the endings of our language do not matter. */
     fun stemsOf(label: String) = label.lowercase().split(Regex("[^\\p{L}]+")).filter { it.length >= 3 }.map { w -> w.take(maxOf(3, w.length - 3)) + "*" }
@@ -86,6 +87,9 @@ object FourPointsReader {
         return Regex("(?<![\\p{L}])$body" + (if (stem.endsWith("*")) "\\p{L}*" else "") + "(?![\\p{L}])", RegexOption.IGNORE_CASE)
     }
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+    // a note's words are read once, not on every screen that looks at them: hundreds of patterns over every note added up
+    // to seconds as the app opened
+    private val readings = java.util.concurrent.ConcurrentHashMap<String, Reading>()
 
     /** Words that turn what follows around: "nisam ljut", "ne brinem", "nije me strah", "bez straha". */
     private val NEGATIONS = setOf("ne", "nisam", "nije", "nismo", "niste", "nisu", "nisi", "nimalo", "bez", "ni")
@@ -124,6 +128,11 @@ object FourPointsReader {
      * using the meaning model when it is on the phone.
      */
     fun read(text: String, byMeaning: ((String) -> String?)? = null): Reading {
+        if (byMeaning == null) readings[text]?.let { return it }
+        return readNow(text, byMeaning).also { if (byMeaning == null) { if (readings.size > 3000) readings.clear(); readings[text] = it } }
+    }
+
+    private fun readNow(text: String, byMeaning: ((String) -> String?)?): Reading {
         val cued = cueIn(text)
         val body = BODY_LABELS.filter { has(text, it.second, negatable = true) }.map { it.first }.toMutableList()
         val urges = URGE_LABELS.filter { has(text, it.second, cued = cued) }.map { it.first }.toMutableList()

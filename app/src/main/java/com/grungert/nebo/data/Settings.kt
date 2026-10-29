@@ -73,6 +73,11 @@ class Settings(private val context: Context) {
         get() = p.getBoolean("frostMelted", false)
         set(v) = p.edit { putBoolean("frostMelted", v) }
 
+    /** Notes already read for themes that had none, as "id:hash of the words", so they are not read again on every start. */
+    var themeless: Set<String>
+        get() = p.getStringSet("themeless", emptySet())!!.toSet()
+        set(v) = p.edit { putStringSet("themeless", v) }
+
     /** Thunder and lightning far off in the heaviest rain. */
     var thunder: Boolean
         get() = p.getBoolean("thunder", true)

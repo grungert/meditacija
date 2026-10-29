@@ -17,9 +17,11 @@ internal object OrtNative {
  * multilingual-e5-small on ONNX Runtime: a sentence in, a 384-number "meaning" out.
  * Comparing two notes, both sides use the "query: " prefix, which e5 recommends for symmetric similarity;
  * searching, the notes are embedded as "passage: ", which ranked the right notes higher on our test set.
+ * It works in the background (themes, search, the koan library), so it takes two cores, not four: with four it held
+ * the whole phone up as the app opened.
  */
 class Embedder(modelFile: File, tokenizerFile: File) : AutoCloseable {
-    private val handle: Long = OrtNative.open(modelFile.absolutePath, 4).also { check(it != 0L) { "the meaning model did not open" } }
+    private val handle: Long = OrtNative.open(modelFile.absolutePath, 2).also { check(it != 0L) { "the meaning model did not open" } }
     private val tokenizer = SentencePieceUnigram.load(tokenizerFile)
 
     fun embed(text: String, prefix: String = "query: "): FloatArray {

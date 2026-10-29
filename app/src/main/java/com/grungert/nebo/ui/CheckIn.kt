@@ -179,10 +179,14 @@ fun CheckInScreen(sc: Screen.CheckIn, host: SkyHost, go: (Screen) -> Unit) {
                 heard = null
                 model = app.transcriber.readyModel()
                 if (model != null) {
-                    // followed while speaking: only the last piece is left to hear
-                    expected = (if (dict != null) 1.5f else app.transcriber.estimateSeconds(dur)).coerceAtLeast(1f); waited = 0f
+                    // the words shown while speaking were a draft, read piece by piece; the whole take is read again in one
+                    // go, where the model has enough of the voice to know the language (short pieces came back in Slovak)
+                    expected = app.transcriber.estimateSeconds(dur).coerceAtLeast(1f); waited = 0f
                     transcribing = true
-                    val job = app.scope.async { if (dict != null) dict.finish().also { shown?.cancel() } else app.transcriber.transcribeNow(f) }
+                    val job = app.scope.async {
+                        if (dict != null) { dict.cancel(); shown?.cancel() }
+                        app.transcriber.transcribeNow(f)
+                    }
                     live = job
                     val t = job.await()
                     transcribing = false

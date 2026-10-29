@@ -1045,9 +1045,10 @@ private fun Tiles(d: StatsData) {
             Tile("TALAS", NeboIcon.Wave, "%.0f → %.0f".format(before, after), "jačina poriva prije i poslije, $all ${plural(all, "talas", "talasa", "talasa")}", Modifier.weight(1f))
         }
         Tile("POZIVI", NeboIcon.Bell, if (d.promptsFired == 0) "—" else "${d.promptsAnswered} od ${d.promptsFired}",
-            if (d.promptsFired == 0) "pozivi su isključeni ili još nijesu stigli"
-            else if (d.promptsDismissed > 0) "poziva s odgovorom; ${d.promptsDismissed} sklonjeno, a propušten je samo propušten"
-            else "poziva s odgovorom; propušten je samo propušten", Modifier.weight(1f))
+            // the questions „Kako si sada?“ that came during the day, and how many were answered; one let go is no failure
+            if (d.promptsFired == 0) "pitanja „Kako si sada?“ tokom dana su isključena ili još nijesu stigla"
+            else if (d.promptsDismissed > 0) "odgovora na „Kako si sada?“ tokom dana; ${d.promptsDismissed} sklonjeno. Propuštena ne smetaju."
+            else "odgovora na „Kako si sada?“ tokom dana. Propuštena ne smetaju.", Modifier.weight(1f))
     }
 }
 

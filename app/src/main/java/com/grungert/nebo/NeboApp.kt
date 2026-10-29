@@ -39,7 +39,7 @@ class NeboApp : Application() {
         models = ModelStore(this, settings)
         transcriber = Transcriber(db, models, settings)
         library = KoanLibrary(this)
-        recommender = Recommender(db, models, library)
+        recommender = Recommender(db, models, library, settings)
         Esm.ensureChannel(this)
         scope.launch {
             Esm.refresh(this@NeboApp)
@@ -74,7 +74,9 @@ class NeboApp : Application() {
     }
 
     private suspend fun warm() {
-        com.grungert.nebo.widget.NeboWidget.refresh(this)   // the day of the week koan moves on
+        // after the first screen has drawn: the opening is the phone's busiest moment, and none of this is needed for it.
+        // (The widget is not drawn here: it is drawn as the app is left, the only time it can be seen.)
+        kotlinx.coroutines.delay(4000)
         recommender.warmUp()
         // again for every note when the way of finding themes changed, or when the meaning model has arrived since
         val meaning = recommender.usesMeaning

@@ -12,8 +12,10 @@ import kotlin.math.sqrt
  * turned into text as soon as it ends, and the text grows on the screen piece by piece. When the recording stops, only
  * the last piece is left to hear, so the whole text is there almost at once.
  *
- * Pieces are cut where the voice rests: after at least a second of speech, at the first 0.6 s quiet; a piece never
- * runs past 15 s even without a pause. "Quiet" follows the room: a little above the quietest it has been.
+ * Pieces are cut where the voice rests: after at least four seconds of speech, at the first 0.6 s quiet; a piece never
+ * runs past 15 s even without a pause. "Quiet" follows the room: a little above the quietest it has been. Shorter
+ * pieces came back in the wrong language: a model that finds the language itself needs a few sentences' worth to
+ * tell ours from Slovak or English. What is shown is a first draft; the whole take is read again at the end.
  */
 class LiveDictation(private val scope: CoroutineScope, private val hear: suspend (FloatArray) -> String?) {
     private val _text = MutableStateFlow("")
@@ -46,7 +48,7 @@ class LiveDictation(private val scope: CoroutineScope, private val hear: suspend
         if (buf.isEmpty() && !voiced) return            // quiet before speaking is not kept
         buf += f
         if (voiced) { speech++; quiet = 0 } else quiet++
-        if ((speech >= 10 && quiet >= 6) || buf.size >= 150) cut()
+        if ((speech >= 40 && quiet >= 6) || buf.size >= 150) cut()
     }
 
     private fun cut() {
