@@ -18,6 +18,11 @@ class Settings(private val context: Context) {
         get() = p.getString("pattern", "46")!!
         set(v) = p.edit { putString("pattern", v) }
     /** "clock", "cycle" or a fixed hour such as "18.9". */
+    /** How the screens look: "sky" follows the sun on the sky (light by day, dark by night), or always "light" or "dark". */
+    var themeMode: String
+        get() = p.getString("themeMode", "sky")!!
+        set(v) = p.edit { putString("themeMode", v) }
+
     var timeMode: String
         get() = p.getString("timeMode", "clock")!!
         set(v) = p.edit { putString("timeMode", v) }

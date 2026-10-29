@@ -93,6 +93,8 @@ class SkyHost(val engine: BreathEngine, val day: DayClock) {
     var skyDrawn by mutableStateOf(false)
     /** Whether the sun is up behind the screens, with some slack so dusk does not flicker between the two looks. */
     var sunUp by mutableStateOf(false)
+    /** The look chosen in the settings: "sky", "light" or "dark" (see Settings.themeMode). */
+    var theme by mutableStateOf("sky")
 
     fun applyWeatherSettings(seasonMode: String, weatherMode: String) {
         season = com.grungert.nebo.sky.Seasons.season(seasonMode)
@@ -209,7 +211,7 @@ class MainActivity : ComponentActivity() {
         val host = remember {
             val reduced = SysSettings.Global.getFloat(contentResolver, SysSettings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
             SkyHost(BreathEngine(patternById(s.pattern)).apply { paced = false; reducedMotion = reduced }, DayClock(s.timeMode))
-                .also { it.applyWeatherSettings(s.seasonMode, s.weatherMode); it.foreground = s.meadowFront }
+                .also { it.applyWeatherSettings(s.seasonMode, s.weatherMode); it.foreground = s.meadowFront; it.theme = s.themeMode }
         }
         val scenery = rememberScenery()
         val go: (Screen) -> Unit = { screen = it }
@@ -246,7 +248,8 @@ class MainActivity : ComponentActivity() {
                 quiet = coversSky(screen) || host.busy,
             )
             // the light of the screens follows the sky, but only where they read in daylight
-            val light = host.sunUp && readsInDaylight(screen)
+            // light or dark as chosen, or with the sun; sits and notes keep their night look over the sky either way
+            val light = readsInDaylight(screen) && when (host.theme) { "light" -> true; "dark" -> false; else -> host.sunUp }
             if (com.grungert.nebo.ui.Ink.day != light) com.grungert.nebo.ui.Ink.day = light
             AnimatedContent(screen, transitionSpec = {
                 (fadeIn(androidx.compose.animation.core.tween(320)) + androidx.compose.animation.scaleIn(androidx.compose.animation.core.tween(380), initialScale = 0.97f))

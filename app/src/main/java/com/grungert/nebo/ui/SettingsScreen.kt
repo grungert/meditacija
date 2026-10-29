@@ -271,7 +271,16 @@ private fun SkyGroup(host: com.grungert.nebo.SkyHost) {
     val seasonLabel = if (season == "auto") "po kalendaru · sada ${today.label}" else today.label
     val weatherLabel = if (weather == "auto") "kako dođe · danas ${com.grungert.nebo.sky.Seasons.weather("auto", today).label}"
         else com.grungert.nebo.sky.Seasons.weather(weather, today).label
+    var theme by remember { mutableStateOf(s.themeMode) }
     Group("Nebo") {
+        SettingRow(NeboIcon.Moon, BLUE, "Tema", when (theme) { "light" -> "svijetla"; "dark" -> "tamna"; else -> "po nebu" }, null, null,
+            onTap = { open = if (open == "theme") null else "theme" }, expanded = open == "theme") {
+            ChipRow {
+                for ((label, id) in listOf("svijetla" to "light", "tamna" to "dark", "po nebu" to "sky"))
+                    Chip(label, theme == id, { theme = id; s.themeMode = id; host.theme = id })
+            }
+            Text("„Po nebu“: svijetla danju, tamna noću, kako se nebo mijenja. Sesije i bilješke imaju svoj noćni izgled u svakoj temi.", style = SmallStyle.copy(shadow = null))
+        }
         SettingRow(NeboIcon.Sun, BLUE, "Doba dana", timeLabel, null, null, onTap = { open = if (open == "time") null else "time" }, expanded = open == "time") {
             ChipRow {
                 Chip("po satu", time == "clock", { time = "clock"; s.timeMode = time; applySky() })
