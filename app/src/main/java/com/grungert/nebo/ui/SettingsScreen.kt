@@ -168,6 +168,19 @@ fun SettingsScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                     context.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                         android.net.Uri.parse("package:" + context.packageName)))
                 }
+                // one budget for every kind of message (see Esm, the day's plan)
+                var budget by remember { mutableIntStateOf(s.noticeBudget) }
+                var budgetOpen by remember { mutableStateOf(false) }
+                SettingRow(NeboIcon.Hourglass, WARM, "Najviše poruka dnevno", "$budget, sve vrste zajedno", null, null,
+                    onTap = { budgetOpen = !budgetOpen }, expanded = budgetOpen) {
+                    ChipRow { for (n in com.grungert.nebo.esm.DayPlan.BUDGETS) Chip("$n", budget == n, { budget = n; s.noticeBudget = n; refresh() }) }
+                    Text("Kad ih je više, prvo ostaje podsjetnik koji si zakazao i sedmični pregled, pa jedno „Kako si sada?“, pa „Kako je danas?“ poslije teškog dana, pa ostala zapažanja, večernji pogled, pitanje dana i na kraju 50-50. Između dvije poruke je bar 45 minuta.",
+                        style = SmallStyle.copy(shadow = null))
+                }
+                // what was mostly turned down this week, said gently; nothing is changed by itself
+                var turnedDown by remember { mutableStateOf<List<String>>(emptyList()) }
+                LaunchedEffect(Unit) { turnedDown = withContext(Dispatchers.IO) { turnedDownThisWeek(app) } }
+                for (line in turnedDown) Text(line, style = SmallStyle.copy(color = Ink.accentInk, shadow = null), modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                 SettingRow(NeboIcon.Bell, WARM, "Podsjetnik za meditaciju",
                     if (remind) "%02d:%02d · %s".format(hour, minute, mapOf("all" to "svaki dan", "weekdays" to "radnim danima", "weekend" to "vikendom")[days] ?: "")
                     else "Jedno tiho obavještenje u vrijeme koje izabereš",
@@ -251,6 +264,23 @@ fun SettingsScreen(host: com.grungert.nebo.SkyHost, go: (Screen) -> Unit) {
                 modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp))
         }
     }
+}
+
+/**
+ * The kinds of message mostly swiped away in the last seven days (at least four came, and more than half were turned
+ * down), as gentle lines for the settings: "50-50 si ove sedmice sklonio 6 od 7 puta."
+ */
+private fun turnedDownThisWeek(app: com.grungert.nebo.NeboApp): List<String> {
+    val since = System.currentTimeMillis() - 7 * 86_400_000L
+    val names = mapOf("ESM" to "„Kako si sada?“", "FIFTY" to "50-50", "DAILY" to "Pitanje dana", "EVENING" to "Večernji pogled",
+        "FOLLOW" to "„Kako je danas?“", "WEEK" to "Sedmični pregled", "REMIND" to "Podsjetnik")
+    val counts = LinkedHashMap<String, Pair<Int, Int>>()
+    app.db.prompts(since).filter { it.firedAt != null }.let { l -> counts["ESM"] = l.size to l.count { it.dismissed && it.answeredEntryId == null } }
+    app.db.fiftyCalls(since).let { l -> counts["FIFTY"] = l.size to l.count { it.dismissed } }
+    app.db.notices(since).filter { it.kind != "ESM" && it.kind != "FIFTY" }.groupBy { it.kind }
+        .forEach { (k, l) -> counts[k] = l.size to l.count { it.dismissed } }
+    return counts.filter { (_, v) -> v.first >= 4 && v.second * 2 > v.first }
+        .map { (k, v) -> "${names[k] ?: k} si ove sedmice sklonio ${v.second} od ${v.first} puta. Možeš ih proređiti ili isključiti ovdje." }
 }
 
 /**

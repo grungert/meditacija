@@ -96,6 +96,9 @@ enum class Col(vararg val columns: String) {
     STARRED("starred"), POINTS("points"), SESSION("session_id"),
 }
 
+/** A Nebo message shown: its kind (as in [com.grungert.nebo.esm.DayPlan.Kind]), and what became of it. */
+data class Notice(val id: Long, val at: Long, val kind: String, val opened: Boolean, val dismissed: Boolean)
+
 /** The person's answer to an insight: 1 yes, 0.5 partly, 0 no. */
 data class InsightAnswer(val at: Long, val kind: String, val item: String, val answer: Float)
 
@@ -125,6 +128,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         db.execSQL("CREATE INDEX sessions_started ON sessions(started_at)")
         createFiftyCalls(db)
         createInsightAnswers(db)
+        createNotices(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -143,7 +147,28 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
         if (oldVersion < 7) db.execSQL("ALTER TABLE entries ADD COLUMN follows INTEGER")
         if (oldVersion < 8) createFiftyCalls(db)
         if (oldVersion < 9) createInsightAnswers(db)
+        if (oldVersion < 10) createNotices(db)
     }
+
+    /** Every Nebo message shown, of every kind: when, which kind, and whether it was opened or swiped away. */
+    private fun createNotices(db: SQLiteDatabase) =
+        db.execSQL("CREATE TABLE IF NOT EXISTS notices(id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0, dismissed INTEGER NOT NULL DEFAULT 0)")
+
+    fun insertNotice(kind: String): Long =
+        writableDatabase.insert("notices", null, ContentValues().apply { put("at", System.currentTimeMillis()); put("kind", kind) })
+
+    fun noticeOpened(id: Long) {
+        writableDatabase.update("notices", ContentValues().apply { put("opened", 1) }, "id=?", arrayOf(id.toString()))
+    }
+
+    fun noticeDismissed(id: Long) {
+        writableDatabase.update("notices", ContentValues().apply { put("dismissed", 1) }, "id=? AND opened=0", arrayOf(id.toString()))
+    }
+
+    fun notices(since: Long): List<Notice> =
+        readableDatabase.rawQuery("SELECT * FROM notices WHERE at>=? ORDER BY at", arrayOf(since.toString())).use { c ->
+            generateSequence { if (c.moveToNext()) Notice(c.long("id"), c.long("at"), c.str("kind")!!, c.int("opened") == 1, c.int("dismissed") == 1) else null }.toList()
+        }
 
     /**
      * "Je li ovo tačno?": the person's answer to an insight the app showed (1 yes, 0.5 partly, 0 no), by the kind of
@@ -423,4 +448,4 @@ class Db(context: Context) : SQLiteOpenHelper(context, "nebo.db", null, SCHEMA) 
 }
 
 /** The version of the tables; a copy made by a newer Nebo cannot be restored into this one. */
-const val SCHEMA = 9
+const val SCHEMA = 10

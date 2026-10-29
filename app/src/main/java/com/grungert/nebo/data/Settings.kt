@@ -146,6 +146,20 @@ class Settings(private val context: Context) {
     var fiftyPlan: List<Long>
         get() = p.getString("fiftyPlan", "")!!.split(',').mapNotNull { it.toLongOrNull() }
         set(v) = p.edit { putString("fiftyPlan", v.joinToString(",")) }
+    /** At most this many Nebo messages a day, all kinds together (see [com.grungert.nebo.esm.DayPlan]). */
+    var noticeBudget: Int
+        get() = p.getInt("noticeBudget", com.grungert.nebo.esm.DayPlan.BUDGET)
+        set(v) = p.edit { putInt("noticeBudget", v.coerceIn(com.grungert.nebo.esm.DayPlan.BUDGETS)) }
+    /** Today's plan of messages: the day (yyyymmdd), what it was planned from, and the plan itself. */
+    var dayPlanKey: Int
+        get() = p.getInt("dayPlanKey", 0)
+        set(v) = p.edit { putInt("dayPlanKey", v) }
+    var dayPlanFrom: String
+        get() = p.getString("dayPlanFrom", "")!!
+        set(v) = p.edit { putString("dayPlanFrom", v) }
+    var dayPlan: String
+        get() = p.getString("dayPlan", "")!!
+        set(v) = p.edit { putString("dayPlan", v) }
     var esmEnabled: Boolean
         get() = p.getBoolean("esmEnabled", false)
         set(v) = p.edit { putBoolean("esmEnabled", v) }
@@ -158,12 +172,12 @@ class Settings(private val context: Context) {
     var esmPerDay: Int
         get() = p.getInt("esmPerDay", 3)
         set(v) = p.edit { putInt("esmPerDay", v) }
-    /** yyyyMMdd of a day the prompts are silenced, or 0. */
     /** A few words the person keeps in sight on the home screen, as a reminder to themself ("50-50"). */
     var selfNote: String
         get() = p.getString("selfNote", "")!!
         set(v) = p.edit { putString("selfNote", v) }
 
+    /** yyyyMMdd of a day the messages are silenced (all but the reminder set by the person), or 0. */
     var esmSilencedDay: Int
         get() = p.getInt("esmSilenced", 0)
         set(v) = p.edit { putInt("esmSilenced", v) }

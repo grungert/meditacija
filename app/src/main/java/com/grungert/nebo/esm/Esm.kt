@@ -50,6 +50,10 @@ object Esm {
     const val EXTRA_HOURGLASS = "hourglass"
     const val EXTRA_EVENING = "evening_review"
     const val EXTRA_FOLLOW = "follow_up"
+    /** The message a tap opened the app from, so it is kept as opened. */
+    const val EXTRA_NOTICE = "notice"
+    private const val ACTION_NOTICE_DISMISS = "com.grungert.nebo.NOTICE_DISMISS"
+    private const val EXTRA_FIRST = "first"
     private const val ACTION_FOLLOW = "com.grungert.nebo.FOLLOW"
     private const val ACTION_EVENING = "com.grungert.nebo.EVENING"
     private const val FIFTY_CHANNEL = "pedeset_zvono"
@@ -100,13 +104,38 @@ object Esm {
         return ctx.getSystemService(NotificationManager::class.java).activeNotifications.any { now - it.postTime < 10 * 60_000L }
     }
 
-    /** The same notification again in twenty minutes: after a sit that was going on, or when another just came. */
-    private fun later(ctx: Context, action: String) {
+    /**
+     * The same notification again in twenty minutes: after a sit that was going on, or when another just came. [first]
+     * is when it was first due; one held back past an hour after that, or past the end of its window [until], is not
+     * sent at all: a message missed is only missed.
+     */
+    private fun later(ctx: Context, action: String, first: Long = System.currentTimeMillis(), until: Long = Long.MAX_VALUE) {
+        val next = System.currentTimeMillis() + 20 * 60_000L
+        if (next - first > DayPlan.LATE || next > until) return
         val pi = PendingIntent.getBroadcast(ctx, (ACTION_LATER + action).hashCode(),
-            Intent(ctx, EsmReceiver::class.java).setAction(ACTION_LATER).putExtra(EXTRA_WHAT, action),
+            Intent(ctx, EsmReceiver::class.java).setAction(ACTION_LATER).putExtra(EXTRA_WHAT, action).putExtra(EXTRA_FIRST, first),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        arm(ctx.getSystemService(AlarmManager::class.java), System.currentTimeMillis() + 20 * 60_000L, pi)
+        arm(ctx.getSystemService(AlarmManager::class.java), next, pi)
     }
+
+    /** Today's messages so far, of every kind. */
+    private fun sentToday(ctx: Context) = ctx.app.db.notices(midnight().timeInMillis)
+
+    /**
+     * Whether a message of this kind may still come today: within the day's budget (the reminder the person set always
+     * may), and not on a day silenced (the reminder again excepted).
+     */
+    private fun allowed(ctx: Context, kind: DayPlan.Kind): Boolean {
+        if (kind == DayPlan.Kind.REMIND) return true
+        val s = ctx.app.settings
+        return s.esmSilencedDay != today() && sentToday(ctx).size < s.noticeBudget
+    }
+
+    /** A message shown: kept, and its id for the tap that opens it and the swipe that sends it away. */
+    private fun shown(ctx: Context, kind: DayPlan.Kind): Long = ctx.app.db.insertNotice(kind.name)
+
+    /** The open-the-app intent of a message, carrying which message it was. */
+    private fun opens(ctx: Context, notice: Long): Intent = MainActivity.own(ctx).putExtra(EXTRA_NOTICE, notice)
 
     fun today(c: Calendar = Calendar.getInstance()) = c.get(Calendar.YEAR) * 10000 + (c.get(Calendar.MONTH) + 1) * 100 + c.get(Calendar.DAY_OF_MONTH)
 
@@ -135,33 +164,73 @@ object Esm {
     private fun arrange(ctx: Context, am: AlarmManager) {
         val s = ctx.app.settings
         val db = ctx.app.db
+        // what the person set at a time of their own keeps its own alarm; the rest comes from the day's plan
         scheduleWeek(ctx, am)
-        scheduleDaily(ctx, am)
-        scheduleEvening(ctx, am)
-        scheduleFollowUp(ctx, am)
         scheduleReminder(ctx, am)
-        scheduleFifty(ctx, am)
-        if (!s.esmEnabled) { am.cancel(pending(ctx, ACTION_FIRE, 0)); am.cancel(pending(ctx, ACTION_PLAN, 0)); return }
+        val plan = planToday(ctx)
         val now = System.currentTimeMillis()
-        val dayStart = midnight()
-        val tomorrow = midnight(1).timeInMillis
-        val start = at(dayStart, s.esmStartHour)
-        val end = at(dayStart, s.esmEndHour)
-        val todays = db.prompts(dayStart.timeInMillis).filter { it.scheduledAt < tomorrow }
-        // the rest of the day's prompts, when none are waiting: all of them in the morning, or what is left of them
-        // after the person changed the window or the count during the day
-        val left = s.esmPerDay - todays.count { it.firedAt != null }
-        // (a question whose time passed unasked, an alarm lost to a restart, is no question still waiting)
-        if (todays.none { it.firedAt == null && it.scheduledAt > now } && left > 0 && end > now + 30 * 60_000L) {
-            val from = maxOf(start, now + 10 * 60_000L)
-            for (t in randomTimes(from, end, left)) db.insertPrompt(t)
+        fun armKind(kind: DayPlan.Kind, action: String) {
+            val pi = pending(ctx, action, 0)
+            plan.firstOrNull { it.kind == kind && it.at > now }?.let { arm(am, it.at, pi) } ?: am.cancel(pi)
         }
-        val next = db.prompts(now).firstOrNull { it.firedAt == null }
+        armKind(DayPlan.Kind.DAILY, ACTION_DAILY)
+        armKind(DayPlan.Kind.EVENING, ACTION_EVENING)
+        armKind(DayPlan.Kind.FOLLOW, ACTION_FOLLOW)
+        armKind(DayPlan.Kind.FIFTY, ACTION_FIFTY)
+        val next = if (s.esmEnabled) db.prompts(now).firstOrNull { it.firedAt == null } else null
         if (next != null) arm(am, next.scheduledAt, pending(ctx, ACTION_FIRE, next.id))
         else am.cancel(pending(ctx, ACTION_FIRE, 0))
         // plan tomorrow a few minutes after midnight
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, tomorrow + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, midnight(1).timeInMillis + 5 * 60_000L, pending(ctx, ACTION_PLAN, 0))
     }
+
+    /**
+     * Today's plan of messages, all kinds within one budget (see [DayPlan]): made the first time it is asked for on a
+     * day, and again when what it is made from changes during the day (then only the rest of the day, with the budget
+     * less what already came). The questions of the moment it plans are written as prompts, the 50-50 as their plan.
+     */
+    private fun planToday(ctx: Context): List<DayPlan.Planned> {
+        val s = ctx.app.settings
+        val db = ctx.app.db
+        val day = midnight()
+        val key = today(day)
+        val now = System.currentTimeMillis()
+        val follow = followUpNote(ctx)?.takeIf { s.followUpAsked != it.id }
+        val silenced = s.esmSilencedDay == key
+        val from = listOf(s.noticeBudget, s.esmEnabled, s.esmPerDay, s.esmStartHour, s.esmEndHour, s.fiftyOn, s.fiftyPerDay, s.fiftyFrom, s.fiftyTo,
+            s.dailyQuestion, s.dailyHour, s.eveningReview, s.eveningHour, s.reminderOn, s.reminderHour, s.reminderMinute, s.reminderDays,
+            s.weekReminder, follow?.id, silenced).joinToString(",")
+        if (s.dayPlanKey == key && s.dayPlanFrom == from) return DayPlan.decode(s.dayPlan)
+
+        val fixed = ArrayList<DayPlan.Fixed>()
+        if (s.reminderOn && reminderDay(s.reminderDays, day)) fixed += DayPlan.Fixed(DayPlan.Kind.REMIND, at(day, s.reminderHour, s.reminderMinute))
+        if (s.weekReminder && day.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY && s.weekReviewed != weekKey(reviewWeekStart()))
+            fixed += DayPlan.Fixed(DayPlan.Kind.WEEK, at(day, 19))
+        if (follow != null) fixed += DayPlan.Fixed(DayPlan.Kind.FOLLOW, com.grungert.nebo.koan.FollowUp.askAt(follow, day))
+        if (s.eveningReview && !eveningDone(ctx)) fixed += DayPlan.Fixed(DayPlan.Kind.EVENING, at(day, s.eveningHour))
+        if (s.dailyQuestion) fixed += DayPlan.Fixed(DayPlan.Kind.DAILY, at(day, s.dailyHour))
+        // a day made quiet keeps only the reminder the person set
+        if (silenced) fixed.retainAll { it.kind == DayPlan.Kind.REMIND }
+        val sent = sentToday(ctx)
+        val windows = ArrayList<DayPlan.Window>()
+        if (s.esmEnabled && !silenced) {
+            val fired = db.prompts(day.timeInMillis).count { it.firedAt != null && it.scheduledAt < midnight(1).timeInMillis }
+            windows += DayPlan.Window(DayPlan.Kind.ESM, s.esmPerDay - fired, at(day, s.esmStartHour), at(day, s.esmEndHour))
+        }
+        if (s.fiftyOn && !silenced)
+            windows += DayPlan.Window(DayPlan.Kind.FIFTY, s.fiftyPerDay - sent.count { it.kind == DayPlan.Kind.FIFTY.name }, at(day, s.fiftyFrom), at(day, s.fiftyTo))
+        val plan = DayPlan.plan(fixed, windows, s.noticeBudget, sent.map { it.at }, now)
+
+        // the questions of the moment still to come are those of this plan, and so are the 50-50
+        db.deleteFuturePrompts(now)
+        plan.filter { it.kind == DayPlan.Kind.ESM }.forEach { db.insertPrompt(it.at) }
+        s.fiftyPlanDay = key; s.fiftyPlan = plan.filter { it.kind == DayPlan.Kind.FIFTY }.map { it.at }
+        s.dayPlanKey = key; s.dayPlanFrom = from; s.dayPlan = DayPlan.encode(plan)
+        return plan
+    }
+
+    /** Today's plan as it stands, for the settings to show. */
+    fun planned(ctx: Context): List<DayPlan.Planned> = DayPlan.decode(ctx.app.settings.dayPlan).takeIf { ctx.app.settings.dayPlanKey == today() } ?: emptyList()
 
     /** Nearer than this, an alarm without exact timing is set to wake the phone even in Doze. */
     private const val NEAR = 20 * 60_000L
@@ -208,26 +277,6 @@ object Esm {
         arm(am, c.timeInMillis, pi)
     }
 
-    /** Each morning at the chosen hour: one question to carry into the day. */
-    private fun scheduleDaily(ctx: Context, am: AlarmManager) {
-        val pi = pending(ctx, ACTION_DAILY, 0)
-        val s = ctx.app.settings
-        if (!s.dailyQuestion) { am.cancel(pi); return }
-        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.dailyHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0) }
-        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
-        arm(am, c.timeInMillis, pi)
-    }
-
-    /** Each evening at the chosen hour: a look back at the day. */
-    private fun scheduleEvening(ctx: Context, am: AlarmManager) {
-        val pi = pending(ctx, ACTION_EVENING, 0)
-        val s = ctx.app.settings
-        if (!s.eveningReview) { am.cancel(pi); return }
-        val c = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, s.eveningHour); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
-        if (c.timeInMillis <= System.currentTimeMillis()) c.add(Calendar.DAY_OF_YEAR, 1)
-        arm(am, c.timeInMillis, pi)
-    }
-
     /** Yesterday's hard note still waiting for its question today, if any (see [com.grungert.nebo.koan.FollowUp]). */
     fun followUpNote(ctx: Context): com.grungert.nebo.data.Entry? {
         if (!ctx.app.settings.followUp) return null
@@ -236,39 +285,8 @@ object Esm {
         return com.grungert.nebo.koan.FollowUp.pending(ctx.app.db.entries(from), today)
     }
 
-    /** The day after a hard note, at the hour it was written (between 10 and 20 h), once. */
-    private fun scheduleFollowUp(ctx: Context, am: AlarmManager) {
-        val pi = pending(ctx, ACTION_FOLLOW, 0)
-        val note = followUpNote(ctx)
-        if (note == null || ctx.app.settings.followUpAsked == note.id) { am.cancel(pi); return }
-        val at = com.grungert.nebo.koan.FollowUp.askAt(note, midnight())
-        if (at > System.currentTimeMillis()) arm(am, at, pi) else am.cancel(pi)
-    }
-
     /** True when today's evening look back has been written. */
     fun eveningDone(ctx: Context): Boolean = ctx.app.db.entries(midnight().timeInMillis).any { it.kind == "evening" }
-
-    /** Plans the day's 50-50 moments at random within the chosen hours (or tomorrow's, when today's are over) and arms the next. */
-    private fun scheduleFifty(ctx: Context, am: AlarmManager) {
-        val pi = pending(ctx, ACTION_FIFTY, 0)
-        val s = ctx.app.settings
-        if (!s.fiftyOn) { am.cancel(pi); s.fiftyPlanDay = 0; return }
-        val now = System.currentTimeMillis()
-        // one plan is kept at a time: once tomorrow's is drawn, today is over and is not planned again
-        val tomorrowKey = today(midnight(1))
-        fun plan(offset: Int): List<Long> {
-            val day = midnight(offset)
-            val key = today(day)
-            if (s.fiftyPlanDay == key) return s.fiftyPlan
-            if (offset == 0 && s.fiftyPlanDay == tomorrowKey) return emptyList()
-            val from = maxOf(at(day, s.fiftyFrom), now + 10 * 60_000L)
-            val times = randomTimes(from, at(day, s.fiftyTo), s.fiftyPerDay)
-            s.fiftyPlanDay = key; s.fiftyPlan = times
-            return times
-        }
-        val next = plan(0).firstOrNull { it > now + 30_000L } ?: plan(1).firstOrNull { it > now } ?: return
-        arm(am, next, pi)
-    }
 
     /**
      * A gentle 50-50 reminder; a touch opens the one-minute practice. Each one is kept: when it came, the minute it led
@@ -331,7 +349,8 @@ object Esm {
     }
 
     private fun pending(ctx: Context, action: String, id: Long, mood: String? = null, mutable: Boolean = false): PendingIntent =
-        PendingIntent.getBroadcast(ctx, (action + (mood ?: "")).hashCode(),
+        // (a swipe-away is one per message: each its own, so a later one does not take over an earlier one's id)
+        PendingIntent.getBroadcast(ctx, (action + (mood ?: "") + (if (action == ACTION_NOTICE_DISMISS) id.toString() else "")).hashCode(),
             Intent(ctx, EsmReceiver::class.java).setAction(action).putExtra(EXTRA_PROMPT, id).putExtra(EXTRA_MOOD, mood),
             (if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE) or PendingIntent.FLAG_UPDATE_CURRENT)
 
@@ -342,19 +361,24 @@ object Esm {
             val what = intent.getStringExtra(EXTRA_WHAT) ?: return
             return onAlarm(ctx, Intent(intent).setAction(what))
         }
+        // a message swiped away: kept as such, so the settings can say which kinds are mostly turned down
+        if (intent.action == ACTION_NOTICE_DISMISS) { intent.getLongExtra(EXTRA_PROMPT, 0).takeIf { it > 0 }?.let { ctx.app.db.noticeDismissed(it) }; return }
         val sitting = ctx.app.sitting
         when (intent.action) {
             ACTION_FIRE -> {
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)
-                // in a sit the question waits, and so it does when another notification just came
+                // in a sit the question waits, and so it does when another notification just came; but never past the end
+                // of its window: then it is only missed
                 if ((sitting || crowded(ctx)) && ctx.app.db.prompt(id)?.firedAt == null) {
-                    ctx.app.db.reschedulePrompt(id, System.currentTimeMillis() + 20 * 60_000L)
+                    val later = System.currentTimeMillis() + 20 * 60_000L
+                    if (later <= at(midnight(), s.esmEndHour)) { ctx.app.db.reschedulePrompt(id, later); return refresh(ctx) }
+                    ctx.app.db.markPromptFired(id, System.currentTimeMillis())
                     return refresh(ctx)
                 }
                 // a prompt taken away by a change in the settings, or already shown, stays quiet
                 val fresh = ctx.app.db.prompt(id)?.let { it.firedAt == null } == true
                 ctx.app.db.markPromptFired(id, System.currentTimeMillis())
-                if (fresh && s.esmEnabled && s.esmSilencedDay != today()) notify(ctx, id)
+                if (fresh && s.esmEnabled && allowed(ctx, DayPlan.Kind.ESM)) { shown(ctx, DayPlan.Kind.ESM); notify(ctx, id) }
             }
             ACTION_FIFTY_DISMISS -> {
                 val id = intent.getLongExtra(EXTRA_PROMPT, 0)
@@ -390,7 +414,8 @@ object Esm {
                 val doneToday = sitting || ctx.app.db.sessions(midnight().timeInMillis).any { it.actualSec >= 30 }
                 ctx.getSystemService(NotificationManager::class.java).cancel(REMIND_NOTIFICATION_ID)
                 if (s.reminderOn && !(s.reminderSkipIfDone && doneToday)) {
-                    val open = PendingIntent.getActivity(ctx, 4, MainActivity.own(ctx)
+                    val notice = shown(ctx, DayPlan.Kind.REMIND)
+                    val open = PendingIntent.getActivity(ctx, 4, opens(ctx, notice)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     // what is for you now, as in the app and on the widget
                     val entries = ctx.app.db.entries()
@@ -404,6 +429,7 @@ object Esm {
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     ctx.getSystemService(NotificationManager::class.java).notify(REMIND_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Vrijeme za tišinu · $name")
                         .setContentText(now.why).setStyle(Notification.BigTextStyle().bigText(now.why)).setContentIntent(open).setAutoCancel(true)
+                        .setDeleteIntent(pending(ctx, ACTION_NOTICE_DISMISS, notice))
                         .setTimeoutAfter(3 * 60 * 60_000L)
                         .addAction(Notification.Action.Builder(null, "Započni", start).build())
                         .addAction(Notification.Action.Builder(null, "3 minuta", short).build())
@@ -417,8 +443,14 @@ object Esm {
                 arm(ctx.getSystemService(AlarmManager::class.java), System.currentTimeMillis() + 15 * 60_000L, pending(ctx, ACTION_SNOOZE, 0))
                 return
             }
-            ACTION_DAILY, ACTION_EVENING, ACTION_FOLLOW, ACTION_WEEK -> if (sitting) { later(ctx, intent.action!!); return } else dayNote(ctx, intent)
-            ACTION_FIFTY -> if (s.fiftyOn && !sitting) { if (crowded(ctx)) later(ctx, ACTION_FIFTY) else notifyFifty(ctx) }
+            ACTION_DAILY, ACTION_EVENING, ACTION_FOLLOW, ACTION_WEEK ->
+                if (sitting) { later(ctx, intent.action!!, intent.getLongExtra(EXTRA_FIRST, System.currentTimeMillis())); return } else dayNote(ctx, intent)
+            ACTION_FIFTY -> if (s.fiftyOn) {
+                // after a sit, or when another just came, a little later; never past the end of its window
+                val first = intent.getLongExtra(EXTRA_FIRST, System.currentTimeMillis())
+                if (sitting || crowded(ctx)) later(ctx, ACTION_FIFTY, first, at(midnight(), s.fiftyTo))
+                else if (allowed(ctx, DayPlan.Kind.FIFTY)) { shown(ctx, DayPlan.Kind.FIFTY); notifyFifty(ctx) }
+            }
             ACTION_SILENCE -> {
                 s.esmSilencedDay = today()
                 ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
@@ -430,6 +462,8 @@ object Esm {
     /** The notes of the day: a question for the morning, the evening's look back, the next-day return, the week. */
     private fun dayNote(ctx: Context, intent: Intent) {
         val s = ctx.app.settings
+        val kind = when (intent.action) { ACTION_DAILY -> DayPlan.Kind.DAILY; ACTION_WEEK -> DayPlan.Kind.WEEK; ACTION_FOLLOW -> DayPlan.Kind.FOLLOW; else -> DayPlan.Kind.EVENING }
+        if (!allowed(ctx, kind)) return
         when (intent.action) {
             ACTION_DAILY -> {
                 val lib = ctx.app.library
@@ -437,35 +471,41 @@ object Esm {
                 val item = lib.byId(s.activeWeekKoan()) ?: lib.items.filter { it.question != null }.randomOrNull()   // koans and readings carry a question
                 val q = item?.question
                 if (s.dailyQuestion && q != null) {
-                    val open = PendingIntent.getActivity(ctx, 3, MainActivity.own(ctx)
+                    val notice = shown(ctx, kind)
+                    val open = PendingIntent.getActivity(ctx, 3, opens(ctx, notice)
                         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                     ctx.getSystemService(NotificationManager::class.java).notify(DAILY_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Pitanje za danas").setContentText(q)
                         .setStyle(Notification.BigTextStyle().bigText(q + (item.title?.let { "\n— $it" } ?: "")))
-                        .setContentIntent(open).setAutoCancel(true).build())
+                        .setContentIntent(open).setDeleteIntent(pending(ctx, ACTION_NOTICE_DISMISS, notice)).setAutoCancel(true).build())
                 }
             }
             ACTION_WEEK -> {
-                val open = PendingIntent.getActivity(ctx, 2, MainActivity.own(ctx).putExtra(EXTRA_WEEK, true)
+                val notice = if (s.weekReviewed != weekKey(reviewWeekStart())) shown(ctx, kind) else 0L
+                val open = PendingIntent.getActivity(ctx, 2, opens(ctx, notice).putExtra(EXTRA_WEEK, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 if (s.weekReviewed != weekKey(reviewWeekStart())) {
                     ctx.getSystemService(NotificationManager::class.java).notify(WEEK_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Sedmica je iza tebe")
-                        .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open).setAutoCancel(true).build())
+                        .setContentText("Pogledaj šta se vraćalo, i šta ti primjećuješ.").setContentIntent(open)
+                        .setDeleteIntent(pending(ctx, ACTION_NOTICE_DISMISS, notice)).setAutoCancel(true).build())
                 }
             }
             ACTION_FOLLOW -> followUpNote(ctx)?.takeIf { s.followUpAsked != it.id }?.let { note ->
                 s.followUpAsked = note.id
-                val open = PendingIntent.getActivity(ctx, 8, MainActivity.own(ctx).putExtra(EXTRA_FOLLOW, note.id)
+                val notice = shown(ctx, kind)
+                val open = PendingIntent.getActivity(ctx, 8, opens(ctx, notice).putExtra(EXTRA_FOLLOW, note.id)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 val about = com.grungert.nebo.koan.FollowUp.about(note)
                 ctx.getSystemService(NotificationManager::class.java).notify(FOLLOW_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je danas?")
                     .setContentText(if (about != null) "Juče ti je bilo teško ($about)." else "Juče ti je bilo teško.")
-                    .setContentIntent(open).setAutoCancel(true).setTimeoutAfter(6 * 60 * 60_000L).build())
+                    .setContentIntent(open).setDeleteIntent(pending(ctx, ACTION_NOTICE_DISMISS, notice)).setAutoCancel(true).setTimeoutAfter(6 * 60 * 60_000L).build())
             }
             ACTION_EVENING -> if (s.eveningReview && !eveningDone(ctx)) {
-                val open = PendingIntent.getActivity(ctx, 7, MainActivity.own(ctx).putExtra(EXTRA_EVENING, true)
+                val notice = shown(ctx, kind)
+                val open = PendingIntent.getActivity(ctx, 7, opens(ctx, notice).putExtra(EXTRA_EVENING, true)
                     .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
                 ctx.getSystemService(NotificationManager::class.java).notify(EVENING_NOTIFICATION_ID, builder(ctx, REMIND_CHANNEL).setContentTitle("Kako je prošao dan?")
                     .setContentText("Šta je bilo dobro, šta teško, i šta sutra drugačije.").setContentIntent(open).setAutoCancel(true)
+                    .setDeleteIntent(pending(ctx, ACTION_NOTICE_DISMISS, notice))
                     .setTimeoutAfter(4 * 60 * 60_000L).build())
             }
         }

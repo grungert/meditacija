@@ -1,5 +1,6 @@
 package com.grungert.nebo
 
+import kotlinx.coroutines.launch
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings as SysSettings
@@ -174,6 +175,8 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         // what writes to the journal or starts a sit is done only when Nebo itself asked (the activity is open to all)
         val trusted = intent?.getStringExtra(EXTRA_KEY) == app.settings.intentKey
+        // a message opened: kept as such (see Esm, the day's plan of messages)
+        intent?.getLongExtra(Esm.EXTRA_NOTICE, 0L)?.takeIf { it > 0 && trusted }?.let { n -> app.scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.db.noticeOpened(n) } }
         val id = if (trusted) intent?.getLongExtra(Esm.EXTRA_PROMPT, -1L) ?: -1L else -1L
         if (id > 0) screen = Screen.CheckIn("esm", promptId = id)
         if (intent?.getBooleanExtra(Esm.EXTRA_WEEK, false) == true) screen = Screen.CheckIn("week")
